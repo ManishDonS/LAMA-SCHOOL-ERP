@@ -1,0 +1,48 @@
+1. Get the application URL by running these commands:
+{{- if .Values.apiGateway.ingress.enabled }}
+  API Gateway:
+{{- range $host := .Values.apiGateway.ingress.hosts }}
+  http{{ if $.Values.apiGateway.ingress.tls }}s{{ end }}://{{ $host.host }}
+{{- end }}
+{{- else if contains "NodePort" .Values.apiGateway.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Values.namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services api-gateway)
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Values.namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.apiGateway.service.type }}
+  NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+  You can watch the status by running 'kubectl get --namespace {{ .Values.namespace }} svc -w api-gateway'
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Values.namespace }} api-gateway --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.apiGateway.service.port }}
+{{- end }}
+
+{{- if .Values.frontend.ingress.enabled }}
+  Frontend:
+{{- range $host := .Values.frontend.ingress.hosts }}
+  http{{ if $.Values.frontend.ingress.tls }}s{{ end }}://{{ $host.host }}
+{{- end }}
+{{- else if contains "NodePort" .Values.frontend.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Values.namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services frontend)
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Values.namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.frontend.service.type }}
+  NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+  You can watch the status by running 'kubectl get --namespace {{ .Values.namespace }} svc -w frontend'
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Values.namespace }} frontend --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.frontend.service.port }}
+{{- end }}
+
+2. Check the status of the deployment:
+  kubectl get pods -n {{ .Values.namespace }}
+  kubectl get svc -n {{ .Values.namespace }}
+
+3. View logs:
+  kubectl logs -n {{ .Values.namespace }} -f <pod-name>
+
+4. Scale deployments:
+  kubectl scale deployment/<service-name> -n {{ .Values.namespace }} --replicas=<desired-replicas>
+
+5. Update configuration:
+  kubectl edit configmap school-erp-config -n {{ .Values.namespace }}
+
+6. Delete the release:
+  helm uninstall school-erp -n {{ .Values.namespace }}

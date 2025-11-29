@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: school-erp-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: school-erp
+    version: {{ .Chart.AppVersion }}
+data:
+  NODE_ENV: {{ .Values.env.NODE_ENV }}
+  LOG_LEVEL: {{ .Values.env.LOG_LEVEL }}
+  CORS_ORIGIN: {{ .Values.env.CORS_ORIGIN }}
+  JWT_EXPIRY: {{ .Values.env.JWT_EXPIRY }}
+  API_GATEWAY_URL: "http://api-gateway:{{ .Values.apiGateway.port }}"
+  DATABASE_HOST: "postgresql"
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: {{ .Values.postgresql.auth.database }}
+  REDIS_HOST: "redis-master"
+  REDIS_PORT: "6379"
+  NATS_URL: "nats://nats:4222"

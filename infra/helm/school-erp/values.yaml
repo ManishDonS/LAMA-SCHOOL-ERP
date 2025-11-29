@@ -1,0 +1,315 @@
+# Default values for school-erp Helm chart
+
+## Global settings
+global:
+  environment: production
+  imageRegistry: docker.io
+  imagePullPolicy: IfNotPresent
+
+## Namespace
+namespace: school-erp
+
+## PostgreSQL Database Configuration
+postgresql:
+  enabled: true
+  auth:
+    username: schoolerp
+    password: changeme
+    postgresPassword: changeme
+    database: school_erp
+  primary:
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClassName: standard
+
+## Redis Cache Configuration
+redis:
+  enabled: true
+  auth:
+    enabled: true
+    password: changeme
+  master:
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "256Mi"
+        cpu: "200m"
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClassName: standard
+
+## NATS Message Queue Configuration
+nats:
+  enabled: true
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClassName: standard
+
+## API Gateway
+apiGateway:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: school-erp/api-gateway
+    tag: latest
+  port: 3000
+  service:
+    type: LoadBalancer
+    port: 80
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: api.school-erp.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: school-erp-tls
+        hosts:
+          - api.school-erp.local
+
+## User Service
+userService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: school-erp/user-service
+    tag: latest
+  port: 3001
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+
+## Student Service
+studentService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: school-erp/student-service
+    tag: latest
+  port: 3002
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+
+## Attendance Service
+attendanceService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: school-erp/attendance-service
+    tag: latest
+  port: 3003
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+
+## Fee Service
+feeService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: school-erp/fee-service
+    tag: latest
+  port: 3004
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+
+## Exam Service
+examService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: school-erp/exam-service
+    tag: latest
+  port: 3005
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+
+## Notification Service
+notificationService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: school-erp/notification-service
+    tag: latest
+  port: 3006
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+
+## Real-time Service
+realtimeService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: school-erp/realtime-service
+    tag: latest
+  port: 3007
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+
+## Frontend Application
+frontend:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: school-erp/frontend
+    tag: latest
+  port: 3000
+  service:
+    type: LoadBalancer
+    port: 80
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: school-erp.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: school-erp-frontend-tls
+        hosts:
+          - school-erp.local
+
+## Environment Variables
+env:
+  NODE_ENV: production
+  LOG_LEVEL: info
+  CORS_ORIGIN: "https://school-erp.local"
+  JWT_EXPIRY: 7d
+
+## Node Selector
+nodeSelector: {}
+
+## Tolerations
+tolerations: []
+
+## Affinity
+affinity: {}
+
+## Pod Security Policy
+podSecurityPolicy:
+  enabled: false
+
+## Network Policy
+networkPolicy:
+  enabled: false
+
+## Monitoring and Logging
+monitoring:
+  enabled: false
+  prometheus:
+    enabled: false
+  grafana:
+    enabled: false
+
+logging:
+  enabled: false
+  elk:
+    enabled: false

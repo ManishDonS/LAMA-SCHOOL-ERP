@@ -1,0 +1,144 @@
+{{- $namespace := .Values.namespace }}
+{{- $config := .Values }}
+{{- $services := list "userService" "studentService" "attendanceService" "feeService" "examService" "notificationService" "realtimeService" }}
+
+{{- range $service := $services }}
+{{- $svc := index $config $service }}
+{{- if $svc.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $service | lower | replace "Service" "" }}
+  namespace: {{ $namespace }}
+  labels:
+    app: {{ $service | lower | replace "Service" "" }}
+    version: {{ $config.Chart.AppVersion }}
+spec:
+  replicas: {{ $svc.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ $service | lower | replace "Service" "" }}
+  template:
+    metadata:
+      labels:
+        app: {{ $service | lower | replace "Service" "" }}
+    spec:
+      containers:
+      - name: {{ $service | lower | replace "Service" "" }}
+        image: "{{ $config.global.imageRegistry }}/{{ $svc.image.repository }}:{{ $svc.image.tag }}"
+        imagePullPolicy: {{ $config.global.imagePullPolicy }}
+        ports:
+        - containerPort: {{ $svc.port }}
+        env:
+        - name: PORT
+          value: "{{ $svc.port }}"
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: school-erp-config
+              key: NODE_ENV
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: school-erp-config
+              key: LOG_LEVEL
+        - name: DATABASE_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: school-erp-config
+              key: DATABASE_HOST
+        - name: DATABASE_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: school-erp-config
+              key: DATABASE_PORT
+        - name: DATABASE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: school-erp-config
+              key: DATABASE_NAME
+        - name: DATABASE_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgresql
+              key: username
+        - name: DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgresql
+              key: password
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: school-erp-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: school-erp-config
+              key: REDIS_PORT
+        - name: NATS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: school-erp-config
+              key: NATS_URL
+        resources:
+          requests:
+            memory: {{ $svc.resources.requests.memory | quote }}
+            cpu: {{ $svc.resources.requests.cpu | quote }}
+          limits:
+            memory: {{ $svc.resources.limits.memory | quote }}
+            cpu: {{ $svc.resources.limits.cpu | quote }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: {{ $svc.port }}
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: {{ $svc.port }}
+          initialDelaySeconds: 10
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $service | lower | replace "Service" "" }}
+  namespace: {{ $namespace }}
+  labels:
+    app: {{ $service | lower | replace "Service" "" }}
+spec:
+  type: ClusterIP
+  ports:
+  - port: {{ $svc.port }}
+    targetPort: {{ $svc.port }}
+    protocol: TCP
+  selector:
+    app: {{ $service | lower | replace "Service" "" }}
+{{- if $svc.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $service | lower | replace "Service" "" }}-hpa
+  namespace: {{ $namespace }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $service | lower | replace "Service" "" }}
+  minReplicas: {{ $svc.autoscaling.minReplicas }}
+  maxReplicas: {{ $svc.autoscaling.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ $svc.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- end }}
+{{- end }}

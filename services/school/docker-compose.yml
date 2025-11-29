@@ -1,0 +1,115 @@
+version: '3.8'
+
+services:
+  # School Service
+  school-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: school-service
+    ports:
+      - "${SCHOOL_SERVICE_PORT:-3011}:3011"
+    environment:
+      # Application
+      APP_PORT: 3011
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+
+      # Main Database (PostgreSQL)
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: school_erp_main
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      MAX_CONNECTIONS: 25
+      CONN_MAX_LIFETIME: 5m
+
+      # Security
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-32-byte-encryption-key-here-1234}
+      JWT_SECRET: ${JWT_SECRET:-your-jwt-secret-key-here}
+
+      # Redis (for caching, optional)
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    networks:
+      - school-erp
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3011/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    restart: unless-stopped
+
+  # PostgreSQL Main Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: school-postgres
+    environment:
+      POSTGRES_DB: school_erp_main
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+
+    ports:
+      - "${DB_PORT:-5432}:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    networks:
+      - school-erp
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    restart: unless-stopped
+
+  # Redis (optional, for distributed caching)
+  redis:
+    image: redis:7-alpine
+    container_name: school-redis
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+    command: redis-server ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+
+    volumes:
+      - redis_data:/data
+
+    networks:
+      - school-erp
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  school-erp:
+    driver: bridge

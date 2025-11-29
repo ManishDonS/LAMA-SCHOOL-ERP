@@ -1,0 +1,63 @@
+{
+  "name": "school-erp",
+  "version": "1.0.0",
+  "description": "School Enterprise Resource Planning System",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "install-all": "npm install && npm install --prefix frontend && npm install --prefix backend/api-gateway",
+    "dev": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "start": "npm start --prefix frontend",
+    "lint": "eslint . --ext .ts,.tsx,.js 2>/dev/null || true",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
+    "test": "echo 'Tests will be implemented'",
+    "test:ci": "echo 'CI tests configured'",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "migrate": "echo 'Database migrations will run in services'",
+    "seed": "echo 'Database seeding configured'",
+    "clean": "rm -rf node_modules frontend/node_modules services/*/node_modules"
+  },
+  "devDependencies": {
+    "eslint": "^8.53.0",
+    "prettier": "^3.1.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "keywords": [
+    "school",
+    "erp",
+    "education",
+    "management",
+    "system",
+    "microservices",
+    "golang",
+    "nextjs"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/school-erp"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/school-erp/issues"
+  },
+  "homepage": "https://github.com/yourusername/school-erp#readme",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "pg": "^8.16.3",
+    "uuid": "^13.0.0"
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "id": "example-module",
+  "name": "Example Module",
+  "version": "1.0.0",
+  "description": "An example module demonstrating all features of the module system",
+  "author": "School ERP Team",
+  "license": "MIT",
+  "icon": "/icons/example.svg",
+  "category": "custom",
+  "dependencies": [],
+  "features": [
+    {
+      "id": "dashboard",
+      "name": "Dashboard Widget",
+      "description": "Adds a dashboard widget",
+      "enabled": true
+    },
+    {
+      "id": "reports",
+      "name": "Custom Reports",
+      "description": "Custom report generation",
+      "enabled": true
+    }
+  ],
+  "permissions": [
+    {
+      "id": "example.read",
+      "name": "Read Example Data",
+      "description": "Permission to read example data",
+      "category": "example"
+    },
+    {
+      "id": "example.write",
+      "name": "Write Example Data",
+      "description": "Permission to write example data",
+      "category": "example"
+    }
+  ],
+  "routes": [
+    {
+      "path": "/example",
+      "component": "ExamplePage",
+      "auth": true,
+      "permissions": ["example.read"],
+      "meta": {
+        "title": "Example Module",
+        "icon": "package"
+      }
+    }
+  ],
+  "menus": [
+    {
+      "id": "example-menu",
+      "name": "Example",
+      "icon": "package",
+      "path": "/example",
+      "order": 100,
+      "permissions": ["example.read"]
+    }
+  ],
+  "models": [
+    {
+      "name": "ExampleModel",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "unique": true
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "default": "active"
+        },
+        {
+          "name": "createdAt",
+          "type": "date"
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "example-list",
+      "name": "Example List",
+      "model": "ExampleModel",
+      "type": "list",
+      "fields": ["id", "name", "status", "createdAt"]
+    }
+  ],
+  "settings": [
+    {
+      "key": "enable_notifications",
+      "name": "Enable Notifications",
+      "description": "Enable notifications for this module",
+      "type": "boolean",
+      "default": true,
+      "group": "General",
+      "order": 1
+    },
+    {
+      "key": "refresh_interval",
+      "name": "Refresh Interval",
+      "description": "Data refresh interval in seconds",
+      "type": "number",
+      "default": 60,
+      "group": "General",
+      "order": 2
+    }
+  ],
+  "tags": ["example", "demo", "template"],
+  "installable": true,
+  "uninstallable": true,
+  "autoInstall": false,
+  "autoEnable": false
+}

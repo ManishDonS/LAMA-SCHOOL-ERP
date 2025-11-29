@@ -1,0 +1,665 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "School ERP API",
+    "description": "Complete microservices API for School Enterprise Resource Planning System",
+    "version": "1.0.0",
+    "contact": {
+      "name": "School ERP Team",
+      "url": "https://school-erp.com"
+    },
+    "license": {
+      "name": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000/api/v1",
+      "description": "Development Server"
+    },
+    {
+      "url": "https://api.school-erp.com/api/v1",
+      "description": "Production Server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT Authorization header using the Bearer scheme"
+      }
+    },
+    "schemas": {
+      "User": {
+        "type": "object",
+        "required": ["email", "firstName", "lastName"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["admin", "teacher", "staff", "parent"]
+          },
+          "schoolId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "Student": {
+        "type": "object",
+        "required": ["studentId", "firstName", "lastName", "enrollmentDate"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "studentId": {
+            "type": "string"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "enrollmentDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "currentClass": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "inactive", "graduated"]
+          }
+        }
+      },
+      "Teacher": {
+        "type": "object",
+        "required": ["teacherId", "firstName", "lastName", "email", "hireDate"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "teacherId": {
+            "type": "string"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "qualification": {
+            "type": "string"
+          },
+          "specialization": {
+            "type": "string"
+          },
+          "hireDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "inactive", "leave"]
+          }
+        }
+      },
+      "Attendance": {
+        "type": "object",
+        "required": ["studentId", "classId", "attendanceDate", "status"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "classId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attendanceDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["present", "absent", "leave", "late"]
+          },
+          "remarks": {
+            "type": "string"
+          }
+        }
+      },
+      "Fee": {
+        "type": "object",
+        "required": ["studentId", "feeType", "amount"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "studentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "feeType": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "paidDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "paid", "overdue", "cancelled"]
+          },
+          "paymentMethod": {
+            "type": "string"
+          }
+        }
+      },
+      "Class": {
+        "type": "object",
+        "required": ["name", "academicYear"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "gradeLevel": {
+            "type": "integer"
+          },
+          "classTeacherId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "maxStudents": {
+            "type": "integer"
+          },
+          "academicYear": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["error"]
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "SuccessResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["success"]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Register a new user",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["schoolName", "email", "password", "firstName", "lastName"],
+                "properties": {
+                  "schoolName": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password"
+                  },
+                  "firstName": {
+                    "type": "string"
+                  },
+                  "lastName": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string",
+                    "default": "admin"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User registered successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing required fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "User already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Login user",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials"
+          }
+        }
+      }
+    },
+    "/auth/verify": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Verify JWT token",
+        "responses": {
+          "200": {
+            "description": "Token is valid"
+          },
+          "401": {
+            "description": "Token is invalid or expired"
+          }
+        }
+      }
+    },
+    "/students": {
+      "post": {
+        "tags": ["Students"],
+        "summary": "Create a new student",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Student"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Student created successfully"
+          }
+        }
+      },
+      "get": {
+        "tags": ["Students"],
+        "summary": "List all students",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of students"
+          }
+        }
+      }
+    },
+    "/students/{id}": {
+      "get": {
+        "tags": ["Students"],
+        "summary": "Get student by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Student details"
+          },
+          "404": {
+            "description": "Student not found"
+          }
+        }
+      },
+      "put": {
+        "tags": ["Students"],
+        "summary": "Update student",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Student"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Student updated"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Students"],
+        "summary": "Delete student",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Student deleted"
+          }
+        }
+      }
+    },
+    "/teachers": {
+      "post": {
+        "tags": ["Teachers"],
+        "summary": "Create a new teacher",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Teacher"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Teacher created"
+          }
+        }
+      },
+      "get": {
+        "tags": ["Teachers"],
+        "summary": "List all teachers",
+        "responses": {
+          "200": {
+            "description": "List of teachers"
+          }
+        }
+      }
+    },
+    "/attendance": {
+      "post": {
+        "tags": ["Attendance"],
+        "summary": "Record attendance",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Attendance"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Attendance recorded"
+          }
+        }
+      }
+    },
+    "/attendance/student/{studentId}": {
+      "get": {
+        "tags": ["Attendance"],
+        "summary": "Get student attendance records",
+        "parameters": [
+          {
+            "name": "studentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attendance records"
+          }
+        }
+      }
+    },
+    "/fees": {
+      "post": {
+        "tags": ["Finance"],
+        "summary": "Create fee record",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Fee"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Fee record created"
+          }
+        }
+      }
+    },
+    "/fees/student/{studentId}": {
+      "get": {
+        "tags": ["Finance"],
+        "summary": "Get student fees",
+        "parameters": [
+          {
+            "name": "studentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fee records"
+          }
+        }
+      }
+    },
+    "/classes": {
+      "post": {
+        "tags": ["Classes"],
+        "summary": "Create a new class",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Class"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Class created"
+          }
+        }
+      },
+      "get": {
+        "tags": ["Classes"],
+        "summary": "List all classes",
+        "responses": {
+          "200": {
+            "description": "List of classes"
+          }
+        }
+      }
+    }
+  }
+}
