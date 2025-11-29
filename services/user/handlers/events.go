@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -46,7 +47,7 @@ func (h *UserHandler) SetupEventSubscriptions() {
 				Department:    "General",
 				EmployeeID:    fmt.Sprintf("T-%d", time.Now().Unix()),
 			}
-			if err := h.CreateTeacherInternal(teacher); err != nil {
+			if err := h.CreateTeacherInternal(context.Background(), teacher); err != nil {
 				log.Printf("Failed to create teacher profile for user %d: %v", event.UserID, err)
 			} else {
 				log.Printf("Created teacher profile for user %d", event.UserID)
@@ -54,7 +55,7 @@ func (h *UserHandler) SetupEventSubscriptions() {
 
 		case "parent":
 			// Create default parent profile
-			if err := h.CreateParentInternal(event.UserID, "", "", ""); err != nil {
+			if err := h.CreateParentInternal(context.Background(), event.UserID, "", "", ""); err != nil {
 				log.Printf("Failed to create parent profile for user %d: %v", event.UserID, err)
 			} else {
 				log.Printf("Created parent profile for user %d", event.UserID)

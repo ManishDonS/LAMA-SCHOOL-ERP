@@ -2,8 +2,7 @@
   "/_app": "pages/_app.js",
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
-  "/dashboard/school-buses": "pages/dashboard/school-buses.js",
-  "/dashboard/classes": "pages/dashboard/classes.js",
-  "/dashboard": "pages/dashboard.js",
-  "/dashboard/staff": "pages/dashboard/staff.js"
+  "/": "pages/index.js",
+  "/404": "pages/404.js",
+  "/auth/login": "pages/auth/login.js"
 }

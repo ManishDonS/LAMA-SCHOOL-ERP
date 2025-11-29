@@ -131,7 +131,7 @@ func (h *UserHandler) CreateTeacher(c *fiber.Ctx) error {
 		EmployeeID:    req.EmployeeID,
 	}
 
-	if err := h.CreateTeacherInternal(teacher); err != nil {
+	if err := h.CreateTeacherInternal(c.Context(), teacher); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to create teacher",
 		})
@@ -193,7 +193,7 @@ func (h *UserHandler) CreateParent(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := h.CreateParentInternal(req.UserID, req.PhoneNumber, req.Occupation, req.Address); err != nil {
+	if err := h.CreateParentInternal(c.Context(), req.UserID, req.PhoneNumber, req.Occupation, req.Address); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to create parent",
 		})
