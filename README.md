@@ -1,6 +1,6 @@
-# School ERP (Enterprise Resource Planning) System
+# LAMA School ERP (Enterprise Resource Planning) System
 
-A comprehensive, scalable microservices-based Enterprise Resource Planning system for schools. This system manages students, attendance, fees, exams, notifications, and real-time features using modern cloud-native technologies.
+LAMA — Learning & Academic Management Application is a comprehensive, scalable, microservices-based Enterprise Resource Planning (ERP) system for schools. It efficiently manages students, attendance, fees, exams, notifications, and real-time features, leveraging modern cloud-native technologies for performance, scalability, and reliability.
 
 ## Table of Contents
 
@@ -383,9 +383,9 @@ For issues, questions, or suggestions, please create an issue on GitHub.
 
 ## Authors
 
-- **Your Name** - Initial work
+- **Manish Lama** - Initial work
 
 ---
 
-**Last Updated**: November 2024
+**Last Updated**: November 2025
 **Version**: 1.0.0
