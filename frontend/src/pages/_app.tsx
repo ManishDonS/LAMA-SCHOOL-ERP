@@ -20,7 +20,8 @@ export default function App({ Component, pageProps }: AppProps) {
           <meta charSet="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
           <meta name="theme-color" content="#ffffff" />
-          <title>School ERP</title>
+          <title>LAMA SCHOOL ERP</title>
+          <link rel="icon" href="/favicon.png" />
         </Head>
         <Component {...pageProps} />
         <Toaster position="top-right" />

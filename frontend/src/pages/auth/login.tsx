@@ -110,7 +110,7 @@ export default function LoginPage() {
         <div className="bg-white rounded-xl shadow-lg p-8 sm:p-10">
           {/* Logo/Header */}
           <div className="text-center mb-8">
-            <h1 className="text-3xl sm:text-4xl font-bold text-gray-900">School ERP</h1>
+            <h1 className="text-3xl sm:text-4xl font-bold text-gray-900">LAMA SCHOOL ERP</h1>
             <p className="text-gray-500 text-sm mt-2">Login to your account</p>
           </div>
 
@@ -150,11 +150,10 @@ export default function LoginPage() {
                     aria-required="false"
                     aria-invalid={validationErrors.schoolId ? 'true' : 'false'}
                     aria-describedby={validationErrors.schoolId ? 'school-error' : undefined}
-                    className={`w-full px-4 py-2.5 border rounded-lg text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                      validationErrors.schoolId
+                    className={`w-full px-4 py-2.5 border rounded-lg text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${validationErrors.schoolId
                         ? 'border-red-300 bg-red-50'
                         : 'border-gray-300 bg-white hover:border-gray-400'
-                    }`}
+                      }`}
                   >
                     <option value="">Choose your school...</option>
                     {schools.map((school) => (
@@ -189,11 +188,10 @@ export default function LoginPage() {
                   aria-required="true"
                   aria-invalid={validationErrors.email ? 'true' : 'false'}
                   aria-describedby={validationErrors.email ? 'email-error' : undefined}
-                  className={`w-full px-4 py-2.5 border rounded-lg text-gray-900 placeholder-gray-500 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                    validationErrors.email
+                  className={`w-full px-4 py-2.5 border rounded-lg text-gray-900 placeholder-gray-500 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${validationErrors.email
                       ? 'border-red-300 bg-red-50'
                       : 'border-gray-300 bg-white hover:border-gray-400'
-                  }`}
+                    }`}
                   placeholder="you@school.com"
                 />
                 {validationErrors.email && (
@@ -232,11 +230,10 @@ export default function LoginPage() {
                   aria-required="true"
                   aria-invalid={validationErrors.password ? 'true' : 'false'}
                   aria-describedby={validationErrors.password ? 'password-error' : undefined}
-                  className={`w-full px-4 py-2.5 border rounded-lg text-gray-900 placeholder-gray-500 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                    validationErrors.password
+                  className={`w-full px-4 py-2.5 border rounded-lg text-gray-900 placeholder-gray-500 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${validationErrors.password
                       ? 'border-red-300 bg-red-50'
                       : 'border-gray-300 bg-white hover:border-gray-400'
-                  }`}
+                    }`}
                   placeholder="••••••••"
                 />
                 {validationErrors.password && (
@@ -296,7 +293,7 @@ export default function LoginPage() {
           {/* Footer */}
           <div className="mt-8 pt-6 border-t border-gray-200">
             <p className="text-gray-500 text-xs text-center">
-              © 2024 School ERP. All rights reserved.
+              © 2024 LAMA SCHOOL ERP. All rights reserved.
             </p>
           </div>
         </div>
