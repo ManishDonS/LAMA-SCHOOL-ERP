@@ -17,6 +17,8 @@ type Config struct {
 	ServerReadTimeout  time.Duration
 	ServerWriteTimeout time.Duration
 	MaxConnections     int
+	SuperAdminEmail    string
+	SuperAdminPassword string
 }
 
 func LoadConfig() *Config {
@@ -37,6 +39,8 @@ func LoadConfig() *Config {
 		ServerReadTimeout:  10 * time.Second,
 		ServerWriteTimeout: 10 * time.Second,
 		MaxConnections:     25,
+		SuperAdminEmail:    getEnv("SUPER_ADMIN_EMAIL", ""),
+		SuperAdminPassword: getEnv("SUPER_ADMIN_PASSWORD", ""),
 	}
 }
 

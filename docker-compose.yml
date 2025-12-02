@@ -72,6 +72,8 @@ services:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/school_erp
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-your-super-secret-refresh-token-key-change-this-in-production}
+      SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD}
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
     depends_on:
       postgres:

@@ -17,6 +17,7 @@ import (
 	"school-erp/auth/pkg/logger"
 	"school-erp/auth/pkg/monitoring"
 	"school-erp/auth/routes"
+	"school-erp/auth/utils"
 )
 
 // Helper function to check if an origin is in the allowed list
@@ -56,6 +57,11 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to run migrations")
 	}
 	log.Info().Msg("Database migrations completed")
+
+	// Seed super admin
+	if err := utils.SeedSuperAdmin(db, cfg); err != nil {
+		log.Error().Err(err).Msg("Failed to seed super admin")
+	}
 
 	// Connect to NATS
 	messaging.ConnectNATS()
