@@ -104,61 +104,51 @@ export default function Navbar({ showBackButton = false, backLink = '/dashboard'
   }
 
   return (
-    <nav className="sticky top-0 z-40 bg-white shadow-lg border-b-4 border-blue-600">
-      <div className="px-6 py-5 flex justify-between items-center">
-        <div className="flex items-center gap-4">
-          {showBackButton && (
-            <Link href={backLink} className="flex items-center text-blue-600 hover:text-blue-700 font-semibold transition-colors group">
-              <span className="mr-2 group-hover:-translate-x-1 transition-transform">←</span>
-              Back
-            </Link>
-          )}
-
-          {/* Logo and System/School Name */}
-          <Link href="/dashboard" className="flex items-center gap-3">
-            {displayLogo && (
+    <nav className="sticky top-0 z-40 bg-white shadow-sm border-b border-gray-200">
+      <div className="px-4 py-2 flex justify-between items-center">
+        {/* Left: Logo Only */}
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard" className="flex items-center">
+            {displayLogo ? (
               <img
                 src={displayLogo}
                 alt={displayName}
-                className="h-10 w-10 object-contain rounded-lg"
+                className="h-8 w-8 object-contain rounded"
               />
+            ) : (
+              <div className="h-8 w-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded flex items-center justify-center text-white font-bold text-sm">
+                LAMA
+              </div>
             )}
-            <div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                {displayName}
-              </h1>
-              {shouldShowSchool && (
-                <p className="text-xs text-gray-500">School Code: {selectedSchool.code}</p>
-              )}
-            </div>
           </Link>
         </div>
 
-        <div className="flex items-center gap-4">
+        {/* Right: Settings Icons + User Menu */}
+        <div className="flex items-center gap-2">
+          {/* Placeholder for future settings icons */}
+          {/* Example: Notifications, Settings, etc. */}
 
           {/* User Menu */}
           {user && (
-            <div className="flex items-center space-x-4 relative user-menu-container">
+            <div className="relative user-menu-container">
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-100 transition-all duration-200"
+                className="flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-gray-100 transition-colors"
+                title={`${user?.firstName} ${user?.lastName}`}
               >
-                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
+                <div className="w-7 h-7 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
                   {user?.firstName?.charAt(0)}{user?.lastName?.charAt(0) || 'A'}
                 </div>
-                <div className="text-left hidden sm:block">
-                  <p className="text-sm font-semibold text-gray-900">{user?.firstName} {user?.lastName}</p>
-                  <p className="text-xs text-gray-500">{user?.email}</p>
-                </div>
-                <span className="text-gray-600">▼</span>
+                <span className="text-gray-600 text-xs">▼</span>
               </button>
 
               {/* User Menu Dropdown */}
               {showUserMenu && (
-                <div className="absolute right-0 mt-48 w-56 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50">
+                <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50">
                   <div className="px-4 py-3 border-b border-gray-200">
                     <p className="text-sm font-semibold text-gray-900">{user?.firstName} {user?.lastName}</p>
                     <p className="text-xs text-gray-500">{user?.email}</p>
+                    <p className="text-xs text-blue-600 font-medium mt-1">{user?.role?.replace('_', ' ').toUpperCase()}</p>
                   </div>
 
                   {shouldShowSchool && (
@@ -166,6 +156,7 @@ export default function Navbar({ showBackButton = false, backLink = '/dashboard'
                       <div className="px-4 py-2 border-b border-gray-200 bg-blue-50">
                         <p className="text-xs font-medium text-blue-900">Current School</p>
                         <p className="text-sm font-semibold text-blue-700">{selectedSchool.name}</p>
+                        <p className="text-xs text-blue-600">Code: {selectedSchool.code}</p>
                       </div>
                       <Link
                         href="/dashboard/schools"
