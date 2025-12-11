@@ -4,8 +4,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
 	"school-erp/auth/pkg/logger"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 // RateLimiter implements a simple in-memory rate limiter using sliding window
@@ -18,7 +19,7 @@ type RateLimiter struct {
 
 // Visitor tracks requests from a single IP address
 type Visitor struct {
-	requests  []time.Time
+	requests     []time.Time
 	blockedUntil time.Time
 }
 
@@ -105,7 +106,7 @@ func (rl *RateLimiter) cleanup() {
 		for ip, visitor := range rl.visitors {
 			// Remove visitors with no recent requests
 			if len(visitor.requests) == 0 ||
-			   (visitor.requests[len(visitor.requests)-1].Before(cutoff) && now.After(visitor.blockedUntil)) {
+				(visitor.requests[len(visitor.requests)-1].Before(cutoff) && now.After(visitor.blockedUntil)) {
 				delete(rl.visitors, ip)
 			}
 		}
@@ -129,9 +130,9 @@ func (rl *RateLimiter) Middleware() fiber.Handler {
 }
 
 // AuthRateLimiter creates a rate limiter specifically for auth endpoints
-// More strict limits: 5 attempts per 15 minutes
+// More strict limits: 10 attempts per 15 minutes
 func AuthRateLimiter() *RateLimiter {
-	return NewRateLimiter(5, 15*time.Minute)
+	return NewRateLimiter(10, 15*time.Minute)
 }
 
 // GeneralRateLimiter creates a rate limiter for general endpoints
