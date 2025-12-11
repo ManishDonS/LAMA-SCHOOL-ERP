@@ -106,7 +106,7 @@ export default function Navbar({ showBackButton = false, backLink = '/dashboard'
   return (
     <nav className="sticky top-0 z-40 bg-white shadow-sm border-b border-gray-200">
       <div className="px-4 py-2 flex justify-between items-center">
-        {/* Left: Logo Only */}
+        {/* Left: Logo + Department Link */}
         <div className="flex items-center gap-3">
           <Link href="/dashboard" className="flex items-center">
             {displayLogo ? (
@@ -121,12 +121,50 @@ export default function Navbar({ showBackButton = false, backLink = '/dashboard'
               </div>
             )}
           </Link>
+
+          {/* Staff & Department Management Links - Only show on Staff page */}
+          {user && router.pathname === '/dashboard/staff' && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (router.pathname === '/dashboard/staff') {
+                    // Already on staff page, just switch to staff view
+                    window.location.hash = 'staff-view'
+                  } else {
+                    // Navigate to staff page
+                    router.push('/dashboard/staff')
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-gray-100 transition-colors group"
+                title="View Staff"
+              >
+                <span className="text-lg">👔</span>
+                <span className="text-sm font-medium text-gray-600 group-hover:text-gray-900">Staff</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (router.pathname === '/dashboard/staff') {
+                    // Already on staff page, trigger hash change
+                    window.location.hash = 'departments'
+                  } else {
+                    // Navigate to staff page with hash
+                    router.push('/dashboard/staff#departments')
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-gray-100 transition-colors group"
+                title="Manage Departments"
+              >
+                <span className="text-lg">🏢</span>
+                <span className="text-sm font-medium text-gray-600 group-hover:text-gray-900">Departments</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Right: Settings Icons + User Menu */}
         <div className="flex items-center gap-2">
           {/* Placeholder for future settings icons */}
-          {/* Example: Notifications, Settings, etc. */}
 
           {/* User Menu */}
           {user && (
