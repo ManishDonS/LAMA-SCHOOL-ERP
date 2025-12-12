@@ -18,6 +18,12 @@ export const MENU_ITEMS: MenuItem[] = [
     roles: ['super_admin', 'admin', 'teacher', 'student', 'parent', 'staff'],
   },
   {
+    href: '/dashboard/communication',
+    label: 'Communication',
+    icon: '💬',
+    roles: ['super_admin', 'admin', 'teacher', 'student', 'parent', 'staff'],
+  },
+  {
     href: '/dashboard/schools',
     label: 'Schools Management',
     icon: '🏢',
@@ -106,6 +112,12 @@ export const MENU_ITEMS: MenuItem[] = [
     label: 'Permissions',
     icon: '🔐',
     roles: ['super_admin'], // Only super admin can manage permissions
+  },
+  {
+    href: '/website-builder',
+    label: 'Website Builder',
+    icon: '🌐',
+    roles: ['super_admin', 'admin', 'teacher'],
   },
 ]
 

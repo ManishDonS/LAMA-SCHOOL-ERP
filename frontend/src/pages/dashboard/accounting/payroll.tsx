@@ -1,0 +1,743 @@
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/router'
+import Link from 'next/link'
+import { useAuthStore } from '@/store/authStore'
+import Sidebar from '@/components/Sidebar'
+import Navbar from '@/components/Navbar'
+
+interface PayrollStructure {
+    id: number
+    staff_id: string
+    staff_name: string
+    staff_email: string
+    department: string
+    position: string
+    basic_salary: number
+    hra: number
+    da: number
+    ta: number
+    medical_allowance: number
+    other_allowances: number
+    pf_deduction: number
+    tax_deduction: number
+    insurance_deduction: number
+    other_deductions: number
+    gross_salary: number
+    net_salary: number
+    effective_from: string
+    status: string
+}
+
+interface PayrollRecord {
+    id: number
+    payroll_month: string
+    staff_id: string
+    staff_name: string
+    department: string
+    position: string
+    basic_salary: number
+    total_allowances: number
+    total_deductions: number
+    gross_salary: number
+    net_salary: number
+    status: string
+    approved_by?: string
+    approved_at?: string
+}
+
+interface PayrollSummary {
+    total_staff: number
+    total_gross_salary: number
+    total_deductions: number
+    total_net_salary: number
+    pending_approvals: number
+    pending_payments: number
+}
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3012'
+
+export default function PayrollPage() {
+    const { user } = useAuthStore()
+    const router = useRouter()
+    const [isHydrated, setIsHydrated] = useState(false)
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'structures' | 'processing' | 'slips' | 'loans' | 'tax'>('dashboard')
+
+    // Dashboard state
+    const [summary, setSummary] = useState<PayrollSummary | null>(null)
+    const [currentMonth, setCurrentMonth] = useState(new Date().toISOString().slice(0, 7))
+
+    // Structures state
+    const [structures, setStructures] = useState<PayrollStructure[]>([])
+    const [showStructureModal, setShowStructureModal] = useState(false)
+    const [editingStructure, setEditingStructure] = useState<PayrollStructure | null>(null)
+
+    // Processing state
+    const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([])
+    const [selectedRecords, setSelectedRecords] = useState<number[]>([])
+    const [showGenerateModal, setShowGenerateModal] = useState(false)
+
+    // Loans state
+    const [loans, setLoans] = useState<any[]>([])
+    const [showLoanModal, setShowLoanModal] = useState(false)
+    const [loanSummary, setLoanSummary] = useState<any>(null)
+
+    // Tax state
+    const [taxSlabs, setTaxSlabs] = useState<any>(null)
+    const [taxCalculation, setTaxCalculation] = useState<any>(null)
+    const [taxInput, setTaxInput] = useState({ annual_income: 0, marital_status: 'single', has_disability: false })
+
+    useEffect(() => {
+        setIsHydrated(true)
+    }, [])
+
+    useEffect(() => {
+        if (isHydrated && !user) {
+            router.push('/auth/login')
+        }
+    }, [user, router, isHydrated])
+
+    useEffect(() => {
+        if (isHydrated && user) {
+            fetchDashboardData()
+        }
+    }, [isHydrated, user, currentMonth])
+
+    const fetchDashboardData = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/v1/payroll/summary?month=${currentMonth}`)
+            if (response.ok) {
+                const data = await response.json()
+                setSummary(data)
+            }
+        } catch (error) {
+            console.error('Failed to fetch payroll summary:', error)
+        }
+    }
+
+    const fetchStructures = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/v1/payroll-structures`)
+            if (response.ok) {
+                const data = await response.json()
+                setStructures(data)
+            }
+        } catch (error) {
+            console.error('Failed to fetch payroll structures:', error)
+        }
+    }
+
+    const fetchPayrollRecords = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/v1/payroll/records?month=${currentMonth}`)
+            if (response.ok) {
+                const data = await response.json()
+                setPayrollRecords(data)
+            }
+        } catch (error) {
+            console.error('Failed to fetch payroll records:', error)
+        }
+    }
+
+    const fetchLoans = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/v1/loans`)
+            if (response.ok) {
+                const data = await response.json()
+                setLoans(data)
+            }
+            const summaryRes = await fetch(`${API_BASE_URL}/api/v1/loans/summary`)
+            if (summaryRes.ok) {
+                const summaryData = await summaryRes.json()
+                setLoanSummary(summaryData)
+            }
+        } catch (error) {
+            console.error('Failed to fetch loans:', error)
+        }
+    }
+
+    const fetchTaxSlabs = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/v1/tax/slabs`)
+            if (response.ok) {
+                const data = await response.json()
+                setTaxSlabs(data)
+            }
+        } catch (error) {
+            console.error('Failed to fetch tax slabs:', error)
+        }
+    }
+
+    const calculateTax = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/v1/tax/calculate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(taxInput),
+            })
+            if (response.ok) {
+                const data = await response.json()
+                setTaxCalculation(data)
+            }
+        } catch (error) {
+            console.error('Failed to calculate tax:', error)
+        }
+    }
+
+    const handleGeneratePayroll = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/v1/payroll/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ payroll_month: currentMonth }),
+            })
+
+            if (response.ok) {
+                const result = await response.json()
+                alert(`Payroll generated successfully! Generated: ${result.generated_count}, Skipped: ${result.skipped_count}`)
+                fetchPayrollRecords()
+                fetchDashboardData()
+                setShowGenerateModal(false)
+            } else {
+                alert('Failed to generate payroll')
+            }
+        } catch (error) {
+            console.error('Error generating payroll:', error)
+            alert('Error generating payroll')
+        }
+    }
+
+    const handleApprovePayroll = async () => {
+        if (selectedRecords.length === 0) {
+            alert('Please select records to approve')
+            return
+        }
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/v1/payroll/approve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    record_ids: selectedRecords,
+                    approved_by: user?.email || 'admin',
+                }),
+            })
+
+            if (response.ok) {
+                const result = await response.json()
+                alert(`${result.approved_count} records approved successfully`)
+                setSelectedRecords([])
+                fetchPayrollRecords()
+                fetchDashboardData()
+            } else {
+                alert('Failed to approve payroll')
+            }
+        } catch (error) {
+            console.error('Error approving payroll:', error)
+            alert('Error approving payroll')
+        }
+    }
+
+    const formatCurrency = (amount: number) => {
+        return new Intl.NumberFormat('en-NP', {
+            style: 'currency',
+            currency: 'NPR',
+            minimumFractionDigits: 0,
+        }).format(amount)
+    }
+
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'draft': return 'bg-yellow-100 text-yellow-800'
+            case 'approved': return 'bg-blue-100 text-blue-800'
+            case 'processed': return 'bg-green-100 text-green-800'
+            default: return 'bg-gray-100 text-gray-800'
+        }
+    }
+
+    if (!isHydrated || !user) {
+        return <div className="min-h-screen flex items-center justify-center">Loading...</div>
+    }
+
+    return (
+        <div className="min-h-screen bg-gray-100 flex flex-col">
+            <Navbar showBackButton={true} backLink="/dashboard/accounting" />
+
+            <div className="flex flex-1">
+                <Sidebar />
+
+                <main className="flex-1 py-8 px-6">
+                    <div className="max-w-7xl mx-auto">
+                        {/* Header */}
+                        <div className="mb-8">
+                            <h2 className="text-3xl font-bold text-gray-900 mb-2">Payroll Management</h2>
+                            <p className="text-gray-600">Manage staff salaries and payroll processing</p>
+                        </div>
+
+                        {/* Month Selector */}
+                        <div className="mb-6 flex items-center gap-4">
+                            <label className="font-semibold text-gray-700">Payroll Month:</label>
+                            <input
+                                type="month"
+                                value={currentMonth}
+                                onChange={(e) => setCurrentMonth(e.target.value)}
+                                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+
+                        {/* Tabs */}
+                        <div className="mb-6 border-b border-gray-200">
+                            <nav className="flex gap-2 overflow-x-auto">
+                                {[
+                                    { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+                                    { id: 'structures', label: 'Salary Structures', icon: '💰' },
+                                    { id: 'processing', label: 'Payroll Processing', icon: '⚙️' },
+                                    { id: 'slips', label: 'Salary Slips', icon: '📄' },
+                                    { id: 'loans', label: 'Loans', icon: '💳' },
+                                    { id: 'tax', label: 'Tax Calculator', icon: '🧮' },
+                                ].map((tab) => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => {
+                                            setActiveTab(tab.id as any)
+                                            if (tab.id === 'structures') fetchStructures()
+                                            if (tab.id === 'processing') fetchPayrollRecords()
+                                            if (tab.id === 'loans') fetchLoans()
+                                            if (tab.id === 'tax') fetchTaxSlabs()
+                                        }}
+                                        className={`px-4 py-3 font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab.id
+                                            ? 'border-blue-600 text-blue-600'
+                                            : 'border-transparent text-gray-600 hover:text-gray-900'
+                                            }`}
+                                    >
+                                        <span className="mr-2">{tab.icon}</span>
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </nav>
+                        </div>
+
+                        {/* Dashboard Tab */}
+                        {activeTab === 'dashboard' && (
+                            <div>
+                                {/* Summary Cards */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                                    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-gray-500 text-sm font-medium">Total Staff</p>
+                                                <p className="text-3xl font-bold text-blue-600 mt-2">{summary?.total_staff || 0}</p>
+                                            </div>
+                                            <div className="bg-blue-100 p-3 rounded-full">
+                                                <span className="text-2xl">👥</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-gray-500 text-sm font-medium">Total Gross Salary</p>
+                                                <p className="text-3xl font-bold text-green-600 mt-2">
+                                                    {formatCurrency(summary?.total_gross_salary || 0)}
+                                                </p>
+                                            </div>
+                                            <div className="bg-green-100 p-3 rounded-full">
+                                                <span className="text-2xl">💵</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-gray-500 text-sm font-medium">Total Net Salary</p>
+                                                <p className="text-3xl font-bold text-purple-600 mt-2">
+                                                    {formatCurrency(summary?.total_net_salary || 0)}
+                                                </p>
+                                            </div>
+                                            <div className="bg-purple-100 p-3 rounded-full">
+                                                <span className="text-2xl">💰</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Action Cards */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Pending Approvals</h3>
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-4xl font-bold text-orange-600">{summary?.pending_approvals || 0}</p>
+                                                <p className="text-sm text-gray-600 mt-1">Records awaiting approval</p>
+                                            </div>
+                                            <button
+                                                onClick={() => setActiveTab('processing')}
+                                                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+                                            >
+                                                Review →
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Pending Payments</h3>
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-4xl font-bold text-blue-600">{summary?.pending_payments || 0}</p>
+                                                <p className="text-sm text-gray-600 mt-1">Approved, awaiting payment</p>
+                                            </div>
+                                            <button
+                                                onClick={() => setActiveTab('processing')}
+                                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                            >
+                                                Process →
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Structures Tab */}
+                        {activeTab === 'structures' && (
+                            <div>
+                                <div className="mb-4 flex justify-between items-center">
+                                    <h3 className="text-xl font-bold text-gray-900">Salary Structures</h3>
+                                    <Link
+                                        href="/dashboard/staff"
+                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                    >
+                                        + Add from Staff
+                                    </Link>
+                                </div>
+
+                                {structures.length === 0 ? (
+                                    <div className="bg-white p-8 rounded-lg shadow text-center">
+                                        <p className="text-gray-500 text-lg">No salary structures defined yet.</p>
+                                        <p className="text-sm text-gray-400 mt-2">Add staff members with salary information to get started.</p>
+                                    </div>
+                                ) : (
+                                    <div className="bg-white rounded-lg shadow overflow-hidden">
+                                        <table className="min-w-full divide-y divide-gray-200">
+                                            <thead className="bg-gray-50">
+                                                <tr>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Staff</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Basic Salary</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Gross Salary</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Salary</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="bg-white divide-y divide-gray-200">
+                                                {structures.map((structure) => (
+                                                    <tr key={structure.id} className="hover:bg-gray-50">
+                                                        <td className="px-6 py-4">
+                                                            <div className="font-medium text-gray-900">{structure.staff_name}</div>
+                                                            <div className="text-sm text-gray-500">{structure.position}</div>
+                                                        </td>
+                                                        <td className="px-6 py-4 text-sm text-gray-900">{structure.department}</td>
+                                                        <td className="px-6 py-4 text-sm text-gray-900">{formatCurrency(structure.basic_salary)}</td>
+                                                        <td className="px-6 py-4 text-sm text-gray-900">{formatCurrency(structure.gross_salary)}</td>
+                                                        <td className="px-6 py-4 text-sm font-semibold text-green-600">{formatCurrency(structure.net_salary)}</td>
+                                                        <td className="px-6 py-4">
+                                                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusColor(structure.status)}`}>
+                                                                {structure.status}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Processing Tab */}
+                        {activeTab === 'processing' && (
+                            <div>
+                                <div className="mb-4 flex justify-between items-center">
+                                    <h3 className="text-xl font-bold text-gray-900">Payroll Records - {currentMonth}</h3>
+                                    <div className="flex gap-2">
+                                        {selectedRecords.length > 0 && (
+                                            <button
+                                                onClick={handleApprovePayroll}
+                                                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                            >
+                                                Approve Selected ({selectedRecords.length})
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={() => setShowGenerateModal(true)}
+                                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                        >
+                                            + Generate Payroll
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {payrollRecords.length === 0 ? (
+                                    <div className="bg-white p-8 rounded-lg shadow text-center">
+                                        <p className="text-gray-500 text-lg">No payroll records for this month.</p>
+                                        <button
+                                            onClick={() => setShowGenerateModal(true)}
+                                            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                        >
+                                            Generate Payroll
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="bg-white rounded-lg shadow overflow-hidden">
+                                        <table className="min-w-full divide-y divide-gray-200">
+                                            <thead className="bg-gray-50">
+                                                <tr>
+                                                    <th className="px-6 py-3">
+                                                        <input
+                                                            type="checkbox"
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    setSelectedRecords(payrollRecords.filter(r => r.status === 'draft').map(r => r.id))
+                                                                } else {
+                                                                    setSelectedRecords([])
+                                                                }
+                                                            }}
+                                                            className="rounded"
+                                                        />
+                                                    </th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Staff</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Gross</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deductions</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="bg-white divide-y divide-gray-200">
+                                                {payrollRecords.map((record) => (
+                                                    <tr key={record.id} className="hover:bg-gray-50">
+                                                        <td className="px-6 py-4">
+                                                            {record.status === 'draft' && (
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={selectedRecords.includes(record.id)}
+                                                                    onChange={(e) => {
+                                                                        if (e.target.checked) {
+                                                                            setSelectedRecords([...selectedRecords, record.id])
+                                                                        } else {
+                                                                            setSelectedRecords(selectedRecords.filter(id => id !== record.id))
+                                                                        }
+                                                                    }}
+                                                                    className="rounded"
+                                                                />
+                                                            )}
+                                                        </td>
+                                                        <td className="px-6 py-4">
+                                                            <div className="font-medium text-gray-900">{record.staff_name}</div>
+                                                            <div className="text-sm text-gray-500">{record.position}</div>
+                                                        </td>
+                                                        <td className="px-6 py-4 text-sm text-gray-900">{record.department}</td>
+                                                        <td className="px-6 py-4 text-sm text-gray-900">{formatCurrency(record.gross_salary)}</td>
+                                                        <td className="px-6 py-4 text-sm text-red-600">{formatCurrency(record.total_deductions)}</td>
+                                                        <td className="px-6 py-4 text-sm font-semibold text-green-600">{formatCurrency(record.net_salary)}</td>
+                                                        <td className="px-6 py-4">
+                                                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusColor(record.status)}`}>
+                                                                {record.status}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Slips Tab */}
+                        {activeTab === 'slips' && (
+                            <div className="bg-white p-8 rounded-lg shadow text-center">
+                                <p className="text-gray-500 text-lg">Salary slip generation coming soon...</p>
+                                <p className="text-sm text-gray-400 mt-2">PDF generation is available via API</p>
+                            </div>
+                        )}
+
+                        {/* Loans Tab */}
+                        {activeTab === 'loans' && (
+                            <div>
+                                <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="bg-white p-4 rounded-lg shadow-sm border">
+                                        <p className="text-sm text-gray-500">Total Loans</p>
+                                        <p className="text-2xl font-bold text-blue-600">{loanSummary?.TotalLoans || 0}</p>
+                                    </div>
+                                    <div className="bg-white p-4 rounded-lg shadow-sm border">
+                                        <p className="text-sm text-gray-500">Active Loans</p>
+                                        <p className="text-2xl font-bold text-green-600">{loanSummary?.ActiveLoans || 0}</p>
+                                    </div>
+                                    <div className="bg-white p-4 rounded-lg shadow-sm border">
+                                        <p className="text-sm text-gray-500">Total Outstanding</p>
+                                        <p className="text-2xl font-bold text-orange-600">{formatCurrency(loanSummary?.TotalOutstanding || 0)}</p>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-lg shadow p-6">
+                                    <h3 className="text-lg font-bold mb-4">Staff Loans</h3>
+                                    {loans.length === 0 ? (
+                                        <p className="text-gray-500 text-center py-8">No loans found</p>
+                                    ) : (
+                                        <div className="overflow-x-auto">
+                                            <table className="min-w-full">
+                                                <thead className="bg-gray-50">
+                                                    <tr>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Staff</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Amount</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">EMI</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Paid/Total</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Outstanding</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y">
+                                                    {loans.map((loan: any) => (
+                                                        <tr key={loan.id}>
+                                                            <td className="px-4 py-3 text-sm">{loan.staff_name}</td>
+                                                            <td className="px-4 py-3 text-sm">{formatCurrency(loan.loan_amount)}</td>
+                                                            <td className="px-4 py-3 text-sm">{formatCurrency(loan.emi_amount)}</td>
+                                                            <td className="px-4 py-3 text-sm">{loan.paid_installments}/{loan.total_installments}</td>
+                                                            <td className="px-4 py-3 text-sm font-semibold text-orange-600">{formatCurrency(loan.outstanding_balance)}</td>
+                                                            <td className="px-4 py-3"><span className={`px-2 py-1 rounded text-xs ${getStatusColor(loan.status)}`}>{loan.status}</span></td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Tax Calculator Tab */}
+                        {activeTab === 'tax' && (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <div className="bg-white rounded-lg shadow p-6">
+                                    <h3 className="text-lg font-bold mb-4">Tax Calculator</h3>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Annual Income (NPR)</label>
+                                            <input
+                                                type="number"
+                                                value={taxInput.annual_income}
+                                                onChange={(e) => setTaxInput({ ...taxInput, annual_income: parseFloat(e.target.value) || 0 })}
+                                                className="w-full px-3 py-2 border rounded-lg"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Marital Status</label>
+                                            <select
+                                                value={taxInput.marital_status}
+                                                onChange={(e) => setTaxInput({ ...taxInput, marital_status: e.target.value })}
+                                                className="w-full px-3 py-2 border rounded-lg"
+                                            >
+                                                <option value="single">Single</option>
+                                                <option value="married">Married</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex items-center">
+                                            <input
+                                                type="checkbox"
+                                                checked={taxInput.has_disability}
+                                                onChange={(e) => setTaxInput({ ...taxInput, has_disability: e.target.checked })}
+                                                className="mr-2"
+                                            />
+                                            <label className="text-sm text-gray-700">Has Disability</label>
+                                        </div>
+                                        <button
+                                            onClick={calculateTax}
+                                            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                        >
+                                            Calculate Tax
+                                        </button>
+                                    </div>
+
+                                    {taxCalculation && (
+                                        <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                                            <h4 className="font-semibold mb-2">Results:</h4>
+                                            <div className="space-y-1 text-sm">
+                                                <p>Exemption: {formatCurrency(taxCalculation.exemption)}</p>
+                                                <p>Taxable Income: {formatCurrency(taxCalculation.taxable_income)}</p>
+                                                <p className="font-bold text-lg">Annual Tax: {formatCurrency(taxCalculation.annual_tax)}</p>
+                                                <p className="font-bold text-lg">Monthly Tax: {formatCurrency(taxCalculation.monthly_tax)}</p>
+                                                <p>Effective Rate: {taxCalculation.effective_rate?.toFixed(2)}%</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="bg-white rounded-lg shadow p-6">
+                                    <h3 className="text-lg font-bold mb-4">Tax Slabs (FY {taxSlabs?.fiscal_year})</h3>
+                                    {taxSlabs && (
+                                        <div>
+                                            <table className="w-full text-sm">
+                                                <thead className="bg-gray-50">
+                                                    <tr>
+                                                        <th className="px-3 py-2 text-left">Income Range</th>
+                                                        <th className="px-3 py-2 text-right">Tax Rate</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y">
+                                                    {taxSlabs.slabs?.map((slab: any, idx: number) => (
+                                                        <tr key={idx}>
+                                                            <td className="px-3 py-2">
+                                                                {formatCurrency(slab.min_amount)} - {slab.max_amount === 0 ? 'Above' : formatCurrency(slab.max_amount)}
+                                                            </td>
+                                                            <td className="px-3 py-2 text-right font-semibold">{slab.tax_rate}%</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                            <div className="mt-4 p-3 bg-gray-50 rounded">
+                                                <p className="text-sm font-semibold mb-2">Exemptions:</p>
+                                                <ul className="text-sm space-y-1">
+                                                    <li>Single: {formatCurrency(taxSlabs.exemptions?.single)}</li>
+                                                    <li>Married: {formatCurrency(taxSlabs.exemptions?.married)}</li>
+                                                    <li>Disability: +{formatCurrency(taxSlabs.exemptions?.disability)}</li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </main>
+            </div>
+
+            {/* Generate Payroll Modal */}
+            {showGenerateModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 max-w-md w-full">
+                        <h3 className="text-xl font-bold text-gray-900 mb-4">Generate Payroll</h3>
+                        <p className="text-gray-600 mb-6">
+                            This will generate payroll records for all active staff members for the month of <strong>{currentMonth}</strong>.
+                        </p>
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={() => setShowGenerateModal(false)}
+                                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleGeneratePayroll}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            >
+                                Generate
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}

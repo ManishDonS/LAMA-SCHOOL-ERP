@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
@@ -25,6 +25,7 @@ WORKDIR /root/
 
 # Copy binary from builder
 COPY --from=builder /app/student-service .
+COPY --from=builder /app/docs ./docs
 
 # Expose port
 EXPOSE 3003

@@ -256,6 +256,38 @@ services:
       - school-erp-network
     restart: on-failure
 
+  # Website Service
+  website-service:
+    build:
+      context: ./services/website
+      dockerfile: Dockerfile
+      args:
+        - GOPROXY=https://proxy.golang.org,direct
+    container_name: school-erp-website
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    ports:
+      - "3013:3013"
+    environment:
+      WEBSITE_SERVICE_PORT: 3013
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: school_erp
+      NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+      CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - school-erp-network
+    restart: on-failure
+
   # Real-time Service
   realtime-service:
     build:
@@ -321,6 +353,40 @@ services:
       - school-erp-network
     restart: on-failure
 
+  # Expense Service
+  expense-service:
+    build:
+      context: ./services/expense
+      dockerfile: Dockerfile
+      args:
+        - GOPROXY=https://proxy.golang.org,direct
+    container_name: school-erp-expense
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    ports:
+      - "3010:3010"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: school_erp
+      NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+      CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
+      PORT: 3010
+    volumes:
+      - expense_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      - school-erp-network
+    restart: on-failure
+
   # Transport Service
   transport-service:
     build:
@@ -356,6 +422,38 @@ services:
       - school-erp-network
     restart: on-failure
 
+  # Payroll Service
+  payroll-service:
+    build:
+      context: ./services/payroll
+      dockerfile: Dockerfile
+      args:
+        - GOPROXY=https://proxy.golang.org,direct
+    container_name: school-erp-payroll
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    ports:
+      - "3012:3012"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: school_erp
+      NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+      CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
+      PORT: 3012
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      - school-erp-network
+    restart: on-failure
+
   # API Gateway (Optional - future enhancement)
   # nginx:
   #   image: nginx:alpine
@@ -376,6 +474,7 @@ volumes:
   redis_data:
   nats_data:
   school_uploads:
+  expense_uploads:
 
 networks:
   school-erp-network:

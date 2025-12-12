@@ -11,8 +11,11 @@ import (
 
 	"school-erp/student/config"
 	"school-erp/student/database"
+	_ "school-erp/student/docs" // load API Docs files (will be created by swag init)
 	"school-erp/student/messaging"
 	"school-erp/student/routes"
+
+	"github.com/gofiber/swagger"
 )
 
 // Helper function to check if an origin is in the allowed list
@@ -25,6 +28,20 @@ func contains(allowedOrigins string, origin string) bool {
 	}
 	return false
 }
+
+// @title School ERP Student Service
+// @version 1.0
+// @description REST API for Student Management in LAMA School ERP
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.email support@lama-erp.com
+
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host localhost:3003
+// @BasePath /api/v1
 func main() {
 	godotenv.Load()
 	cfg := config.LoadConfig()
@@ -45,15 +62,19 @@ func main() {
 	app := fiber.New(fiber.Config{AppName: "School ERP Student Service"})
 	setupMiddleware(app)
 
+	// Swagger Route
+	app.Get("/swagger/*", swagger.HandlerDefault)
+
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"service": "School ERP Student Service",
 			"version": "v1.0.0",
-			"status": "running",
+			"status":  "running",
 			"endpoints": fiber.Map{
-				"health": "/health",
-				"metrics": "/metrics",
+				"health":   "/health",
+				"metrics":  "/metrics",
 				"students": "/api/v1/students",
+				"docs":     "/swagger/index.html",
 			},
 		})
 	})

@@ -35,10 +35,6 @@ const config: Config = {
           DEFAULT: 'hsl(var(--muted))',
           foreground: 'hsl(var(--muted-foreground))',
         },
-        accent: {
-          DEFAULT: 'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))',
-        },
         popover: {
           DEFAULT: 'hsl(var(--popover))',
           foreground: 'hsl(var(--popover-foreground))',
@@ -46,6 +42,21 @@ const config: Config = {
         card: {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
+        },
+        // Premium Theme Colors
+        dark: {
+          bg: '#0F172A', // Slate 900
+          surface: '#1E293B', // Slate 800
+          border: '#334155', // Slate 700
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+          pink: '#EC4899',
+          purple: '#A855F7',
+          blue: '#3B82F6',
+          green: '#10B981',
+          orange: '#F59E0B',
         },
       },
       borderRadius: {

@@ -1,0 +1,156 @@
+basePath: /api/v1/website
+definitions:
+  models.Website:
+    type: object
+host: localhost:3013
+info:
+  contact:
+    email: support@lama-erp.com
+    name: API Support
+  description: Website Management Service for LAMA School ERP
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: School ERP Website Service
+  version: "1.0"
+paths:
+  /websites:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of all websites
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Website'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List all websites
+      tags:
+      - website
+    post:
+      consumes:
+      - application/json
+      description: Create a new website record
+      parameters:
+      - description: Website Data
+        in: body
+        name: website
+        required: true
+        schema:
+          $ref: '#/definitions/models.Website'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.Website'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Create a new website
+      tags:
+      - website
+  /websites/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Remove a website from the system
+      parameters:
+      - description: Website ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Delete a website
+      tags:
+      - website
+    get:
+      consumes:
+      - application/json
+      description: Get details of a specific website by ID
+      parameters:
+      - description: Website ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Website'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get a website
+      tags:
+      - website
+    put:
+      consumes:
+      - application/json
+      description: Update details of an existing website
+      parameters:
+      - description: Website ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Website Data
+        in: body
+        name: website
+        required: true
+        schema:
+          $ref: '#/definitions/models.Website'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Website'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Update a website
+      tags:
+      - website
+swagger: "2.0"

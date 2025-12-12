@@ -8,11 +8,13 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/swagger"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 
 	"school-erp/auth/config"
 	"school-erp/auth/database"
+	_ "school-erp/auth/docs" // load API Docs files (will be created by swag init)
 	"school-erp/auth/messaging"
 	"school-erp/auth/pkg/logger"
 	"school-erp/auth/pkg/monitoring"
@@ -31,6 +33,19 @@ func contains(allowedOrigins string, origin string) bool {
 	return false
 }
 
+// @title School ERP Auth Service
+// @version 1.0
+// @description Authentication Service for LAMA School ERP
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.email support@lama-erp.com
+
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host localhost:3001
+// @BasePath /api/v1/auth
 func main() {
 	// Load environment variables
 	godotenv.Load()
@@ -75,6 +90,9 @@ func main() {
 
 	// Setup middleware
 	setupMiddleware(app)
+
+	// Swagger Route
+	app.Get("/swagger/*", swagger.HandlerDefault)
 
 	// Welcome route
 	app.Get("/", func(c *fiber.Ctx) error {

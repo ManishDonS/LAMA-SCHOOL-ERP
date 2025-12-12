@@ -1,0 +1,247 @@
+basePath: /api/v1
+definitions:
+  handlers.CreateStudentRequest:
+    properties:
+      class_id:
+        type: string
+      date_of_birth:
+        type: string
+      email:
+        type: string
+      first_name:
+        type: string
+      last_name:
+        type: string
+    type: object
+  handlers.EnrollmentRequest:
+    properties:
+      academic_year:
+        type: string
+      class_id:
+        type: string
+      student_id:
+        type: string
+    type: object
+  handlers.Student:
+    properties:
+      class_id:
+        type: string
+      date_of_birth:
+        type: string
+      email:
+        type: string
+      first_name:
+        type: string
+      id:
+        type: string
+      last_name:
+        type: string
+    type: object
+host: localhost:3003
+info:
+  contact:
+    email: support@lama-erp.com
+    name: API Support
+  description: REST API for Student Management in LAMA School ERP
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: School ERP Student Service
+  version: "1.0"
+paths:
+  /enrollments:
+    post:
+      consumes:
+      - application/json
+      description: Enroll a student in a class
+      parameters:
+      - description: Enrollment Data
+        in: body
+        name: enrollment
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.EnrollmentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Enroll a student
+      tags:
+      - enrollments
+  /enrollments/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Remove a student from a class
+      parameters:
+      - description: Enrollment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Remove enrollment
+      tags:
+      - enrollments
+  /students:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of all registered students
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List all students
+      tags:
+      - students
+    post:
+      consumes:
+      - application/json
+      description: Register a new student in the system
+      parameters:
+      - description: Student Data
+        in: body
+        name: student
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.CreateStudentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Create a new student
+      tags:
+      - students
+  /students/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Remove a student from the system
+      parameters:
+      - description: Student ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Delete a student
+      tags:
+      - students
+    get:
+      consumes:
+      - application/json
+      description: Get details of a specific student by ID
+      parameters:
+      - description: Student ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.Student'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get a student
+      tags:
+      - students
+    put:
+      consumes:
+      - application/json
+      description: Update details of an existing student
+      parameters:
+      - description: Student ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Student Data
+        in: body
+        name: student
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.CreateStudentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Update a student
+      tags:
+      - students
+  /students/{student_id}/enrollments:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of class enrollments for a student
+      parameters:
+      - description: Student ID
+        in: path
+        name: student_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get student enrollments
+      tags:
+      - students
+swagger: "2.0"
