@@ -581,7 +581,11 @@ export default function StudentsPage() {
                   students.map((student) => (
                     <tr key={student.id} className="hover:bg-blue-50 transition-colors duration-150 border-b border-gray-100">
                       <td className="px-6 py-4">
-                        <div className="font-semibold text-gray-900">{student.firstName} {student.lastName}</div>
+                        <Link href={`/dashboard/students/${student.id}`}>
+                          <div className="font-semibold text-blue-600 hover:text-blue-800 cursor-pointer transition-colors">
+                            {student.firstName} {student.lastName}
+                          </div>
+                        </Link>
                         <div className="text-sm text-gray-500">{student.email}</div>
                       </td>
                       <td className="px-6 py-4">
