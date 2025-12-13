@@ -29,11 +29,6 @@ func main() {
 	}
 	defer mainDB.Close()
 
-	// Run global migrations (schools table in main database)
-	if err := database.RunMigrations(mainDB); err != nil {
-		log.Fatalf("Failed to run migrations: %v\n", err)
-	}
-
 	// Create tenant manager for handling multi-tenant connections
 	tenantManager, err := tenant.NewTenantManager(
 		cfg.EncryptionKey,
@@ -147,10 +142,15 @@ func setupMiddleware(app *fiber.App) {
 
 // getAllowedOrigins returns list of allowed CORS origins based on environment
 func getAllowedOrigins() string {
+	// Check environment variable first
+	if origins := os.Getenv("CORS_ALLOW_ORIGINS"); origins != "" {
+		return origins
+	}
+
 	env := os.Getenv("ENVIRONMENT")
 	if env == "production" {
 		return "https://yourdomain.com"
 	}
-	// Development - allow all local origins
-	return "*"
+	// Development - allow frontend
+	return "http://localhost:3000,http://127.0.0.1:3000"
 }

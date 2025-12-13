@@ -34,6 +34,7 @@ func createSchoolsTable(ctx context.Context, db *pgxpool.Pool) error {
 		domain VARCHAR(255) NOT NULL UNIQUE,
 		logo_url TEXT,
 		timezone VARCHAR(50) NOT NULL DEFAULT 'UTC',
+		active_modules JSONB DEFAULT '[]'::jsonb,
 		status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP

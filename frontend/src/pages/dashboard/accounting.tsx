@@ -15,6 +15,13 @@ interface AccountingModule {
 
 const ACCOUNTING_MODULES: AccountingModule[] = [
   {
+    id: 'chart-of-accounts',
+    name: 'Chart of Accounts',
+    icon: '📒',
+    description: 'Manage account hierarchy and financial structure',
+    href: '/dashboard/accounting/chart-of-accounts',
+  },
+  {
     id: 'fee-management',
     name: 'Fee Management',
     icon: '💰',
@@ -48,6 +55,13 @@ const ACCOUNTING_MODULES: AccountingModule[] = [
     icon: '📊',
     description: 'Generate financial reports, P&L, and Balance Sheets',
     href: '/dashboard/accounting/financial-reports',
+  },
+  {
+    id: 'audit-trail',
+    name: 'Audit Trail',
+    icon: '📋',
+    description: 'Track all financial activities and system changes',
+    href: '/dashboard/accounting/audit-logs',
   },
 ]
 

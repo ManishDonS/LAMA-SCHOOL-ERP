@@ -215,6 +215,12 @@ export const schoolAPI = {
       },
     })
   },
+  getModules: () => schoolApiClient.get('/api/v1/modules'),
+  toggleModule: (schoolId: string, moduleId: string, active: boolean) =>
+    schoolApiClient.post(`/api/v1/schools/${schoolId}/modules`, {
+      module_id: moduleId,
+      active,
+    }),
 }
 
 // Separate API client for transport service

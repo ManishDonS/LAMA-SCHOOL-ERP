@@ -119,6 +119,12 @@ export const MENU_ITEMS: MenuItem[] = [
     icon: '🌐',
     roles: ['super_admin', 'admin', 'teacher'],
   },
+  {
+    href: '/dashboard/apps',
+    label: 'Apps',
+    icon: '🧩',
+    roles: ['super_admin'],
+  },
 ]
 
 /**
@@ -164,9 +170,38 @@ const getMenuItemsWithPermissions = (): MenuItem[] => {
 /**
  * Get menu items that the user has permission to access
  */
-export const getAccessibleMenuItems = (userRole: UserRole | undefined): MenuItem[] => {
+/**
+ * Get module ID for a given path
+ */
+const getModuleForPath = (path: string): string | null => {
+  if (path.includes('communication')) return 'communication'
+  if (path.includes('website-builder')) return 'website'
+
+  // School related modules (Students, Teachers, Attendance, etc.) and core features
+  // are always visible regardless of active_modules setting
+  return null
+}
+
+/**
+ * Get menu items that the user has permission to access
+ */
+export const getAccessibleMenuItems = (userRole: UserRole | undefined, activeModules?: string[]): MenuItem[] => {
   if (!userRole) return []
-  const menuItems = getMenuItemsWithPermissions()
+  let menuItems = getMenuItemsWithPermissions()
+
+  // Filter by active modules if provided
+  if (activeModules) {
+    menuItems = menuItems.filter((item) => {
+      const module = getModuleForPath(item.href)
+      // If item belongs to a module, check if it's active
+      if (module) {
+        return activeModules.includes(module)
+      }
+      // If not mapped to a module (core feature), always show
+      return true
+    })
+  }
+
   return menuItems.filter((item) => hasPermission(userRole, item.roles))
 }
 

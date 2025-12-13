@@ -80,3 +80,24 @@ export interface ApiError {
   message?: string
   status?: number
 }
+
+export interface Module {
+  id: string
+  name: string
+  description: string
+  category: string
+  icon: string
+}
+
+export interface School {
+  id: string
+  name: string
+  code: string
+  domain: string
+  logo_url: string
+  timezone: string
+  status: string
+  active_modules: string[]
+  created_at: string
+  updated_at: string
+}

@@ -2,8 +2,6 @@ package handlers
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -495,14 +493,4 @@ func (h *SchoolHandler) UploadLogo(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"url": url,
 	})
-}
-
-// generateRandomPassword generates a secure random password
-func generateRandomPassword(length int) string {
-	bytes := make([]byte, length)
-	if _, err := rand.Read(bytes); err != nil {
-		log.Printf("Failed to generate random password: %v\n", err)
-		return "defaultPassword123!" // Fallback
-	}
-	return base64.URLEncoding.EncodeToString(bytes)[:length]
 }

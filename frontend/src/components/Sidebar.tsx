@@ -15,7 +15,9 @@ export default function Sidebar() {
 
   // Use undefined role during SSR to match server output
   const userRole = mounted ? user?.role : undefined
-  const menuItems = getAccessibleMenuItems(userRole)
+  const { activeModules } = useAuthStore()
+
+  const menuItems = getAccessibleMenuItems(userRole, activeModules)
 
   return (
     <aside className="sticky top-[48px] h-[calc(100vh-48px)] w-48 flex-shrink-0 bg-gradient-to-b from-gray-50 to-white shadow-lg border-r border-gray-200 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">

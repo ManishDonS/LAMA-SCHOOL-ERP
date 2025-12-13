@@ -454,6 +454,38 @@ services:
       - school-erp-network
     restart: on-failure
 
+  # Accounting Service
+  accounting-service:
+    build:
+      context: ./services/accounting
+      dockerfile: Dockerfile
+      args:
+        - GOPROXY=https://proxy.golang.org,direct
+    container_name: school-erp-accounting
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    ports:
+      - "8009:8009"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: school_erp
+      NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+      CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
+      PORT: 8009
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      - school-erp-network
+    restart: on-failure
+
   # API Gateway (Optional - future enhancement)
   # nginx:
   #   image: nginx:alpine

@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
 import { User, AuthState } from '../types'
-import { authAPI, teacherAPI, guardianAPI } from '../services/api'
+import { authAPI, teacherAPI, guardianAPI, schoolAPI } from '../services/api'
+
 
 // Helper function to transform API response from snake_case to camelCase
 const transformUserData = (data: any): User => ({
@@ -19,6 +20,9 @@ interface AuthStore extends AuthState {
   setUser: (user: User | null) => void
   setToken: (token: string | null) => void
   setRefreshToken: (token: string | null) => void
+  activeModules: string[]
+  setActiveModules: (modules: string[]) => void
+  fetchActiveModules: () => Promise<void>
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
   login: (email: string, password: string) => Promise<void>
@@ -35,8 +39,11 @@ export const useAuthStore = create<AuthStore>()(
         user: null,
         token: null,
         refreshToken: null,
+        activeModules: [],
         isLoading: false,
         error: null,
+
+        setActiveModules: (modules) => set({ activeModules: modules }),
 
         setUser: (user) => set({ user }),
         setToken: (token) => set({ token }),
@@ -140,18 +147,37 @@ export const useAuthStore = create<AuthStore>()(
               token,
               isLoading: false,
             })
+
+            // Fetch active modules if user has school
+            if (data.school_id) {
+              get().fetchActiveModules()
+            }
+
           } catch (error) {
             localStorage.removeItem('access_token')
             // Refresh token cookie is cleared by backend
             set({ user: null, token: null, isLoading: false })
           }
         },
+
+        fetchActiveModules: async () => {
+          const { user } = get()
+          if (!user?.schoolId) return
+
+          try {
+            const response = await schoolAPI.get(user.schoolId.toString())
+            set({ activeModules: response.data.active_modules || [] })
+          } catch (error) {
+            console.error("Failed to fetch active modules", error)
+          }
+        }
       }),
       {
         name: 'auth-store',
         partialize: (state) => ({
           user: state.user,
           token: state.token,
+          activeModules: state.activeModules,
           // refreshToken: state.refreshToken, // Don't persist refresh token
         }),
       }
