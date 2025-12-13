@@ -28,7 +28,7 @@ type RegisterRequest struct {
 	Password  string `json:"password" validate:"required,min=8"`
 	FirstName string `json:"first_name" validate:"required"`
 	LastName  string `json:"last_name" validate:"required"`
-	SchoolID  int64  `json:"school_id" validate:"required"`
+	SchoolID  string `json:"school_id" validate:"required"`
 	Role      string `json:"role" validate:"required,oneof=admin teacher student parent staff"`
 }
 
@@ -42,12 +42,12 @@ type RefreshTokenRequest struct {
 }
 
 type UserResponse struct {
-	ID        int64     `json:"id"`
+	ID        string    `json:"id"`
 	Email     string    `json:"email"`
 	FirstName string    `json:"first_name"`
 	LastName  string    `json:"last_name"`
 	Role      string    `json:"role"`
-	SchoolID  int64     `json:"school_id"`
+	SchoolID  string    `json:"school_id"`
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -88,7 +88,7 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	}
 
 	// Insert user
-	var userID int64
+	var userID string
 	err = h.db.QueryRow(
 		c.Context(),
 		`INSERT INTO users (school_id, email, password_hash, first_name, last_name, role, status)
@@ -399,7 +399,7 @@ func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
 // @Router /me [get]
 func (h *AuthHandler) GetMe(c *fiber.Ctx) error {
 	// Extract user from context (set by middleware)
-	userID, ok := c.Locals("user_id").(int64)
+	userID, ok := c.Locals("user_id").(string)
 	if !ok {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"error": "User not authenticated",
@@ -448,7 +448,7 @@ func (h *AuthHandler) GetMe(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Router /logout [post]
 func (h *AuthHandler) Logout(c *fiber.Ctx) error {
-	userID, ok := c.Locals("user_id").(int64)
+	userID, ok := c.Locals("user_id").(string)
 	if !ok {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"error": "User not authenticated",
@@ -495,7 +495,7 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	})
 }
 
-func (h *AuthHandler) storeRefreshToken(ctx context.Context, userID int64, token string) error {
+func (h *AuthHandler) storeRefreshToken(ctx context.Context, userID string, token string) error {
 	expiresAt := time.Now().Add(h.cfg.RefreshTokenExpiry)
 	_, err := h.db.Exec(
 		ctx,
@@ -505,7 +505,7 @@ func (h *AuthHandler) storeRefreshToken(ctx context.Context, userID int64, token
 	return err
 }
 
-func (h *AuthHandler) logAudit(ctx context.Context, userID int64, action, resource, ipAddress string) error {
+func (h *AuthHandler) logAudit(ctx context.Context, userID string, action, resource, ipAddress string) error {
 	_, err := h.db.Exec(
 		ctx,
 		`INSERT INTO audit_logs (user_id, action, resource, ip_address) VALUES ($1, $2, $3, $4)`,
@@ -518,13 +518,12 @@ func (h *AuthHandler) logAudit(ctx context.Context, userID int64, action, resour
 		// Log the error for monitoring using structured logger
 		logger.Logger.Error().
 			Err(err).
-			Int64("user_id", userID).
+			Str("user_id", userID).
 			Str("action", action).
 			Str("resource", resource).
 			Str("ip", ipAddress).
 			Msg("CRITICAL: Audit log database insert failed")
 
-		// Also log as security event
 		logger.SecurityLog("audit_failure", userID, ipAddress, map[string]interface{}{
 			"action":   action,
 			"resource": resource,

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -27,7 +28,7 @@ type CreateStudentRequest struct {
 	Password    string `json:"password"`
 	DateOfBirth string `json:"date_of_birth"`
 	ClassID     string `json:"class_id"`
-	SchoolID    int64  `json:"school_id"`
+	SchoolID    string `json:"school_id"`
 }
 
 type EnrollmentRequest struct {
@@ -64,10 +65,13 @@ func (h *StudentHandler) ListStudents(c *fiber.Ctx) error {
 // @Failure 500 {object} map[string]interface{}
 // @Router /students [post]
 func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
+	log.Println("DEBUG: Entered CreateStudent Handler")
 	var req CreateStudentRequest
 	if err := c.BodyParser(&req); err != nil {
+		log.Printf("BodyParser failed: %v", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid request body",
+			"error":   "Invalid request body (DEBUG)",
+			"details": err.Error(),
 		})
 	}
 
@@ -108,7 +112,7 @@ func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
 
 	var authResp struct {
 		Data struct {
-			UserID int64 `json:"user_id"`
+			UserID string `json:"user_id"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
@@ -122,8 +126,8 @@ func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
 	query := `
 		INSERT INTO students (
 			school_id, user_id, first_name, last_name, email, 
-			date_of_birth, status, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+			roll_number, class, admission_date, date_of_birth, status, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
 		RETURNING id
 	`
 
@@ -135,9 +139,18 @@ func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
 		}
 	}
 
+	log.Printf("DEBUG: Attempting Insert with SchoolID=%s, UserID=%s", req.SchoolID, userID)
+
+	// Generate Roll Number
+	rollNumber := fmt.Sprintf("STU-%d", time.Now().Unix())
+	admissionDate := time.Now()
+
 	var studentID int64
 	err = h.db.QueryRow(ctx, query,
 		req.SchoolID, userID, req.FirstName, req.LastName, req.Email,
+		rollNumber,    // roll_number
+		req.ClassID,   // class (mapping ClassID to class column for now)
+		admissionDate, // admission_date
 		dob, "active",
 	).Scan(&studentID)
 

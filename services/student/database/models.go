@@ -4,8 +4,8 @@ import "time"
 
 type Student struct {
 	ID              int64      `json:"id"`
-	SchoolID        int64      `json:"school_id"`
-	UserID          int64      `json:"user_id"`
+	SchoolID        string     `json:"school_id"`
+	UserID          string     `json:"user_id"`
 	FirstName       string     `json:"first_name"`
 	LastName        string     `json:"last_name"`
 	DateOfBirth     *time.Time `json:"date_of_birth"`
@@ -233,7 +233,7 @@ type Enrollment struct {
 	ID        int64     `json:"id"`
 	StudentID int64     `json:"student_id"`
 	ClassID   int64     `json:"class_id"`
-	SchoolID  int64     `json:"school_id"`
+	SchoolID  string    `json:"school_id"`
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
