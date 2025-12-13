@@ -4,12 +4,13 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"school-erp/student/config"
 	"school-erp/student/handlers"
 	"school-erp/student/middleware"
 )
 
-func SetupRoutes(app *fiber.App, db *pgxpool.Pool) {
-	h := handlers.NewStudentHandler(db)
+func SetupRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config) {
+	h := handlers.NewStudentHandler(db, cfg)
 
 	api := app.Group("/api/v1")
 

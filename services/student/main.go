@@ -79,7 +79,7 @@ func main() {
 		})
 	})
 
-	routes.SetupRoutes(app, db)
+	routes.SetupRoutes(app, db, cfg)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "healthy", "service": "student"})

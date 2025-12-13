@@ -54,6 +54,7 @@ interface Student {
   status: string
   username: string
   notes: string
+  password?: string
 }
 
 const DEFAULT_STUDENTS = [
@@ -343,6 +344,19 @@ export default function StudentsPage() {
   const [editingStudentId, setEditingStudentId] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState('basic')
   const [customGuardianRelation, setCustomGuardianRelation] = useState('')
+  const [activeDropdownId, setActiveDropdownId] = useState<number | null>(null)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [passwordForm, setPasswordForm] = useState({ id: 0, password: '' })
+
+  // Search & Filter State
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
+  const [filters, setFilters] = useState({
+    class: '',
+    section: '',
+    status: '',
+    gender: ''
+  })
 
   const menuItems = [
     { href: '/dashboard', label: 'Dashboard', icon: '📊' },
@@ -402,6 +416,7 @@ export default function StudentsPage() {
     status: 'Active',
     username: '',
     notes: '',
+    password: '',
   }
 
   const [formData, setFormData] = useState<Student>(emptyStudent)
@@ -504,6 +519,51 @@ export default function StudentsPage() {
     handleCloseEditModal()
   }
 
+  const handleChangePasswordClick = (studentId: number) => {
+    setPasswordForm({ id: studentId, password: '' })
+    setShowPasswordModal(true)
+    setActiveDropdownId(null)
+  }
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    // In a real app, you would call the API to update the password here
+    alert(`Password updated for student ID: ${passwordForm.id}`)
+    setShowPasswordModal(false)
+  }
+
+  const handleLoginAsStudent = (student: Student) => {
+    // Redirect to login page with email pre-filled
+    setActiveDropdownId(null)
+    router.push({
+      pathname: '/auth/login',
+      query: { email: student.email }
+    })
+  }
+
+  // Filter Logic
+  const filteredStudents = students.filter(student => {
+    const query = searchQuery.toLowerCase()
+    const matchesSearch =
+      student.firstName.toLowerCase().includes(query) ||
+      student.lastName.toLowerCase().includes(query) ||
+      student.email.toLowerCase().includes(query) ||
+      student.studentId.toLowerCase().includes(query) ||
+      student.primaryPhone.includes(query)
+
+    const matchesClass = filters.class ? student.currentClass === filters.class : true
+    const matchesSection = filters.section ? student.section === filters.section : true
+    const matchesStatus = filters.status ? student.status === filters.status : true
+    const matchesGender = filters.gender ? student.gender === filters.gender : true
+
+    return matchesSearch && matchesClass && matchesSection && matchesStatus && matchesGender
+  })
+
+  const clearFilters = () => {
+    setSearchQuery('')
+    setFilters({ class: '', section: '', status: '', gender: '' })
+  }
+
   // Load from localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -546,18 +606,131 @@ export default function StudentsPage() {
           </div>
 
           {/* Add Button */}
-          <div className="mb-6 flex justify-between items-center">
-            <button
-              onClick={handleAddClick}
-              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
-            >
-              <span className="text-xl">+</span>
-              Add New Student
-            </button>
+          {/* Search & Actions Bar */}
+          <div className="mb-6 space-y-4">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div className="flex-1 w-full md:w-auto relative group">
+                <input
+                  type="text"
+                  placeholder="Search by Name, ID, Email, or Phone..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full md:w-96 px-5 py-3 pl-12 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 bg-white/50 backdrop-blur-sm shadow-sm hover:shadow-md"
+                />
+                <div className="absolute left-4 top-3.5 text-gray-400 group-focus-within:text-blue-500 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+              </div>
+
+              <div className="flex gap-3 w-full md:w-auto">
+                <button
+                  onClick={() => setShowFilters(!showFilters)}
+                  className={`px-4 py-3 rounded-xl border font-medium flex items-center gap-2 transition-all duration-200 ${showFilters
+                    ? 'bg-blue-50 border-blue-200 text-blue-700'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                  </svg>
+                  Filters
+                  {(filters.class || filters.section || filters.status || filters.gender) && (
+                    <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                  )}
+                </button>
+
+                <button
+                  onClick={handleAddClick}
+                  className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center gap-2 whitespace-nowrap"
+                >
+                  <span className="text-xl">+</span>
+                  Add Student
+                </button>
+              </div>
+            </div>
+
+            {/* Advanced Filters Panel */}
+            {showFilters && (
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 animation-fade-in-down">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Class</label>
+                    <select
+                      value={filters.class}
+                      onChange={(e) => setFilters({ ...filters, class: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 bg-gray-50/50"
+                    >
+                      <option value="">All Classes</option>
+                      {/* Unique classes from students */}
+                      {[...new Set(students.map(s => s.currentClass))].sort().map(cls => (
+                        <option key={cls} value={cls}>{cls}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Section</label>
+                    <select
+                      value={filters.section}
+                      onChange={(e) => setFilters({ ...filters, section: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 bg-gray-50/50"
+                    >
+                      <option value="">All Sections</option>
+                      {[...new Set(students.map(s => s.section))].filter(Boolean).sort().map(sec => (
+                        <option key={sec} value={sec}>{sec}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Status</label>
+                    <select
+                      value={filters.status}
+                      onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 bg-gray-50/50"
+                    >
+                      <option value="">All Statuses</option>
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                      <option value="Graduated">Graduated</option>
+                      <option value="Left">Left</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Gender</label>
+                    <select
+                      value={filters.gender}
+                      onChange={(e) => setFilters({ ...filters, gender: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 bg-gray-50/50"
+                    >
+                      <option value="">All Genders</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex justify-end mt-4 pt-4 border-t border-gray-50">
+                  <button
+                    onClick={clearFilters}
+                    className="text-sm font-semibold text-red-500 hover:text-red-600 flex items-center gap-1"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Clear Filters
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Table Container */}
-          <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
+          <div className="bg-white rounded-2xl shadow-xl overflow-visible border border-gray-100">
             <table className="w-full">
               <thead>
                 <tr className="bg-gradient-to-r from-blue-600 to-blue-700 text-white">
@@ -570,15 +743,23 @@ export default function StudentsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {students.length === 0 ? (
+                {filteredStudents.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
-                      <p className="text-lg font-medium">No students found</p>
-                      <p className="text-sm">Click "Add New Student" to add one</p>
+                      <div className="flex flex-col items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        <p className="text-lg font-medium">No students match your search</p>
+                        <p className="text-sm text-gray-400 mt-1">Try adjusting keywords or filters</p>
+                        <button onClick={clearFilters} className="mt-4 text-blue-600 font-semibold hover:underline">
+                          Clear all filters
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ) : (
-                  students.map((student) => (
+                  filteredStudents.map((student) => (
                     <tr key={student.id} className="hover:bg-blue-50 transition-colors duration-150 border-b border-gray-100">
                       <td className="px-6 py-4">
                         <Link href={`/dashboard/students/${student.id}`}>
@@ -610,20 +791,55 @@ export default function StudentsPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex gap-2">
+                        <div className="relative">
                           <button
-                            onClick={() => handleEditClick(student)}
-                            className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-semibold transition-colors duration-150"
+                            onClick={() => setActiveDropdownId(activeDropdownId === student.id ? null : student.id)}
+                            className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
                           >
-                            Edit
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                            </svg>
                           </button>
-                          <button
-                            onClick={() => handleDelete(student.id)}
-                            className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold transition-colors duration-150"
-                          >
-                            Delete
-                          </button>
+
+                          {activeDropdownId === student.id && (
+                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl z-50 border border-gray-100 overflow-hidden animation-fade-in-up">
+                              <div className="py-1">
+                                <button
+                                  onClick={() => { handleEditClick(student); setActiveDropdownId(null) }}
+                                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2"
+                                >
+                                  <span>✏️</span> Edit Details
+                                </button>
+                                <button
+                                  onClick={() => handleChangePasswordClick(student.id)}
+                                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2"
+                                >
+                                  <span>🔑</span> Change Password
+                                </button>
+                                <button
+                                  onClick={() => handleLoginAsStudent(student)}
+                                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2"
+                                >
+                                  <span>👤</span> Login as Student
+                                </button>
+                                <div className="border-t border-gray-100 my-1"></div>
+                                <button
+                                  onClick={() => { handleDelete(student.id); setActiveDropdownId(null) }}
+                                  className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                >
+                                  <span>🗑️</span> Delete
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
+                        {/* Overlay to close dropdown when clicking outside */}
+                        {activeDropdownId === student.id && (
+                          <div
+                            className="fixed inset-0 z-40"
+                            onClick={() => setActiveDropdownId(null)}
+                          ></div>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -786,6 +1002,20 @@ export default function StudentsPage() {
                           value={formData.rollNumber}
                           onChange={handleChange}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Password *
+                        </label>
+                        <input
+                          type="password"
+                          name="password"
+                          value={formData.password}
+                          onChange={handleChange}
+                          required={!editingStudentId} // Required only when creating new student
+                          className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:ring-offset-0 bg-white hover:border-gray-400 transition-colors"
+                          placeholder={editingStudentId ? "Leave blank to keep current" : "Enter password"}
                         />
                       </div>
                     </div>

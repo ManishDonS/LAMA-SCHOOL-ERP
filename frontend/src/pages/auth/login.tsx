@@ -23,6 +23,12 @@ export default function LoginPage() {
     fetchSchools()
   }, [])
 
+  useEffect(() => {
+    if (router.isReady && router.query.email) {
+      setFormData(prev => ({ ...prev, email: router.query.email as string }))
+    }
+  }, [router.isReady, router.query.email])
+
   const fetchSchools = async () => {
     try {
       const response = await schoolAPI.list({ limit: 100, offset: 0 })
@@ -151,8 +157,8 @@ export default function LoginPage() {
                     aria-invalid={validationErrors.schoolId ? 'true' : 'false'}
                     aria-describedby={validationErrors.schoolId ? 'school-error' : undefined}
                     className={`w-full px-4 py-2.5 border rounded-lg text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${validationErrors.schoolId
-                        ? 'border-red-300 bg-red-50'
-                        : 'border-gray-300 bg-white hover:border-gray-400'
+                      ? 'border-red-300 bg-red-50'
+                      : 'border-gray-300 bg-white hover:border-gray-400'
                       }`}
                   >
                     <option value="">Choose your school...</option>
@@ -189,8 +195,8 @@ export default function LoginPage() {
                   aria-invalid={validationErrors.email ? 'true' : 'false'}
                   aria-describedby={validationErrors.email ? 'email-error' : undefined}
                   className={`w-full px-4 py-2.5 border rounded-lg text-gray-900 placeholder-gray-500 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${validationErrors.email
-                      ? 'border-red-300 bg-red-50'
-                      : 'border-gray-300 bg-white hover:border-gray-400'
+                    ? 'border-red-300 bg-red-50'
+                    : 'border-gray-300 bg-white hover:border-gray-400'
                     }`}
                   placeholder="you@school.com"
                 />
@@ -231,8 +237,8 @@ export default function LoginPage() {
                   aria-invalid={validationErrors.password ? 'true' : 'false'}
                   aria-describedby={validationErrors.password ? 'password-error' : undefined}
                   className={`w-full px-4 py-2.5 border rounded-lg text-gray-900 placeholder-gray-500 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${validationErrors.password
-                      ? 'border-red-300 bg-red-50'
-                      : 'border-gray-300 bg-white hover:border-gray-400'
+                    ? 'border-red-300 bg-red-50'
+                    : 'border-gray-300 bg-white hover:border-gray-400'
                     }`}
                   placeholder="••••••••"
                 />
