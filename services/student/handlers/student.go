@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"student-service/database"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"student-service/database"
 )
 
 type StudentHandler struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -19,9 +20,9 @@ import (
 
 // SchoolHandler handles school-related requests
 type SchoolHandler struct {
-	db             *pgxpool.Pool
-	tenantManager  *tenant.TenantManager
-	validator      *validator.Validate
+	db            *pgxpool.Pool
+	tenantManager *tenant.TenantManager
+	validator     *validator.Validate
 }
 
 // NewSchoolHandler creates a new school handler
@@ -35,34 +36,46 @@ func NewSchoolHandler(db *pgxpool.Pool, tm *tenant.TenantManager) *SchoolHandler
 
 // School represents the school model in response
 type School struct {
-	ID        int64     `json:"id" db:"id"`
-	Name      string    `json:"name" db:"name"`
-	Code      string    `json:"code" db:"code"`
-	DBName    string    `json:"db_name" db:"db_name"`
-	Domain    string    `json:"domain" db:"domain"`
-	LogoURL   string    `json:"logo_url" db:"logo_url"`
-	Timezone  string    `json:"timezone" db:"timezone"`
-	Status    string    `json:"status" db:"status"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+	ID            string    `json:"id" db:"id"`
+	Name          string    `json:"name" db:"name"`
+	Email         string    `json:"email" db:"email"`
+	Phone         string    `json:"phone" db:"phone"`
+	Address       string    `json:"address" db:"address"`
+	City          string    `json:"city" db:"city"`
+	State         string    `json:"state" db:"state"`
+	Country       string    `json:"country" db:"country"`
+	Pincode       string    `json:"pincode" db:"pincode"`
+	Website       string    `json:"website" db:"website"`
+	Status        string    `json:"status" db:"status"`
+	ActiveModules []string  `json:"active_modules" db:"active_modules"`
+	CreatedAt     time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // CreateSchoolRequest is the request body for creating a school
 type CreateSchoolRequest struct {
-	Name     string `json:"name" validate:"required,min=2,max=255"`
-	Code     string `json:"code" validate:"required,min=2,max=20"`
-	Domain   string `json:"domain" validate:"required"`
-	LogoURL  string `json:"logo_url" validate:"omitempty"`
-	Timezone string `json:"timezone" validate:"required"`
-	DBUser   string `json:"db_user" validate:"omitempty"`
-	DBPassword string `json:"db_password" validate:"omitempty"`
+	Name    string `json:"name" validate:"required,min=2,max=255"`
+	Email   string `json:"email" validate:"omitempty,email"`
+	Phone   string `json:"phone" validate:"omitempty"`
+	Address string `json:"address" validate:"omitempty"`
+	City    string `json:"city" validate:"omitempty"`
+	State   string `json:"state" validate:"omitempty"`
+	Country string `json:"country" validate:"omitempty"`
+	Pincode string `json:"pincode" validate:"omitempty"`
+	Website string `json:"website" validate:"omitempty"`
 }
 
 // UpdateSchoolRequest is the request body for updating a school
 type UpdateSchoolRequest struct {
 	Name    string `json:"name" validate:"omitempty,min=2,max=255"`
-	Domain  string `json:"domain" validate:"omitempty"`
-	LogoURL string `json:"logo_url" validate:"omitempty"`
+	Email   string `json:"email" validate:"omitempty,email"`
+	Phone   string `json:"phone" validate:"omitempty"`
+	Address string `json:"address" validate:"omitempty"`
+	City    string `json:"city" validate:"omitempty"`
+	State   string `json:"state" validate:"omitempty"`
+	Country string `json:"country" validate:"omitempty"`
+	Pincode string `json:"pincode" validate:"omitempty"`
+	Website string `json:"website" validate:"omitempty"`
 	Status  string `json:"status" validate:"omitempty,oneof=active inactive suspended"`
 }
 
@@ -86,95 +99,54 @@ func (h *SchoolHandler) CreateSchool(c *fiber.Ctx) error {
 
 	ctx := context.Background()
 
-	// Auto-generate database credentials if not provided
-	dbUser := req.DBUser
-	dbPassword := req.DBPassword
-
-	if dbUser == "" {
-		dbUser = fmt.Sprintf("school_%s_user", req.Code)
-	}
-
-	if dbPassword == "" {
-		// Generate a secure random password (16 characters)
-		dbPassword = generateRandomPassword(16)
-	}
-
-	// Generate database name
-	dbName := fmt.Sprintf("school_%s_db", req.Code)
-
-	// Encrypt password
-	encryptedPassword, err := h.tenantManager.EncryptPassword(dbPassword)
-	if err != nil {
-		log.Printf("Failed to encrypt password: %v\n", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to process school setup",
-		})
-	}
-
-	// Create tenant database
-	if err := h.tenantManager.CreateTenantDatabase(ctx, h.db, req.Code, dbName, dbUser, dbPassword); err != nil {
-		log.Printf("Failed to create tenant database: %v\n", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to create database",
-		})
-	}
-
-	// Get tenant connection and run migrations
-	tenantDB, err := h.tenantManager.GetConnection(ctx, req.Code, "postgres", 5432, dbName, dbUser, encryptedPassword)
-	if err != nil {
-		log.Printf("Failed to get tenant connection: %v\n", err)
-		// Try to drop the database since migrations failed
-		h.tenantManager.DropTenantDatabase(ctx, h.db, req.Code, dbName)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to connect to database",
-		})
-	}
-
-	// Run tenant migrations
-	if err := RunTenantMigrations(ctx, tenantDB); err != nil {
-		log.Printf("Failed to run tenant migrations: %v\n", err)
-		h.tenantManager.DropTenantDatabase(ctx, h.db, req.Code, dbName)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to initialize database schema",
-		})
-	}
-
 	// Insert school record in main database
 	query := `
-	INSERT INTO schools (name, code, db_name, db_user, db_password, db_host, db_port, domain, logo_url, timezone, status)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-	RETURNING id, name, code, db_name, domain, logo_url, timezone, status, created_at, updated_at
+	INSERT INTO schools (name, email, phone, address, city, state, country, pincode, website, status, active_modules)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, '[]'::jsonb)
+	RETURNING id, name, COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''),
+	          COALESCE(city, ''), COALESCE(state, ''), COALESCE(country, ''),
+	          COALESCE(pincode, ''), COALESCE(website, ''), status, active_modules, created_at, updated_at
 	`
 
 	var school School
-	err = h.db.QueryRow(ctx, query,
+	var activeModulesJSON []byte
+	err := h.db.QueryRow(ctx, query,
 		req.Name,
-		req.Code,
-		dbName,
-		dbUser,
-		encryptedPassword,
-		"postgres",
-		5432,
-		req.Domain,
-		req.LogoURL,
-		req.Timezone,
+		req.Email,
+		req.Phone,
+		req.Address,
+		req.City,
+		req.State,
+		req.Country,
+		req.Pincode,
+		req.Website,
 		"active",
 	).Scan(
 		&school.ID,
 		&school.Name,
-		&school.Code,
-		&school.DBName,
-		&school.Domain,
-		&school.LogoURL,
-		&school.Timezone,
+		&school.Email,
+		&school.Phone,
+		&school.Address,
+		&school.City,
+		&school.State,
+		&school.Country,
+		&school.Pincode,
+		&school.Website,
 		&school.Status,
+		&activeModulesJSON,
 		&school.CreatedAt,
 		&school.UpdatedAt,
 	)
 
+	// Parse JSONB to slice
+	if len(activeModulesJSON) > 0 {
+		json.Unmarshal(activeModulesJSON, &school.ActiveModules)
+	} else {
+		school.ActiveModules = []string{}
+	}
+
 	if err != nil {
 		log.Printf("Failed to insert school: %v\n", err)
-		h.tenantManager.DropTenantDatabase(ctx, h.db, req.Code, dbName)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to save school record",
 		})
@@ -197,7 +169,9 @@ func (h *SchoolHandler) GetSchools(c *fiber.Ctx) error {
 	}
 
 	query := `
-	SELECT id, name, code, db_name, domain, COALESCE(logo_url, ''), timezone, status, created_at, updated_at
+	SELECT id, name, COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''), 
+	       COALESCE(city, ''), COALESCE(state, ''), COALESCE(country, ''), 
+	       COALESCE(pincode, ''), COALESCE(website, ''), status, active_modules, created_at, updated_at
 	FROM schools
 	WHERE status != 'suspended'
 	ORDER BY created_at DESC
@@ -216,20 +190,30 @@ func (h *SchoolHandler) GetSchools(c *fiber.Ctx) error {
 	var schools []School
 	for rows.Next() {
 		var school School
+		var activeModulesJSON []byte
 		if err := rows.Scan(
 			&school.ID,
 			&school.Name,
-			&school.Code,
-			&school.DBName,
-			&school.Domain,
-			&school.LogoURL,
-			&school.Timezone,
+			&school.Email,
+			&school.Phone,
+			&school.Address,
+			&school.City,
+			&school.State,
+			&school.Country,
+			&school.Pincode,
+			&school.Website,
 			&school.Status,
+			&activeModulesJSON,
 			&school.CreatedAt,
 			&school.UpdatedAt,
 		); err != nil {
 			log.Printf("Failed to scan school: %v\n", err)
 			continue
+		}
+		if len(activeModulesJSON) > 0 {
+			json.Unmarshal(activeModulesJSON, &school.ActiveModules)
+		} else {
+			school.ActiveModules = []string{}
 		}
 		schools = append(schools, school)
 	}
@@ -249,24 +233,37 @@ func (h *SchoolHandler) GetSchool(c *fiber.Ctx) error {
 	ctx := context.Background()
 
 	query := `
-	SELECT id, name, code, db_name, domain, COALESCE(logo_url, ''), timezone, status, created_at, updated_at
+	SELECT id, name, COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''), 
+	       COALESCE(city, ''), COALESCE(state, ''), COALESCE(country, ''), 
+	       COALESCE(pincode, ''), COALESCE(website, ''), status, active_modules, created_at, updated_at
 	FROM schools
 	WHERE id = $1
 	`
 
 	var school School
+	var activeModulesJSON []byte
 	err := h.db.QueryRow(ctx, query, schoolID).Scan(
 		&school.ID,
 		&school.Name,
-		&school.Code,
-		&school.DBName,
-		&school.Domain,
-		&school.LogoURL,
-		&school.Timezone,
+		&school.Email,
+		&school.Phone,
+		&school.Address,
+		&school.City,
+		&school.State,
+		&school.Country,
+		&school.Pincode,
+		&school.Website,
 		&school.Status,
+		&activeModulesJSON,
 		&school.CreatedAt,
 		&school.UpdatedAt,
 	)
+
+	if len(activeModulesJSON) > 0 {
+		json.Unmarshal(activeModulesJSON, &school.ActiveModules)
+	} else {
+		school.ActiveModules = []string{}
+	}
 
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -300,14 +297,44 @@ func (h *SchoolHandler) UpdateSchool(c *fiber.Ctx) error {
 		args = append(args, req.Name)
 		argIndex++
 	}
-	if req.Domain != "" {
-		updateFields += fmt.Sprintf(", domain = $%d", argIndex)
-		args = append(args, req.Domain)
+	if req.Email != "" {
+		updateFields += fmt.Sprintf(", email = $%d", argIndex)
+		args = append(args, req.Email)
 		argIndex++
 	}
-	if req.LogoURL != "" {
-		updateFields += fmt.Sprintf(", logo_url = $%d", argIndex)
-		args = append(args, req.LogoURL)
+	if req.Phone != "" {
+		updateFields += fmt.Sprintf(", phone = $%d", argIndex)
+		args = append(args, req.Phone)
+		argIndex++
+	}
+	if req.Address != "" {
+		updateFields += fmt.Sprintf(", address = $%d", argIndex)
+		args = append(args, req.Address)
+		argIndex++
+	}
+	if req.City != "" {
+		updateFields += fmt.Sprintf(", city = $%d", argIndex)
+		args = append(args, req.City)
+		argIndex++
+	}
+	if req.State != "" {
+		updateFields += fmt.Sprintf(", state = $%d", argIndex)
+		args = append(args, req.State)
+		argIndex++
+	}
+	if req.Country != "" {
+		updateFields += fmt.Sprintf(", country = $%d", argIndex)
+		args = append(args, req.Country)
+		argIndex++
+	}
+	if req.Pincode != "" {
+		updateFields += fmt.Sprintf(", pincode = $%d", argIndex)
+		args = append(args, req.Pincode)
+		argIndex++
+	}
+	if req.Website != "" {
+		updateFields += fmt.Sprintf(", website = $%d", argIndex)
+		args = append(args, req.Website)
 		argIndex++
 	}
 	if req.Status != "" {
@@ -326,22 +353,35 @@ func (h *SchoolHandler) UpdateSchool(c *fiber.Ctx) error {
 	UPDATE schools
 	SET updated_at = CURRENT_TIMESTAMP %s
 	WHERE id = $1
-	RETURNING id, name, code, db_name, domain, logo_url, timezone, status, created_at, updated_at
+	RETURNING id, name, COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''),
+	          COALESCE(city, ''), COALESCE(state, ''), COALESCE(country, ''),
+	          COALESCE(pincode, ''), COALESCE(website, ''), status, active_modules, created_at, updated_at
 	`, updateFields)
 
 	var school School
+	var activeModulesJSON []byte
 	err := h.db.QueryRow(ctx, query, args...).Scan(
 		&school.ID,
 		&school.Name,
-		&school.Code,
-		&school.DBName,
-		&school.Domain,
-		&school.LogoURL,
-		&school.Timezone,
+		&school.Email,
+		&school.Phone,
+		&school.Address,
+		&school.City,
+		&school.State,
+		&school.Country,
+		&school.Pincode,
+		&school.Website,
 		&school.Status,
+		&activeModulesJSON,
 		&school.CreatedAt,
 		&school.UpdatedAt,
 	)
+
+	if len(activeModulesJSON) > 0 {
+		json.Unmarshal(activeModulesJSON, &school.ActiveModules)
+	} else {
+		school.ActiveModules = []string{}
+	}
 
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -357,31 +397,22 @@ func (h *SchoolHandler) DeleteSchool(c *fiber.Ctx) error {
 	schoolID := c.Params("id")
 	ctx := context.Background()
 
-	// Get school info first
-	var code, dbName string
-	query := `SELECT code, db_name FROM schools WHERE id = $1`
-	err := h.db.QueryRow(ctx, query, schoolID).Scan(&code, &dbName)
-	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "School not found",
-		})
-	}
-
 	// Delete school record
 	deleteQuery := `DELETE FROM schools WHERE id = $1`
-	if _, err := h.db.Exec(ctx, deleteQuery, schoolID); err != nil {
+	result, err := h.db.Exec(ctx, deleteQuery, schoolID)
+	if err != nil {
 		log.Printf("Failed to delete school: %v\n", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to delete school",
 		})
 	}
 
-	// Drop tenant database (async, don't wait)
-	go func() {
-		if err := h.tenantManager.DropTenantDatabase(context.Background(), h.db, code, dbName); err != nil {
-			log.Printf("Failed to drop tenant database: %v\n", err)
-		}
-	}()
+	// Check if any rows were affected
+	if result.RowsAffected() == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "School not found",
+		})
+	}
 
 	return c.JSON(fiber.Map{
 		"message": "School deleted successfully",
