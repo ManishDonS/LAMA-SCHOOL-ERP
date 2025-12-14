@@ -54,7 +54,7 @@ func WithContext(requestID, method, path, ip string) zerolog.Logger {
 }
 
 // AuditLog logs security-critical events
-func AuditLog(userID int64, action, resource, ipAddress string, success bool, err error) {
+func AuditLog(userID string, action, resource, ipAddress string, success bool, err error) {
 	event := Logger.Info()
 	if err != nil || !success {
 		event = Logger.Error().Err(err)
@@ -62,7 +62,7 @@ func AuditLog(userID int64, action, resource, ipAddress string, success bool, er
 
 	event.
 		Str("type", "audit").
-		Int64("user_id", userID).
+		Str("user_id", userID).
 		Str("action", action).
 		Str("resource", resource).
 		Str("ip", ipAddress).
@@ -79,11 +79,11 @@ func ErrorLog(component string, err error, msg string) {
 }
 
 // SecurityLog logs security-related events
-func SecurityLog(event string, userID int64, ip string, details map[string]interface{}) {
+func SecurityLog(event string, userID string, ip string, details map[string]interface{}) {
 	logger := Logger.Warn().
 		Str("type", "security").
 		Str("event", event).
-		Int64("user_id", userID).
+		Str("user_id", userID).
 		Str("ip", ip)
 
 	if details != nil {

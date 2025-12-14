@@ -57,7 +57,7 @@ func (rl *RateLimiter) Allow(ip string) bool {
 
 	// Check if IP is temporarily blocked
 	if now.Before(visitor.blockedUntil) {
-		logger.SecurityLog("rate_limit_blocked", 0, ip, map[string]interface{}{
+		logger.SecurityLog("rate_limit_blocked", "", ip, map[string]interface{}{
 			"blocked_until": visitor.blockedUntil,
 		})
 		return false
@@ -77,7 +77,7 @@ func (rl *RateLimiter) Allow(ip string) bool {
 		// Block for 15 minutes after exceeding limit
 		visitor.blockedUntil = now.Add(15 * time.Minute)
 
-		logger.SecurityLog("rate_limit_exceeded", 0, ip, map[string]interface{}{
+		logger.SecurityLog("rate_limit_exceeded", "", ip, map[string]interface{}{
 			"requests": len(validRequests),
 			"limit":    rl.limit,
 			"window":   rl.window.String(),

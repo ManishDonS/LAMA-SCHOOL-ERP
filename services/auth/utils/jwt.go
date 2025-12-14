@@ -10,21 +10,21 @@ import (
 )
 
 type JWTClaims struct {
-	UserID   int64  `json:"user_id"`
+	UserID   string `json:"user_id"`
 	Email    string `json:"email"`
 	Role     string `json:"role"`
-	SchoolID int64  `json:"school_id"`
+	SchoolID string `json:"school_id"`
 	jwt.RegisteredClaims
 }
 
 type TokenResponse struct {
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	ExpiresIn    int64     `json:"expires_in"`
-	TokenType    string    `json:"token_type"`
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int64  `json:"expires_in"`
+	TokenType    string `json:"token_type"`
 }
 
-func GenerateTokens(cfg *config.Config, userID int64, email, role string, schoolID int64) (*TokenResponse, error) {
+func GenerateTokens(cfg *config.Config, userID string, email, role string, schoolID string) (*TokenResponse, error) {
 	// Generate Access Token
 	accessToken, err := generateAccessToken(cfg, userID, email, role, schoolID)
 	if err != nil {
@@ -45,7 +45,7 @@ func GenerateTokens(cfg *config.Config, userID int64, email, role string, school
 	}, nil
 }
 
-func generateAccessToken(cfg *config.Config, userID int64, email, role string, schoolID int64) (string, error) {
+func generateAccessToken(cfg *config.Config, userID string, email, role string, schoolID string) (string, error) {
 	claims := JWTClaims{
 		UserID:   userID,
 		Email:    email,
@@ -62,11 +62,11 @@ func generateAccessToken(cfg *config.Config, userID int64, email, role string, s
 	return token.SignedString([]byte(cfg.JWTSecret))
 }
 
-func generateRefreshToken(cfg *config.Config, userID int64) (string, error) {
+func generateRefreshToken(cfg *config.Config, userID string) (string, error) {
 	claims := jwt.RegisteredClaims{
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(cfg.RefreshTokenExpiry)),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		Subject:   fmt.Sprintf("%d", userID),
+		Subject:   userID,
 		Issuer:    "school-erp-auth",
 	}
 
