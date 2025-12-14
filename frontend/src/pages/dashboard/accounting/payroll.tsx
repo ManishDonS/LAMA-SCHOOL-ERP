@@ -266,7 +266,7 @@ export default function PayrollPage() {
                 <Sidebar />
 
                 <main className="flex-1 py-8 px-6">
-                    <div className="max-w-7xl mx-auto">
+                    <div className="w-full">
                         {/* Header */}
                         <div className="mb-8">
                             <h2 className="text-3xl font-bold text-gray-900 mb-2">Payroll Management</h2>

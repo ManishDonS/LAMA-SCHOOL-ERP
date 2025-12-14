@@ -95,7 +95,7 @@ export default function AccountingPage() {
 
         {/* Main Content Area */}
         <main className="flex-1 py-8 px-6">
-          <div className="max-w-6xl mx-auto">
+          <div className="w-full">
             {/* Header */}
             <div className="mb-8">
               <h2 className="text-3xl font-bold text-gray-900 mb-2">Accounting Dashboard</h2>
@@ -144,7 +144,7 @@ export default function AccountingPage() {
             {/* Accounting Modules Grid */}
             <div className="mb-8">
               <h3 className="text-xl font-bold text-gray-900 mb-4">Accounting Modules</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {ACCOUNTING_MODULES.map((module) => (
                   <Link
                     key={module.id}

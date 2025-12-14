@@ -316,7 +316,7 @@ export default function SettingsPage() {
 
         {/* Main Content Area */}
         <main className="flex-1 py-8 px-6">
-          <div className="max-w-6xl mx-auto">
+          <div className="w-full">
             <h2 className="text-3xl font-bold text-gray-900 mb-2">System Settings</h2>
             <p className="text-gray-600 mb-8">Manage school configuration and system settings</p>
 

@@ -233,7 +233,7 @@ export default function ChartOfAccountsPage() {
                 <Sidebar />
 
                 <main className="flex-1 py-8 px-6">
-                    <div className="max-w-7xl mx-auto">
+                    <div className="w-full">
                         {/* Header */}
                         <div className="mb-6 flex justify-between items-center">
                             <div>

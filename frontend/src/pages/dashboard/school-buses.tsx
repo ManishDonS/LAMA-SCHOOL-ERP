@@ -946,11 +946,11 @@ export default function SchoolBusesPage() {
 
       {/* Main Content */}
       <div className="flex flex-1">
-        <Sidebar userRole={user?.role} />
+        <Sidebar />
 
         {/* Main Content Area */}
         <main className="flex-1 py-8 px-6">
-          <div className="max-w-7xl mx-auto">
+          <div className="w-full">
             <h2 className="text-3xl font-bold text-gray-900 mb-2">School Bus Management</h2>
             <p className="text-gray-600 mb-8">Manage buses, drivers, routes, and student assignments with real-time GPS tracking</p>
 

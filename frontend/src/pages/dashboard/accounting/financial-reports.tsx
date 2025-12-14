@@ -115,8 +115,8 @@ export default function FinancialReportsPage() {
                                     key={tab.id}
                                     onClick={() => setActiveTab(tab.id as any)}
                                     className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === tab.id
-                                            ? 'bg-white text-primary-600 shadow-sm'
-                                            : 'text-gray-500 hover:text-gray-900'
+                                        ? 'bg-white text-primary-600 shadow-sm'
+                                        : 'text-gray-500 hover:text-gray-900'
                                         }`}
                                 >
                                     {tab.label}
@@ -205,7 +205,7 @@ export default function FinancialReportsPage() {
                         )}
 
                         {activeTab === 'balance' && (
-                            <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 max-w-4xl mx-auto">
+                            <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 w-full">
                                 <h2 className="text-2xl font-bold text-center mb-2">Balance Sheet</h2>
                                 <p className="text-center text-gray-500 mb-8">As of June 30, 2024</p>
 
@@ -278,7 +278,7 @@ export default function FinancialReportsPage() {
                         )}
 
                         {activeTab === 'trial' && (
-                            <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 max-w-4xl mx-auto">
+                            <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 w-full">
                                 <h2 className="text-2xl font-bold text-center mb-8">Trial Balance</h2>
                                 <table className="w-full">
                                     <thead>
