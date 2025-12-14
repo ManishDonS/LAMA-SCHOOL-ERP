@@ -65,7 +65,7 @@ const DEFAULT_STUDENTS = [
     dateOfBirth: '2008-05-15',
     gender: 'Male',
     nationality: 'Indian',
-    studentId: 'STU001',
+    studentId: 'STU-2024-0001',
     enrollmentDate: '2020-06-01',
     currentClass: '10A',
     section: 'A',
@@ -422,15 +422,23 @@ export default function StudentsPage() {
   const [formData, setFormData] = useState<Student>(emptyStudent)
 
   // Generate unique Student ID
+  // Generate unique Student ID
   const generateStudentID = () => {
     const currentYear = new Date().getFullYear()
-    const maxExistingNumber = students.length > 0
-      ? Math.max(...students.map(s => {
-        const match = s.studentId.match(/\d+$/)
-        return match ? parseInt(match[0]) : 0
-      }))
-      : 0
-    return `STU${currentYear}${String(maxExistingNumber + 1).padStart(4, '0')}`
+    const prefix = `STU-${currentYear}`
+
+    const maxSequence = students.reduce((max, s) => {
+      if (s.studentId && s.studentId.startsWith(prefix)) {
+        const parts = s.studentId.split('-')
+        if (parts.length === 3) {
+          const seq = parseInt(parts[2], 10)
+          return !isNaN(seq) && seq > max ? seq : max
+        }
+      }
+      return max
+    }, 0)
+
+    return `${prefix}-${String(maxSequence + 1).padStart(4, '0')}`
   }
 
   const handleAddClick = () => {

@@ -1,3 +1,17 @@
 node_modules/
 .env
 .DS_Store
+.next/
+out/
+build/
+dist/
+bin/
+services/*/bin/
+*.log
+coverage/
+*.test
+*.exe
+*.o
+*.so
+.idea/
+.vscode/

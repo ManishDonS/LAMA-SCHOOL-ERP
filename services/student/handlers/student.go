@@ -65,7 +65,6 @@ func (h *StudentHandler) ListStudents(c *fiber.Ctx) error {
 // @Failure 500 {object} map[string]interface{}
 // @Router /students [post]
 func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
-	log.Println("DEBUG: Entered CreateStudent Handler")
 	var req CreateStudentRequest
 	if err := c.BodyParser(&req); err != nil {
 		log.Printf("BodyParser failed: %v", err)
@@ -126,8 +125,9 @@ func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
 	query := `
 		INSERT INTO students (
 			school_id, user_id, first_name, last_name, email, 
-			roll_number, class, admission_date, date_of_birth, status, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+			roll_number, class, admission_date, date_of_birth, status, created_at, updated_at,
+			student_id_number
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW(), $11)
 		RETURNING id
 	`
 
@@ -141,17 +141,24 @@ func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
 
 	log.Printf("DEBUG: Attempting Insert with SchoolID=%s, UserID=%s", req.SchoolID, userID)
 
-	// Generate Roll Number
-	rollNumber := fmt.Sprintf("STU-%d", time.Now().Unix())
+	// Generate Student ID
+	studentIDNumber, err := h.generateStudentID(ctx)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to generate student ID",
+		})
+	}
+
 	admissionDate := time.Now()
 
 	var studentID int64
 	err = h.db.QueryRow(ctx, query,
 		req.SchoolID, userID, req.FirstName, req.LastName, req.Email,
-		rollNumber,    // roll_number
-		req.ClassID,   // class (mapping ClassID to class column for now)
-		admissionDate, // admission_date
+		studentIDNumber, // roll_number (using student ID for now)
+		req.ClassID,     // class
+		admissionDate,   // admission_date
 		dob, "active",
+		studentIDNumber, // student_id_number
 	).Scan(&studentID)
 
 	if err != nil {
@@ -798,6 +805,7 @@ func (h *StudentHandler) getRecentActivities(ctx context.Context, studentID stri
 	var activities []database.StudentActivity
 	for rows.Next() {
 		var activity database.StudentActivity
+
 		rows.Scan(&activity.ID, &activity.StudentID, &activity.ActivityType, &activity.Title,
 			&activity.Description, &activity.Metadata, &activity.PerformedBy, &activity.ActivityDate,
 			&activity.CreatedAt)
@@ -876,4 +884,39 @@ func (h *StudentHandler) EnrollStudent(c *fiber.Ctx) error {
 func (h *StudentHandler) RemoveEnrollment(c *fiber.Ctx) error {
 	id := c.Params("id")
 	return c.JSON(fiber.Map{"message": "Enrollment removed", "enrollment_id": id})
+}
+
+func (h *StudentHandler) generateStudentID(ctx context.Context) (string, error) {
+	year := time.Now().Year()
+	prefix := fmt.Sprintf("STU-%d", year)
+
+	// Find the last student ID for this year
+	query := `
+		SELECT roll_number 
+		FROM students 
+		WHERE roll_number LIKE $1 
+		ORDER BY id DESC 
+		LIMIT 1
+	`
+
+	var lastID string
+	err := h.db.QueryRow(ctx, query, prefix+"%").Scan(&lastID)
+
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return fmt.Sprintf("%s-0001", prefix), nil
+		}
+		return "", err
+	}
+
+	// Extract sequence
+	// Expected format: STU-YYYY-XXXX
+	var sequence int
+	_, err = fmt.Sscanf(lastID, prefix+"-%d", &sequence)
+	if err != nil {
+		// Fallback if existing IDs don't match format
+		return fmt.Sprintf("%s-0001", prefix), nil
+	}
+
+	return fmt.Sprintf("%s-%04d", prefix, sequence+1), nil
 }
