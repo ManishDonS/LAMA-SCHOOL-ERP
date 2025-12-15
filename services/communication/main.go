@@ -42,15 +42,14 @@ func main() {
 
 	// API Routes
 	api := app.Group("/api/v1")
-	channels := api.Group("/channels")
 
-	// Channel Routes
-	channels.Get("/", handlers.GetChannels)
-	channels.Post("/", handlers.CreateChannel)
-
-	// Message Routes (nested)
-	channels.Get("/:channelId/messages", handlers.GetMessages)
-	channels.Post("/:channelId/messages", handlers.SendMessage)
+	// Channel and Message Routes
+	api.Get("/channels", handlers.GetChannels)
+	api.Post("/channels", handlers.CreateChannel)
+	api.Post("/channels/:channelId/members", handlers.AddMember) // New route
+	api.Get("/users", handlers.GetUsers)                         // New route
+	api.Get("/channels/:channelId/messages", handlers.GetMessages)
+	api.Post("/channels/:channelId/messages", handlers.SendMessage)
 
 	// Start server
 	port := os.Getenv("PORT")

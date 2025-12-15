@@ -7,6 +7,7 @@ import { ChatSidebar } from '@/components/communication/Sidebar/ChatSidebar'
 import { ChatWindow } from '@/components/communication/Chat/ChatWindow'
 import { CreateChannelModal } from '@/components/communication/Modals/CreateChannelModal'
 import { UserPickerModal } from '@/components/communication/Modals/UserPickerModal'
+import { ChannelDetailsModal } from '@/components/communication/Modals/ChannelDetailsModal'
 import { Message, Channel, User } from '@/components/communication/shared/types'
 import { communicationService } from '@/services/communicationService'
 
@@ -35,14 +36,19 @@ const CommunicationPage = () => {
     const [channels, setChannels] = useState<Channel[]>([])
     const [isCreateChannelModalOpen, setIsCreateChannelModalOpen] = useState(false)
     const [isUserPickerModalOpen, setIsUserPickerModalOpen] = useState(false)
+    const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false)
+    const [error, setError] = useState<string | null>(null)
     const [isLoading, setIsLoading] = useState(false);
+    // Use state for specific users list, though we might still fallback initially if needed.
+    const [availableUsers, setAvailableUsers] = useState<User[]>(OTHER_USERS_MOCK) // Initial mock fallback to avoid empty UI
 
-    // Mock current user (Manish Lama)
+    // Mock current user (Manish Lama) - In real app, this comes from auth context/hook
     const currentUser = CURRENT_USER_MOCK
 
     useEffect(() => {
         setIsHydrated(true)
         fetchChannels();
+        fetchUsers();
     }, [])
 
     useEffect(() => {
@@ -61,8 +67,23 @@ const CommunicationPage = () => {
             }
         } catch (error) {
             console.error("Failed to fetch channels", error);
+            setError("Failed to load channels");
         } finally {
             setIsLoading(false);
+        }
+    }
+
+    const fetchUsers = async () => {
+        try {
+            const data = await communicationService.getUsers();
+            if (data && data.length > 0) {
+                // Ensure current user is not in "available users" list for DMs if we filter later?
+                // But for now just replace mock.
+                // Also ensure currentUser details are up to date if we were finding it from this list.
+                setAvailableUsers(data);
+            }
+        } catch (error) {
+            console.error("Failed to fetch users", error);
         }
     }
 
@@ -107,9 +128,9 @@ const CommunicationPage = () => {
         }
     }
 
-    const handleCreateChannel = async (name: string, type: 'public' | 'private', description: string) => {
+    const handleCreateChannel = async (name: string, type: 'public' | 'private', description: string, members: string[]) => {
         try {
-            const newChannel = await communicationService.createChannel(name, type, [currentUser.id]);
+            const newChannel = await communicationService.createChannel(name, type, members);
             setChannels([...channels, newChannel]);
             setActiveChannelId(newChannel.id);
             setIsCreateChannelModalOpen(false);
@@ -118,14 +139,24 @@ const CommunicationPage = () => {
         }
     }
 
+    const handleAddMember = async (userId: string) => {
+        if (!activeChannelId) return;
+        try {
+            await communicationService.addMember(activeChannelId, userId);
+            // Update local state by adding member to channel
+            setChannels(prev => prev.map(c =>
+                c.id === activeChannelId
+                    ? { ...c, members: [...c.members, userId] }
+                    : c
+            ));
+        } catch (error) {
+            console.error("Failed to add member", error);
+            alert("Failed to add member");
+        }
+    }
+
     const handleCreateDM = (selectedUserId: string) => {
         // Check if DM already exists with this user
-        // Note: Logic needs to adapt if using real backend. 
-        // Backend should handle "Get or Create DM".
-        // For now, we reuse the createChannel logic if we treat DMs as channels or implement specific DM endpoint later.
-        // Assuming we simulate DM creation as a channel for now.
-
-        // This logic mimics previous frontend logic but should ideally be an API call joinOrCreateDM(userId)
         const existingDM = channels.find(
             c => c.type === 'direct' &&
                 c.members.includes(currentUser.id) &&
@@ -135,7 +166,7 @@ const CommunicationPage = () => {
         if (existingDM) {
             setActiveChannelId(existingDM.id)
         } else {
-            // Mock Create DM via channel creation
+            // Create DM
             communicationService.createChannel(`DM-${selectedUserId}`, 'direct', [currentUser.id, selectedUserId])
                 .then(newDM => {
                     setChannels([...channels, newDM]);
@@ -148,6 +179,11 @@ const CommunicationPage = () => {
     const existingChannelNames = channels
         .filter(c => c.type !== 'direct')
         .map(c => c.name)
+
+    // Filter availableUsers to remove current user for display purposes where needed, 
+    // or keep all. Logic depends on usage.
+    // For ChatWindow users prop (used for resolving names), pass all.
+    // For UserPicker (DMs), pass all (Modal filters current user out).
 
     return (
         <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col">
@@ -163,7 +199,7 @@ const CommunicationPage = () => {
                 <div className="flex-1 flex overflow-hidden bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800">
                     <ChatSidebar
                         channels={channels}
-                        users={OTHER_USERS_MOCK}
+                        users={availableUsers}
                         activeChannelId={activeChannelId}
                         onSelectChannel={setActiveChannelId}
                         onCreateChannel={() => setIsCreateChannelModalOpen(true)}
@@ -180,8 +216,9 @@ const CommunicationPage = () => {
                             channel={activeChannel}
                             messages={messages}
                             currentUser={currentUser}
-                            users={OTHER_USERS_MOCK}
+                            users={availableUsers}
                             onSendMessage={handleSendMessage}
+                            onViewDetails={() => setIsDetailsModalOpen(true)}
                         />
                     ) : (
                         <div className="flex-1 flex items-center justify-center p-6 text-gray-500">
@@ -196,19 +233,32 @@ const CommunicationPage = () => {
                 onClose={() => setIsCreateChannelModalOpen(false)}
                 onCreateChannel={handleCreateChannel}
                 existingChannelNames={existingChannelNames}
+                users={availableUsers}
+                currentUserId={currentUser.id}
             />
 
             <UserPickerModal
                 isOpen={isUserPickerModalOpen}
                 onClose={() => setIsUserPickerModalOpen(false)}
                 onSelectUser={handleCreateDM}
-                users={OTHER_USERS_MOCK}
+                users={availableUsers}
                 currentUserId={currentUser.id}
                 existingDMUserIds={channels
                     .filter(c => c.type === 'direct' && c.members.includes(currentUser.id))
                     .map(c => c.members.find((id: string) => id !== currentUser.id))
                     .filter(Boolean) as string[]}
             />
+
+            {activeChannel && (
+                <ChannelDetailsModal
+                    isOpen={isDetailsModalOpen}
+                    onClose={() => setIsDetailsModalOpen(false)}
+                    channel={activeChannel}
+                    users={availableUsers}
+                    currentUserId={currentUser.id}
+                    onAddMember={handleAddMember}
+                />
+            )}
         </div>
     )
 }

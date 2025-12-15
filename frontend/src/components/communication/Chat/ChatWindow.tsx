@@ -7,6 +7,7 @@ interface ChatWindowProps {
     currentUser: User
     users: User[]
     onSendMessage: (content: string) => void
+    onViewDetails: () => void
 }
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({
@@ -14,7 +15,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     messages,
     currentUser,
     users,
-    onSendMessage
+    onSendMessage,
+    onViewDetails
 }) => {
     const [inputValue, setInputValue] = useState('')
     const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -56,7 +58,20 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                 </div>
                 <div className="flex items-center gap-4 text-gray-400">
                     {/* Add actions like info, search, etc. here if needed */}
-                    <button title="Channel Details">ℹ️</button>
+                    <button
+                        title="Channel Details"
+                        onClick={onViewDetails}
+                        className="hover:text-gray-600 transition-colors p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 hidden md:block"
+                    >
+                        ℹ️
+                    </button>
+                    <button
+                        title="Channel Details"
+                        onClick={onViewDetails}
+                        className="hover:text-gray-600 transition-colors md:hidden text-2xl"
+                    >
+                        ☰
+                    </button>
                 </div>
             </div>
 
@@ -86,8 +101,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                                     </div>
                                 )}
                                 <div className={`px-4 py-2 rounded-2xl shadow-sm text-[15px] leading-relaxed ${isMe
-                                        ? 'bg-blue-600 text-white rounded-tr-none'
-                                        : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-tl-none'
+                                    ? 'bg-blue-600 text-white rounded-tr-none'
+                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-tl-none'
                                     }`}>
                                     {message.content}
                                 </div>

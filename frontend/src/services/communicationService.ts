@@ -28,21 +28,59 @@ api.interceptors.request.use((config) => {
 export const communicationService = {
     getChannels: async (): Promise<Channel[]> => {
         const response = await api.get('/channels');
-        return response.data;
+        return response.data.map((c: any) => ({
+            ...c,
+            id: String(c.id),
+            members: c.members || []
+        }));
     },
 
     createChannel: async (name: string, type: 'public' | 'private' | 'direct', members: string[]): Promise<Channel> => {
         const response = await api.post('/channels', { name, type, members });
-        return response.data;
+        const c = response.data;
+        return {
+            ...c,
+            id: String(c.id),
+            members: c.members || []
+        };
     },
 
     getMessages: async (channelId: string): Promise<Message[]> => {
         const response = await api.get(`/channels/${channelId}/messages`);
-        return response.data;
+        return response.data.map((m: any) => ({
+            ...m,
+            id: String(m.id),
+            channelId: String(m.channelId),
+            senderId: String(m.senderId),
+            timestamp: m.createdAt
+        }));
     },
 
     sendMessage: async (channelId: string, content: string, senderId: string): Promise<Message> => {
-        const response = await api.post(`/channels/${channelId}/messages`, { content, senderId });
-        return response.data;
+        const response = await api.post(`/channels/${channelId}/messages`, {
+            content,
+            senderId: parseInt(senderId, 10)
+        });
+        const m = response.data;
+        return {
+            ...m,
+            id: String(m.id),
+            channelId: String(m.channelId),
+            senderId: String(m.senderId),
+            timestamp: m.createdAt
+        };
+    },
+
+    getUsers: async (): Promise<User[]> => {
+        const response = await api.get('/users');
+        return response.data.map((u: any) => ({
+            ...u,
+            id: String(u.id),
+        }));
+    },
+
+    addMember: async (channelId: string, userId: string): Promise<void> => {
+        // Backend expects uint64 for userId
+        await api.post(`/channels/${channelId}/members`, { userId: parseInt(userId, 10) });
     },
 };
