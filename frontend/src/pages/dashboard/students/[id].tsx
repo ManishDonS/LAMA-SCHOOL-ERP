@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
+import PhotoUploadModal from '../../../components/PhotoUploadModal'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import Navbar from '@/components/Navbar'
@@ -23,6 +24,23 @@ interface Student {
     phone: string
     address: string
     status: string
+    username: string
+    // Health & Safety
+    medicalConditions: string
+    allergies: string
+    medications: string
+    specialNeeds: string
+    // Academics
+    previousSchool: string
+    subjects: string
+    house: string
+    // Transport
+    rfidNumber: string
+    busRoute: string
+    uniformSize: string
+    pickupAddress: string
+    dropoffAddress: string
+    driverInfo: string
 }
 
 interface Guardian {
@@ -199,6 +217,27 @@ export default function StudentDetailsPage() {
 
     const [activeTab, setActiveTab] = useState('overview')
     const [loading, setLoading] = useState(true)
+    // State for Photo Modal
+    const [showPhotoModal, setShowPhotoModal] = useState(false)
+    const [showViewPhotoModal, setShowViewPhotoModal] = useState(false)
+
+    // Handlers
+    const handlePhotoUpload = (photoDataUrl: string) => {
+        if (student) {
+            const updatedStudent = { ...student, photoUrl: photoDataUrl }
+            setStudent(updatedStudent)
+
+            // Save to LocalStorage
+            const savedStudents = localStorage.getItem('students')
+            if (savedStudents) {
+                const parsedStudents = JSON.parse(savedStudents)
+                const updatedStudents = parsedStudents.map((s: any) =>
+                    s.id === student.id ? { ...s, photoUrl: photoDataUrl } : s
+                )
+                localStorage.setItem('students', JSON.stringify(updatedStudents))
+            }
+        }
+    }
     const [student, setStudent] = useState<Student | null>(null)
     const [guardians, setGuardians] = useState<Guardian[]>([])
     const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([])
@@ -218,69 +257,125 @@ export default function StudentDetailsPage() {
     useEffect(() => {
         if (!id) return
 
-        // Mock data for demonstration
-        const mockStudent: Student = {
-            id: Number(id),
-            firstName: 'John',
-            lastName: 'Doe',
-            dateOfBirth: '2008-05-15',
-            gender: 'Male',
-            nationality: 'Nepalese',
-            studentIdNumber: 'STU202400001',
-            enrollmentDate: '2020-06-01',
-            class: '10A',
-            section: 'A',
-            rollNumber: '1',
-            bloodGroup: 'O+',
-            photoUrl: '',
-            email: 'john.doe@school.com',
-            phone: '+977-9841234567',
-            address: '123 Main Street, Kathmandu',
-            status: 'Active',
+        if (typeof window !== 'undefined') {
+            const savedStudents = localStorage.getItem('students')
+            if (savedStudents) {
+                try {
+                    const parsedStudents = JSON.parse(savedStudents)
+                    const foundStudent = parsedStudents.find((s: any) => s.id === Number(id))
+
+                    if (foundStudent) {
+                        // Map the stored student data to the component's expected format
+                        // Note: The stored data might have slightly different field names or missing fields
+                        // compared to the full mock data, so we ensure defaults here.
+
+                        const mappedStudent: Student = {
+                            id: foundStudent.id,
+                            firstName: foundStudent.firstName || '',
+                            lastName: foundStudent.lastName || '',
+                            dateOfBirth: foundStudent.dateOfBirth || '',
+                            gender: foundStudent.gender || '',
+                            nationality: foundStudent.nationality || '',
+                            studentIdNumber: foundStudent.studentId || foundStudent.studentIdNumber || '', // Handle both naming conventions
+                            enrollmentDate: foundStudent.enrollmentDate || '',
+                            class: foundStudent.currentClass || foundStudent.class || '',
+                            section: foundStudent.section || '',
+                            rollNumber: foundStudent.rollNumber || '',
+                            bloodGroup: foundStudent.bloodGroup || '',
+                            photoUrl: foundStudent.photoUrl || '',
+                            email: '', // Email from form belongs to guardian
+                            phone: foundStudent.primaryPhone || foundStudent.phone || '', // Map primaryPhone from list to phone
+                            address: foundStudent.homeAddress || foundStudent.address || '',
+                            status: foundStudent.status || 'Active',
+                            username: foundStudent.username || '',
+                            // Health & Safety
+                            medicalConditions: foundStudent.medicalConditions || '',
+                            allergies: foundStudent.allergies || '',
+                            medications: foundStudent.medications || '',
+                            specialNeeds: foundStudent.specialNeeds || '',
+                            // Academics
+                            previousSchool: foundStudent.previousSchool || '',
+                            subjects: foundStudent.subjects || '',
+                            house: foundStudent.house || '',
+                            // Transport
+                            rfidNumber: foundStudent.rfidNumber || '',
+                            busRoute: foundStudent.busRoute || '',
+                            uniformSize: foundStudent.uniformSize || '',
+                            pickupAddress: foundStudent.pickupAddress || '',
+                            dropoffAddress: foundStudent.dropoffAddress || '',
+                            driverInfo: foundStudent.driverInfo || '',
+                        }
+
+                        // Map guardian info
+                        const mappedGuardians: Guardian[] = []
+                        if (foundStudent.fatherName) {
+                            mappedGuardians.push({
+                                id: 1,
+                                guardianType: 'father',
+                                name: foundStudent.fatherName,
+                                relationship: 'Father',
+                                phone: foundStudent.primaryPhone || '', // Using primary phone as fallback
+                                email: foundStudent.email || '', // Assign shared email to father
+                                occupation: '',
+                                address: foundStudent.homeAddress || '',
+                                isPrimary: true,
+                            })
+                        }
+                        if (foundStudent.motherName) {
+                            mappedGuardians.push({
+                                id: 2,
+                                guardianType: 'mother',
+                                name: foundStudent.motherName,
+                                relationship: 'Mother',
+                                phone: '',
+                                email: '',
+                                occupation: '',
+                                address: foundStudent.homeAddress || '',
+                                isPrimary: false,
+                            })
+                        }
+                        // If we have a specific guardian set
+                        if (foundStudent.guardianName) {
+                            mappedGuardians.push({
+                                id: 3,
+                                guardianType: 'guardian',
+                                name: foundStudent.guardianName,
+                                relationship: foundStudent.guardianRelation || 'Guardian',
+                                phone: '',
+                                email: !foundStudent.fatherName ? (foundStudent.email || '') : '', // Fallback if no father
+                                occupation: '',
+                                address: foundStudent.homeAddress || '',
+                                isPrimary: false,
+                            })
+                        }
+
+                        // Mock statistics based on real data where possible, or defaults
+                        const derivedStatistics: Statistics = {
+                            overallAttendance: 0, // Default to 0 as we don't have this in basic profile
+                            currentGpa: 0,
+                            currentPercentage: 0,
+                            totalFeesPaid: 0,
+                            outstandingFees: 0,
+                            behaviorPoints: 100, // Start with full points
+                            totalAbsences: 0,
+                            totalLateDays: 0,
+                            documentsCount: 0,
+                            healthRecordsCount: 0,
+                        }
+
+                        setStudent(mappedStudent)
+                        setGuardians(mappedGuardians)
+                        setStatistics(derivedStatistics)
+                    } else {
+                        setStudent(null)
+                    }
+                } catch (error) {
+                    console.error('Failed to load student details:', error)
+                    setStudent(null)
+                }
+            }
+            setLoading(false)
         }
-
-        const mockGuardians: Guardian[] = [
-            {
-                id: 1,
-                guardianType: 'father',
-                name: 'Robert Doe',
-                relationship: 'Father',
-                phone: '+977-9841234567',
-                email: 'robert.doe@email.com',
-                occupation: 'Engineer',
-                address: '123 Main Street, Kathmandu',
-                isPrimary: true,
-            },
-            {
-                id: 2,
-                guardianType: 'mother',
-                name: 'Mary Doe',
-                relationship: 'Mother',
-                phone: '+977-9841234568',
-                email: 'mary.doe@email.com',
-                occupation: 'Teacher',
-                address: '123 Main Street, Kathmandu',
-                isPrimary: false,
-            },
-        ]
-
-        const mockStatistics: Statistics = {
-            overallAttendance: 92.5,
-            currentGpa: 3.8,
-            currentPercentage: 85.5,
-            totalFeesPaid: 45000,
-            outstandingFees: 5000,
-            behaviorPoints: 95,
-            totalAbsences: 8,
-            totalLateDays: 3,
-            documentsCount: 12,
-            healthRecordsCount: 5,
-        }
-
-        setStudent(mockStudent)
-        setGuardians(mockGuardians)
-        setStatistics(mockStatistics)
-        setLoading(false)
     }, [id])
 
     if (loading) {
@@ -322,8 +417,32 @@ export default function StudentDetailsPage() {
                         <div className="flex items-start justify-between">
                             <div className="flex items-center gap-6">
                                 {/* Student Photo */}
-                                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-3xl font-bold shadow-lg">
-                                    {student.firstName[0]}{student.lastName[0]}
+                                {/* Student Photo */}
+                                <div className="relative group">
+                                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-3xl font-bold shadow-lg overflow-hidden border-4 border-white">
+                                        {student.photoUrl ? (
+                                            <img src={student.photoUrl} alt="Student" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <span>{student.firstName[0]}{student.lastName[0]}</span>
+                                        )}
+                                    </div>
+                                    <div className="absolute inset-0 bg-black/60 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 backdrop-blur-[2px]">
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); setShowViewPhotoModal(true); }}
+                                            className="text-white hover:text-blue-200 transform hover:scale-110 transition-transform p-1"
+                                            title="View Photo"
+                                        >
+                                            <span className="text-lg">👁️</span>
+                                        </button>
+                                        <div className="w-8 h-[1px] bg-white/30 my-0.5"></div>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); setShowPhotoModal(true); }}
+                                            className="text-white hover:text-blue-200 transform hover:scale-110 transition-transform p-1"
+                                            title="Change Photo"
+                                        >
+                                            <span className="text-lg">📷</span>
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {/* Student Info */}
@@ -348,17 +467,29 @@ export default function StudentDetailsPage() {
                             </div>
 
                             {/* Quick Actions */}
-                            <div className="flex gap-2">
-                                <button className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-semibold transition-colors">
+                            <div className="flex gap-2 print:hidden">
+                                <button
+                                    onClick={() => router.push(`/dashboard/students?action=edit&id=${student.id}`)}
+                                    className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-semibold transition-colors"
+                                >
                                     ✏️ Edit
                                 </button>
-                                <button className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 font-semibold transition-colors">
+                                <button
+                                    onClick={() => alert('Opening message dialog...')}
+                                    className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 font-semibold transition-colors"
+                                >
                                     📧 Message
                                 </button>
-                                <button className="px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 font-semibold transition-colors">
+                                <button
+                                    onClick={() => window.print()}
+                                    className="px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 font-semibold transition-colors"
+                                >
                                     🖨️ Print
                                 </button>
-                                <button className="px-4 py-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 font-semibold transition-colors">
+                                <button
+                                    onClick={() => alert(`Exporting profile for ${student.firstName}...`)}
+                                    className="px-4 py-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 font-semibold transition-colors"
+                                >
                                     📥 Export
                                 </button>
                             </div>
@@ -399,8 +530,8 @@ export default function StudentDetailsPage() {
                                     key={tab.id}
                                     onClick={() => setActiveTab(tab.id)}
                                     className={`flex-1 min-w-[120px] px-6 py-4 font-semibold transition-all duration-200 relative ${activeTab === tab.id
-                                            ? 'text-blue-600 bg-blue-50'
-                                            : 'text-gray-600 hover:text-blue-600 hover:bg-gray-50'
+                                        ? 'text-blue-600 bg-blue-50'
+                                        : 'text-gray-600 hover:text-blue-600 hover:bg-gray-50'
                                         }`}
                                 >
                                     <span className="mr-2">{tab.icon}</span>
@@ -441,7 +572,11 @@ export default function StudentDetailsPage() {
                                             </div>
                                             <div>
                                                 <label className="text-sm font-semibold text-gray-600">Email</label>
-                                                <p className="text-gray-800">{student.email}</p>
+                                                <p className="text-gray-800">{student.email || '-'}</p>
+                                            </div>
+                                            <div>
+                                                <label className="text-sm font-semibold text-gray-600">Username</label>
+                                                <p className="text-gray-800">{student.username}</p>
                                             </div>
                                             <div>
                                                 <label className="text-sm font-semibold text-gray-600">Phone</label>
@@ -498,27 +633,45 @@ export default function StudentDetailsPage() {
                                     </div>
 
                                     {/* Academic Summary */}
-                                    <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-6 border border-purple-100">
+
+
+
+                                    {/* Transport Details */}
+                                    <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl p-6 border border-indigo-100 mt-6">
                                         <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                                            <span>📚</span> Academic Summary
+                                            <span>🚌</span> Transport Details
                                         </h3>
-                                        <div className="grid grid-cols-4 gap-4">
-                                            <div className="bg-white rounded-lg p-4 text-center border border-gray-200">
-                                                <div className="text-3xl font-bold text-purple-600">{statistics?.currentGpa}</div>
-                                                <div className="text-sm text-gray-600 mt-1">Current GPA</div>
+                                        <div className="grid grid-cols-2 gap-6">
+                                            <div>
+                                                <label className="text-sm font-semibold text-gray-600 block mb-1">Bus Route</label>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-2xl">🛣️</span>
+                                                    <span className="text-lg font-medium text-gray-900">{student.busRoute || 'No Route Assigned'}</span>
+                                                </div>
                                             </div>
-                                            <div className="bg-white rounded-lg p-4 text-center border border-gray-200">
-                                                <div className="text-3xl font-bold text-blue-600">{statistics?.currentPercentage}%</div>
-                                                <div className="text-sm text-gray-600 mt-1">Percentage</div>
+                                            <div>
+                                                <label className="text-sm font-semibold text-gray-600 block mb-1">RFID / Barcode</label>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-2xl">🆔</span>
+                                                    <span className="text-lg font-medium text-gray-900">{student.rfidNumber || 'Not Assigned'}</span>
+                                                </div>
                                             </div>
-                                            <div className="bg-white rounded-lg p-4 text-center border border-gray-200">
-                                                <div className="text-3xl font-bold text-green-600">{statistics?.overallAttendance}%</div>
-                                                <div className="text-sm text-gray-600 mt-1">Attendance</div>
+                                        </div>
+
+                                        <div className="mt-6 grid grid-cols-2 gap-6">
+                                            <div>
+                                                <label className="text-sm font-semibold text-gray-600 block mb-1">Pickup Address</label>
+                                                <p className="text-gray-800">{student.pickupAddress || 'N/A'}</p>
                                             </div>
-                                            <div className="bg-white rounded-lg p-4 text-center border border-gray-200">
-                                                <div className="text-3xl font-bold text-orange-600">{statistics?.behaviorPoints}</div>
-                                                <div className="text-sm text-gray-600 mt-1">Behavior Points</div>
+                                            <div>
+                                                <label className="text-sm font-semibold text-gray-600 block mb-1">Drop-off Address</label>
+                                                <p className="text-gray-800">{student.dropoffAddress || 'N/A'}</p>
                                             </div>
+                                        </div>
+
+                                        <div className="mt-6">
+                                            <label className="text-sm font-semibold text-gray-600 block mb-1">Driver & Vehicle Info</label>
+                                            <p className="text-gray-800">{student.driverInfo || 'No details available'}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -526,11 +679,121 @@ export default function StudentDetailsPage() {
 
                             {/* Academics Tab */}
                             {activeTab === 'academics' && (
-                                <div className="text-center py-12">
-                                    <div className="text-6xl mb-4">📚</div>
-                                    <h3 className="text-2xl font-bold text-gray-800 mb-2">Academic Records</h3>
-                                    <p className="text-gray-600">Detailed academic performance and grade history will be displayed here.</p>
-                                    <p className="text-sm text-gray-500 mt-2">Including subject-wise grades, GPA trends, and performance charts.</p>
+                                <div className="space-y-6">
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div className="bg-white rounded-xl p-6 border border-gray-200">
+                                            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                                <span>🏫</span> Current Enrollment
+                                            </h3>
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between border-b pb-2">
+                                                    <span className="text-gray-600">Class</span>
+                                                    <span className="font-semibold">{student.class}</span>
+                                                </div>
+                                                <div className="flex justify-between border-b pb-2">
+                                                    <span className="text-gray-600">Section</span>
+                                                    <span className="font-semibold">{student.section}</span>
+                                                </div>
+                                                <div className="flex justify-between border-b pb-2">
+                                                    <span className="text-gray-600">Roll Number</span>
+                                                    <span className="font-semibold">{student.rollNumber}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-gray-600">Enrollment Date</span>
+                                                    <span className="font-semibold">{student.enrollmentDate}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white rounded-xl p-6 border border-gray-200">
+                                            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                                <span>📜</span> Previous Education
+                                            </h3>
+                                            <div>
+                                                <label className="text-sm font-semibold text-gray-600 block mb-1">Previous School</label>
+                                                <p className="text-gray-800 font-medium">{student.previousSchool || 'N/A'}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white rounded-xl p-6 border border-gray-200">
+                                        <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                            <span>📚</span> Subjects & House
+                                        </h3>
+                                        <div className="grid grid-cols-2 gap-6">
+                                            <div>
+                                                <label className="text-sm font-semibold text-gray-600 block mb-1">House / Group</label>
+                                                <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${student.house === 'Red' ? 'bg-red-100 text-red-800' :
+                                                    student.house === 'Blue' ? 'bg-blue-100 text-blue-800' :
+                                                        student.house === 'Green' ? 'bg-green-100 text-green-800' :
+                                                            student.house === 'Yellow' ? 'bg-yellow-100 text-yellow-800' :
+                                                                'bg-gray-100 text-gray-800'
+                                                    }`}>
+                                                    {student.house || 'Not Assigned'}
+                                                </span>
+                                            </div>
+                                            <div>
+                                                <label className="text-sm font-semibold text-gray-600 block mb-1">Selected Subjects</label>
+                                                <p className="text-gray-800">{student.subjects || 'General Curriculum'}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Health Tab */}
+                            {activeTab === 'health' && (
+                                <div className="space-y-6">
+                                    <div className="bg-white rounded-xl p-6 border border-gray-200">
+                                        <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                            <span>🏥</span> Medical Profile
+                                        </h3>
+                                        <div className="grid grid-cols-2 gap-6">
+                                            <div>
+                                                <label className="text-sm font-semibold text-gray-600 block mb-1">Blood Group</label>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-2xl">🩸</span>
+                                                    <span className="text-lg font-medium text-gray-900">{student.bloodGroup || 'Not specified'}</span>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="text-sm font-semibold text-gray-600 block mb-1">Medical Conditions</label>
+                                                <p className="text-gray-800 bg-red-50 p-3 rounded-lg border border-red-100">
+                                                    {student.medicalConditions || 'None reported'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div className="bg-white rounded-xl p-6 border border-gray-200">
+                                            <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
+                                                <span>💊</span> Medications
+                                            </h3>
+                                            <p className="text-gray-700 whitespace-pre-wrap">
+                                                {student.medications || 'No current medications'}
+                                            </p>
+                                        </div>
+                                        <div className="bg-white rounded-xl p-6 border border-gray-200">
+                                            <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
+                                                <span>⚠️</span> Allergies
+                                            </h3>
+                                            <p className="text-gray-700 whitespace-pre-wrap">
+                                                {student.allergies || 'No known allergies'}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {student.specialNeeds && (
+                                        <div className="bg-yellow-50 rounded-xl p-6 border border-yellow-100">
+                                            <h3 className="text-lg font-bold text-yellow-800 mb-2 flex items-center gap-2">
+                                                <span>♿</span> Special Needs / Learning Support
+                                            </h3>
+                                            <p className="text-yellow-900">
+                                                {student.specialNeeds}
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -546,11 +809,52 @@ export default function StudentDetailsPage() {
 
                             {/* Fees Tab */}
                             {activeTab === 'fees' && (
+                                <div className="space-y-6">
+                                    <div className="bg-white rounded-xl p-6 border border-gray-200">
+                                        <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                            <span>💰</span> Fee Status
+                                        </h3>
+                                        <div className="grid grid-cols-3 gap-4">
+                                            <div className="p-4 bg-green-50 rounded-lg border border-green-100">
+                                                <div className="text-sm text-green-600 font-semibold">Total Paid</div>
+                                                <div className="text-2xl font-bold text-green-700">₹{statistics?.totalFeesPaid || 0}</div>
+                                            </div>
+                                            <div className="p-4 bg-red-50 rounded-lg border border-red-100">
+                                                <div className="text-sm text-red-600 font-semibold">Outstanding</div>
+                                                <div className="text-2xl font-bold text-red-700">₹{statistics?.outstandingFees || 0}</div>
+                                            </div>
+                                            <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+                                                <div className="text-sm text-blue-600 font-semibold">Fee Category</div>
+                                                <div className="text-2xl font-bold text-blue-700">Regular</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="text-center py-8 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+                                        <p className="text-gray-500">No transaction history available.</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Behavioral Tab */}
+                            {activeTab === 'behavioral' && (
                                 <div className="text-center py-12">
-                                    <div className="text-6xl mb-4">💰</div>
-                                    <h3 className="text-2xl font-bold text-gray-800 mb-2">Fee Management</h3>
-                                    <p className="text-gray-600">Fee structure, payment history, and outstanding balance will be displayed here.</p>
-                                    <p className="text-sm text-gray-500 mt-2">Including payment receipts and fee category breakdown.</p>
+                                    <div className="text-6xl mb-4">⭐</div>
+                                    <h3 className="text-2xl font-bold text-gray-800 mb-2">Behavioral Records</h3>
+                                    <p className="text-gray-600">Current Behavior Points: <span className="font-bold text-blue-600">{statistics?.behaviorPoints || 100}</span></p>
+                                    <p className="text-sm text-gray-500 mt-4">No incidents recorded.</p>
+                                </div>
+                            )}
+
+                            {/* Documents Tab */}
+                            {activeTab === 'documents' && (
+                                <div className="text-center py-12">
+                                    <div className="text-6xl mb-4">📄</div>
+                                    <h3 className="text-2xl font-bold text-gray-800 mb-2">Student Documents</h3>
+                                    <p className="text-gray-600">No documents uploaded for {student.firstName}.</p>
+                                    <button className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
+                                        Upload Document
+                                    </button>
                                 </div>
                             )}
 
@@ -596,7 +900,44 @@ export default function StudentDetailsPage() {
                         </div>
                     </div>
                 </main>
-            </div>
+            </div >
+            {/* Photo Upload Modal */}
+            {student && (
+                <PhotoUploadModal
+                    isOpen={showPhotoModal}
+                    onClose={() => setShowPhotoModal(false)}
+                    onUpload={handlePhotoUpload}
+                    studentId={student.id}
+                    studentName={`${student.firstName} ${student.lastName}`}
+                />
+            )}
+
+            {/* View Photo Modal */}
+            {showViewPhotoModal && student && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm" onClick={() => setShowViewPhotoModal(false)}>
+                    <div className="relative max-w-4xl max-h-[90vh] w-full flex items-center justify-center">
+                        <button
+                            onClick={() => setShowViewPhotoModal(false)}
+                            className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors"
+                        >
+                            <span className="text-4xl">×</span>
+                        </button>
+                        {student.photoUrl ? (
+                            <img
+                                src={student.photoUrl}
+                                alt={`${student.firstName} ${student.lastName}`}
+                                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl border-4 border-white/10"
+                                onClick={(e) => e.stopPropagation()}
+                            />
+                        ) : (
+                            <div className="w-64 h-64 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-6xl font-bold shadow-lg border-4 border-white">
+                                {student.firstName[0]}{student.lastName[0]}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
+
