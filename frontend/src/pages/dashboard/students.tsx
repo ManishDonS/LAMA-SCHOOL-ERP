@@ -336,7 +336,7 @@ const NATIONALITIES = [
 export default function StudentsPage() {
   const { user } = useAuthStore()
   const router = useRouter()
-  const [students, setStudents] = useState<Student[]>(DEFAULT_STUDENTS)
+  const [students, setStudents] = useState<Student[]>([])
   const [isHydrated, setIsHydrated] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
