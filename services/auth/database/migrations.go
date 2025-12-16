@@ -16,8 +16,15 @@ func RunMigrations(db *pgxpool.Pool) error {
 			name: "create_schools_table",
 			sql: `
 			CREATE TABLE IF NOT EXISTS schools (
-				id BIGSERIAL PRIMARY KEY,
-				name VARCHAR(255) NOT NULL UNIQUE,
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				name VARCHAR(255) NOT NULL,
+				code VARCHAR(20) NOT NULL UNIQUE,
+				db_name VARCHAR(100) NOT NULL UNIQUE,
+				db_user VARCHAR(100) NOT NULL,
+				db_password TEXT NOT NULL,
+				db_host VARCHAR(255) NOT NULL DEFAULT 'postgres',
+				db_port INTEGER NOT NULL DEFAULT 5432,
+				domain VARCHAR(255) NOT NULL UNIQUE,
 				email VARCHAR(255),
 				phone VARCHAR(20),
 				address TEXT,
@@ -26,6 +33,10 @@ func RunMigrations(db *pgxpool.Pool) error {
 				country VARCHAR(100),
 				pincode VARCHAR(10),
 				website VARCHAR(255),
+				logo_url TEXT,
+				timezone VARCHAR(50) NOT NULL DEFAULT 'UTC',
+				active_modules JSONB DEFAULT '[]'::jsonb,
+				module_permissions JSONB DEFAULT '{}'::jsonb,
 				status VARCHAR(50) DEFAULT 'active',
 				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -35,8 +46,8 @@ func RunMigrations(db *pgxpool.Pool) error {
 			name: "create_users_table",
 			sql: `
 			CREATE TABLE IF NOT EXISTS users (
-				id BIGSERIAL PRIMARY KEY,
-				school_id BIGINT NOT NULL REFERENCES schools(id),
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				school_id UUID NOT NULL REFERENCES schools(id),
 				email VARCHAR(255) NOT NULL,
 				password_hash VARCHAR(255) NOT NULL,
 				first_name VARCHAR(100),
@@ -55,8 +66,8 @@ func RunMigrations(db *pgxpool.Pool) error {
 			name: "create_roles_table",
 			sql: `
 			CREATE TABLE IF NOT EXISTS roles (
-				id BIGSERIAL PRIMARY KEY,
-				school_id BIGINT NOT NULL REFERENCES schools(id),
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				school_id UUID NOT NULL REFERENCES schools(id),
 				name VARCHAR(100) NOT NULL,
 				description TEXT,
 				permissions JSONB DEFAULT '[]',
@@ -69,8 +80,8 @@ func RunMigrations(db *pgxpool.Pool) error {
 			name: "create_refresh_tokens_table",
 			sql: `
 			CREATE TABLE IF NOT EXISTS refresh_tokens (
-				id BIGSERIAL PRIMARY KEY,
-				user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 				token VARCHAR(500) NOT NULL UNIQUE,
 				expires_at TIMESTAMP NOT NULL,
 				revoked_at TIMESTAMP,
@@ -84,8 +95,8 @@ func RunMigrations(db *pgxpool.Pool) error {
 			name: "create_audit_logs_table",
 			sql: `
 			CREATE TABLE IF NOT EXISTS audit_logs (
-				id BIGSERIAL PRIMARY KEY,
-				user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				user_id UUID REFERENCES users(id) ON DELETE SET NULL,
 				action VARCHAR(100) NOT NULL,
 				resource VARCHAR(100),
 				details JSONB,

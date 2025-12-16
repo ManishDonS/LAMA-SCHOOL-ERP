@@ -21,7 +21,9 @@ interface AuthStore extends AuthState {
   setToken: (token: string | null) => void
   setRefreshToken: (token: string | null) => void
   activeModules: string[]
+  modulePermissions: Record<string, any>
   setActiveModules: (modules: string[]) => void
+  setModulePermissions: (permissions: Record<string, any>) => void
   fetchActiveModules: () => Promise<void>
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
@@ -40,10 +42,12 @@ export const useAuthStore = create<AuthStore>()(
         token: null,
         refreshToken: null,
         activeModules: [],
+        modulePermissions: {},
         isLoading: false,
         error: null,
 
         setActiveModules: (modules) => set({ activeModules: modules }),
+        setModulePermissions: (permissions) => set({ modulePermissions: permissions }),
 
         setUser: (user) => set({ user }),
         setToken: (token) => set({ token }),
@@ -51,6 +55,8 @@ export const useAuthStore = create<AuthStore>()(
         setLoading: (isLoading) => set({ isLoading }),
         setError: (error) => set({ error }),
         clearError: () => set({ error: null }),
+
+        // ... login/register/logout methods unchanged ...
 
         login: async (email, password) => {
           set({ isLoading: true, error: null })
@@ -69,6 +75,12 @@ export const useAuthStore = create<AuthStore>()(
             if (typeof window !== 'undefined') {
               localStorage.setItem('access_token', tokens.accessToken)
               // Refresh token is stored in HttpOnly cookie
+            }
+
+            // Fetch modules immediately after login
+            const { user } = get()
+            if (user?.schoolId) {
+              get().fetchActiveModules()
             }
           } catch (error: any) {
             const message = error.response?.data?.error || 'Login failed'
@@ -113,6 +125,8 @@ export const useAuthStore = create<AuthStore>()(
             user: null,
             token: null,
             refreshToken: null,
+            activeModules: [],
+            modulePermissions: {},
             isLoading: false,
           })
 
@@ -166,7 +180,10 @@ export const useAuthStore = create<AuthStore>()(
 
           try {
             const response = await schoolAPI.get(user.schoolId.toString())
-            set({ activeModules: response.data.active_modules || [] })
+            set({
+              activeModules: response.data.active_modules || [],
+              modulePermissions: response.data.module_permissions || {}
+            })
           } catch (error) {
             console.error("Failed to fetch active modules", error)
           }
@@ -178,6 +195,7 @@ export const useAuthStore = create<AuthStore>()(
           user: state.user,
           token: state.token,
           activeModules: state.activeModules,
+          modulePermissions: state.modulePermissions,
           // refreshToken: state.refreshToken, // Don't persist refresh token
         }),
       }

@@ -221,6 +221,8 @@ export const schoolAPI = {
       module_id: moduleId,
       active,
     }),
+  getAdmin: (id: string) => schoolApiClient.get(`/api/v1/schools/${id}/admin`),
+  updateAdmin: (id: string, data: any) => schoolApiClient.put(`/api/v1/schools/${id}/admin`, data),
 }
 
 // Separate API client for transport service

@@ -3,6 +3,7 @@ package tenant
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sync"
 	"time"
 
@@ -11,14 +12,14 @@ import (
 
 // TenantManager manages tenant database connections and caching
 type TenantManager struct {
-	cipher              *Cipher
-	dbConnections       map[string]*pgxpool.Pool // Cache of tenant DB connections
-	dbMutex             sync.RWMutex
-	maxOpenConns        int32
-	maxIdleConns        int32
-	connMaxLifetime     time.Duration
-	connectionTimeout   time.Duration
-	postgresPassword    string // Superuser password for granting permissions
+	cipher            *Cipher
+	dbConnections     map[string]*pgxpool.Pool // Cache of tenant DB connections
+	dbMutex           sync.RWMutex
+	maxOpenConns      int32
+	maxIdleConns      int32
+	connMaxLifetime   time.Duration
+	connectionTimeout time.Duration
+	postgresPassword  string // Superuser password for granting permissions
 }
 
 // NewTenantManager creates a new tenant manager
@@ -66,11 +67,11 @@ func (tm *TenantManager) GetConnection(ctx context.Context, schoolCode string, h
 	// Create new connection
 	dsn := fmt.Sprintf(
 		"postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		user,
-		password,
+		url.QueryEscape(user),
+		url.QueryEscape(password),
 		host,
 		port,
-		dbName,
+		url.QueryEscape(dbName),
 	)
 
 	// Create connection pool
@@ -149,10 +150,10 @@ func (tm *TenantManager) CreateTenantDatabase(ctx context.Context, mainDB *pgxpo
 	// Connect to the new database to grant schema permissions
 	tenantDSN := fmt.Sprintf(
 		"postgres://postgres:%s@%s:%d/%s?sslmode=disable",
-		tm.postgresPassword, // Use superuser to grant permissions
+		url.QueryEscape(tm.postgresPassword), // Use superuser to grant permissions
 		"postgres",
 		5432,
-		dbName,
+		url.QueryEscape(dbName),
 	)
 
 	tenantConn, err := pgxpool.New(ctx, tenantDSN)

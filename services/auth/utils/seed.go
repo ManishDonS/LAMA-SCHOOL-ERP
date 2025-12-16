@@ -16,13 +16,13 @@ func SeedSuperAdmin(db *pgxpool.Pool, cfg *config.Config) error {
 
 	ctx := context.Background()
 
-	// Create default school if not exists
-	var schoolID int64
-	err := db.QueryRow(ctx, `
-		INSERT INTO schools (name, email, phone, address, city, state, status)
-		VALUES ('Default School', $1, '1234567890', 'Default Address', 'Default City', 'Default State', 'active')
-		ON CONFLICT (name) DO UPDATE SET email = $1
-		RETURNING id`, cfg.SuperAdminEmail).Scan(&schoolID)
+	// Create system school if not exists (using UUID)
+	systemSchoolID := "00000000-0000-0000-0000-000000000000"
+	_, err := db.Exec(ctx, `
+		INSERT INTO schools (id, name, code, db_name, db_user, db_password, db_host, db_port, domain, timezone, status)
+		VALUES ($1, 'System', 'system', 'system_db', 'system_user', 'system_pass', 'postgres', 5432, 'system.local', 'UTC', 'active')
+		ON CONFLICT (code) DO UPDATE SET name = 'System'`,
+		systemSchoolID)
 	if err != nil {
 		return err
 	}
@@ -42,7 +42,7 @@ func SeedSuperAdmin(db *pgxpool.Pool, cfg *config.Config) error {
 			password_hash = $3,
 			role = 'super_admin',
 			status = 'active'`,
-		schoolID, cfg.SuperAdminEmail, hashedPassword)
+		systemSchoolID, cfg.SuperAdminEmail, hashedPassword)
 
 	if err != nil {
 		return err

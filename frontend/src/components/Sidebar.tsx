@@ -8,16 +8,35 @@ export default function Sidebar() {
   const router = useRouter()
   const { user } = useAuthStore()
   const [mounted, setMounted] = useState(false)
+  const [modulePermissions, setModulePermissions] = useState<Record<string, any>>({})
 
   useEffect(() => {
     setMounted(true)
+
+    // Load module permissions from selected school
+    if (typeof window !== 'undefined') {
+      const schoolData = localStorage.getItem('selected_school')
+      if (schoolData) {
+        try {
+          const school = JSON.parse(schoolData)
+          if (school.module_permissions) {
+            setModulePermissions(school.module_permissions)
+          }
+        } catch (error) {
+          console.error('Failed to parse school data:', error)
+        }
+      }
+    }
   }, [])
 
   // Use undefined role during SSR to match server output
   const userRole = mounted ? user?.role : undefined
-  const { activeModules } = useAuthStore()
+  const { activeModules, modulePermissions: storePermissions } = useAuthStore()
 
-  const menuItems = getAccessibleMenuItems(userRole, activeModules)
+  // Use permissions from selected school (super admin view) or from logged in user (store)
+  const effectivePermissions = Object.keys(modulePermissions).length > 0 ? modulePermissions : storePermissions
+
+  const menuItems = getAccessibleMenuItems(userRole, activeModules, effectivePermissions)
 
   return (
     <aside className="sticky top-[48px] h-[calc(100vh-48px)] w-48 flex-shrink-0 bg-gradient-to-b from-gray-50 to-white shadow-lg border-r border-gray-200 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">

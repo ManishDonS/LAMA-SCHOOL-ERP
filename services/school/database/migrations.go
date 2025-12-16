@@ -30,12 +30,21 @@ func createSchoolsTable(ctx context.Context, db *pgxpool.Pool) error {
 		db_name VARCHAR(100) NOT NULL UNIQUE,
 		db_user VARCHAR(100) NOT NULL,
 		db_password TEXT NOT NULL,
-		db_host VARCHAR(255) NOT NULL,
+		db_host VARCHAR(255) NOT NULL DEFAULT 'postgres',
 		db_port INTEGER NOT NULL DEFAULT 5432,
 		domain VARCHAR(255) NOT NULL UNIQUE,
+		email VARCHAR(255),
+		phone VARCHAR(20),
+		address TEXT,
+		city VARCHAR(100),
+		state VARCHAR(100),
+		country VARCHAR(100),
+		pincode VARCHAR(10),
+		website VARCHAR(255),
 		logo_url TEXT,
 		timezone VARCHAR(50) NOT NULL DEFAULT 'UTC',
 		active_modules JSONB DEFAULT '[]'::jsonb,
+		module_permissions JSONB DEFAULT '{}'::jsonb,
 		status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -90,9 +99,13 @@ func createSchoolsTable(ctx context.Context, db *pgxpool.Pool) error {
 			ALTER TABLE schools ADD COLUMN logo_url TEXT;
 		END IF;
 
-		-- Add timezone column
 		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='timezone') THEN
 			ALTER TABLE schools ADD COLUMN timezone VARCHAR(50) NOT NULL DEFAULT 'UTC';
+		END IF;
+
+		-- Add module_permissions column
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='module_permissions') THEN
+			ALTER TABLE schools ADD COLUMN module_permissions JSONB DEFAULT '{}'::jsonb;
 		END IF;
 	END $$;
 	`
@@ -157,6 +170,7 @@ func createTenantUsersTable(ctx context.Context, db *pgxpool.Pool) error {
 	CREATE TABLE IF NOT EXISTS users (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 		email VARCHAR(255) NOT NULL UNIQUE,
+		password TEXT NOT NULL,
 		first_name VARCHAR(100) NOT NULL,
 		last_name VARCHAR(100) NOT NULL,
 		role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'teacher', 'student', 'parent')),

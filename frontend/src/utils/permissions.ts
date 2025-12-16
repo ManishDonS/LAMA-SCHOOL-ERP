@@ -171,6 +171,26 @@ const getMenuItemsWithPermissions = (): MenuItem[] => {
  * Get menu items that the user has permission to access
  */
 /**
+ * Map menu paths to module permission keys
+ */
+const MODULE_PERMISSION_MAP: Record<string, string> = {
+  '/dashboard/students': 'students',
+  '/dashboard/teachers': 'teachers',
+  '/dashboard/guardians': 'guardians',
+  '/dashboard/staff': 'staff',
+  '/dashboard/classes': 'classes',
+  '/dashboard/attendance': 'attendance',
+  '/dashboard/exams': 'exams',
+  '/dashboard/library': 'library',
+  '/dashboard/school-buses': 'transport',
+  '/dashboard/accounting': 'accounting',
+  '/dashboard/notifications': 'notifications',
+  '/dashboard/reports': 'reports',
+  '/website-builder': 'website',
+  '/dashboard/settings': 'settings',
+}
+
+/**
  * Get module ID for a given path
  */
 const getModuleForPath = (path: string): string | null => {
@@ -185,21 +205,45 @@ const getModuleForPath = (path: string): string | null => {
 /**
  * Get menu items that the user has permission to access
  */
-export const getAccessibleMenuItems = (userRole: UserRole | undefined, activeModules?: string[]): MenuItem[] => {
+export const getAccessibleMenuItems = (
+  userRole: UserRole | undefined,
+  activeModules?: string[],
+  modulePermissions?: Record<string, any>
+): MenuItem[] => {
   if (!userRole) return []
+
   let menuItems = getMenuItemsWithPermissions()
 
-  // Filter by active modules if provided
-  if (activeModules) {
-    menuItems = menuItems.filter((item) => {
-      const module = getModuleForPath(item.href)
-      // If item belongs to a module, check if it's active
-      if (module) {
-        return activeModules.includes(module)
-      }
-      // If not mapped to a module (core feature), always show
-      return true
-    })
+  // Super admin bypasses module permission checks
+  if (userRole !== 'super_admin') {
+    // Filter by module permissions for school admins and other roles
+    if (modulePermissions) {
+      menuItems = menuItems.filter((item) => {
+        const moduleKey = MODULE_PERMISSION_MAP[item.href]
+
+        // If no module mapping, it's a core feature (Dashboard, Communication, Settings, etc.)
+        if (!moduleKey) return true
+
+        // Check if user has at least one permission (read, create, update, or delete) for this module
+        const perms = modulePermissions[moduleKey]
+        if (!perms) return false
+
+        return perms.read || perms.create || perms.update || perms.delete
+      })
+    }
+
+    // Filter by active modules if provided
+    if (activeModules) {
+      menuItems = menuItems.filter((item) => {
+        const module = getModuleForPath(item.href)
+        // If item belongs to a module, check if it's active
+        if (module) {
+          return activeModules.includes(module)
+        }
+        // If not mapped to a module (core feature), always show
+        return true
+      })
+    }
   }
 
   return menuItems.filter((item) => hasPermission(userRole, item.roles))

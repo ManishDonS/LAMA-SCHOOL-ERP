@@ -190,20 +190,11 @@ export default function Navbar({ showBackButton = false, backLink = '/dashboard'
                   </div>
 
                   {shouldShowSchool && (
-                    <>
-                      <div className="px-4 py-2 border-b border-gray-200 bg-blue-50">
-                        <p className="text-xs font-medium text-blue-900">Current School</p>
-                        <p className="text-sm font-semibold text-blue-700">{selectedSchool.name}</p>
-                        <p className="text-xs text-blue-600">Code: {selectedSchool.code}</p>
-                      </div>
-                      <Link
-                        href="/dashboard/schools"
-                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 transition"
-                        onClick={() => setShowUserMenu(false)}
-                      >
-                        🏢 Switch School
-                      </Link>
-                    </>
+                    <div className="px-4 py-2 border-b border-gray-200 bg-blue-50">
+                      <p className="text-xs font-medium text-blue-900">Current School</p>
+                      <p className="text-sm font-semibold text-blue-700">{selectedSchool.name}</p>
+                      <p className="text-xs text-blue-600">Code: {selectedSchool.code}</p>
+                    </div>
                   )}
 
                   {isSuperAdmin && (

@@ -18,6 +18,7 @@ interface School {
   status: 'active' | 'inactive' | 'suspended'
   created_at: string
   updated_at: string
+  module_permissions?: Record<string, any>
 }
 
 interface FormData {
@@ -28,6 +29,10 @@ interface FormData {
   timezone: string
   db_user: string
   db_password: string
+  admin_email: string
+  admin_password: string
+  admin_first_name: string
+  admin_last_name: string
 }
 
 // @ts-ignore
@@ -41,6 +46,10 @@ const DEFAULT_FORM_STATE: FormData = {
   timezone: 'Asia/Kolkata',
   db_user: '',
   db_password: '',
+  admin_email: '',
+  admin_password: '',
+  admin_first_name: '',
+  admin_last_name: '',
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -64,17 +73,28 @@ function SchoolsPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
   const [uploadingLogo, setUploadingLogo] = useState(false)
-  const [activeTab, setActiveTab] = useState<'basic' | 'permissions'>('basic')
+  const [activeTab, setActiveTab] = useState<'basic' | 'admin' | 'permissions'>('basic')
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string; name: string } | null>(null)
   const [permissions, setPermissions] = useState({
     students: { create: true, read: true, update: true, delete: false },
     teachers: { create: true, read: true, update: true, delete: false },
+    guardians: { create: true, read: true, update: true, delete: false },
+    staff: { create: true, read: true, update: true, delete: false },
     classes: { create: true, read: true, update: true, delete: false },
     attendance: { create: true, read: true, update: false, delete: false },
+    exams: { create: true, read: true, update: true, delete: false },
     grades: { create: true, read: true, update: true, delete: false },
+    library: { create: true, read: true, update: true, delete: false },
+    transport: { create: true, read: true, update: true, delete: false },
     finance: { create: false, read: true, update: false, delete: false },
+    accounting: { create: false, read: true, update: false, delete: false },
+    fees: { create: true, read: true, update: true, delete: false },
+    payroll: { create: false, read: true, update: false, delete: false },
+    expenses: { create: true, read: true, update: true, delete: false },
+    notifications: { create: true, read: true, update: false, delete: false },
     reports: { create: false, read: true, update: false, delete: false },
-    settings: { create: false, read: false, update: false, delete: false },
+    website: { create: true, read: true, update: true, delete: false },
+    settings: { create: false, read: true, update: true, delete: false },
   })
 
   const getImageUrl = (path: string) => {
@@ -82,6 +102,13 @@ function SchoolsPage() {
     if (path.startsWith('http')) return path
     return `${SCHOOL_API_URL}${path}`
   }
+
+  // Redirect non-super admins
+  useEffect(() => {
+    if (user && user.role !== 'super_admin') {
+      router.push('/dashboard')
+    }
+  }, [user, router])
 
   useEffect(() => {
     fetchSchools()
@@ -169,6 +196,29 @@ function SchoolsPage() {
     return true
   }
 
+  const handleTabChange = async (tab: 'basic' | 'admin' | 'permissions') => {
+    setActiveTab(tab)
+    if (tab === 'admin' && editingId) {
+      setLoading(true)
+      try {
+        const response = await schoolAPI.getAdmin(editingId)
+        const admin = response.data
+        setFormData(prev => ({
+          ...prev,
+          admin_first_name: admin.first_name,
+          admin_last_name: admin.last_name,
+          admin_email: admin.email,
+          admin_password: '', // Clear password field
+        }))
+      } catch (err: any) {
+        console.error("Failed to fetch admin details:", err)
+        setError("Failed to fetch admin details. Ensure the school database is accessible.")
+      } finally {
+        setLoading(false)
+      }
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -181,26 +231,46 @@ function SchoolsPage() {
     setLoading(true)
     try {
       if (editingId) {
-        // Update school
-        const updateData = {
-          name: formData.name,
-          domain: formData.domain,
-          logo_url: formData.logo_url,
-          timezone: formData.timezone,
+        if (activeTab === 'admin') {
+          // Update Admin
+          const updateData = {
+            first_name: formData.admin_first_name,
+            last_name: formData.admin_last_name,
+            email: formData.admin_email,
+            password: formData.admin_password || undefined, // Only send if set
+          }
+          await schoolAPI.updateAdmin(editingId, updateData)
+          setSuccess('School admin updated successfully')
+        } else {
+          // Update school (basic or permissions)
+          const updateData = {
+            name: formData.name,
+            domain: formData.domain,
+            logo_url: formData.logo_url,
+            timezone: formData.timezone,
+            module_permissions: permissions // Sent for basic/permissions tab just in case
+          }
+          await schoolAPI.update(editingId, updateData)
+          setSuccess('School updated successfully')
+          setEditingId(null)
+          setShowForm(false) // Close form only on success of main school update
+          setFormData(DEFAULT_FORM_STATE)
+          fetchSchools()
         }
-        await schoolAPI.update(editingId, updateData)
-        setSuccess('School updated successfully')
-        setEditingId(null)
       } else {
         // Create new school
-        await schoolAPI.create(formData)
+        const createData = {
+          ...formData,
+          module_permissions: permissions
+        }
+        await schoolAPI.create(createData)
         setSuccess('School created successfully')
+        setFormData(DEFAULT_FORM_STATE)
+        setShowForm(false)
+        fetchSchools()
       }
-      setFormData(DEFAULT_FORM_STATE)
-      setShowForm(false)
-      fetchSchools()
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to save school')
+      setError(err.response?.data?.error || 'Failed to save changes')
     } finally {
       setLoading(false)
     }
@@ -216,7 +286,18 @@ function SchoolsPage() {
       timezone: school.timezone,
       db_user: '',
       db_password: '',
+      admin_email: '',
+      admin_password: '',
+      admin_first_name: '',
+      admin_last_name: '',
     })
+
+    // @ts-ignore - module_permissions might exist on school
+    if (school.module_permissions) {
+      // @ts-ignore
+      setPermissions(school.module_permissions)
+    }
+
     setShowForm(true)
   }
 
@@ -272,11 +353,17 @@ function SchoolsPage() {
   }
 
   const handleLoginToSchool = (school: School) => {
-    // Store the selected school
-    localStorage.setItem('selected_school', JSON.stringify(school))
+    // Store the selected school with module permissions
+    localStorage.setItem('selected_school', JSON.stringify({
+      id: school.id,
+      name: school.name,
+      code: school.code,
+      logo_url: school.logo_url,
+      module_permissions: school.module_permissions || {}
+    }))
     setSuccess(`Switched to ${school.name}. Redirecting to dashboard...`)
     setTimeout(() => {
-      // Reload to update navbar
+      // Reload to update navbar and sidebar
       window.location.href = '/dashboard'
     }, 1000)
   }
@@ -375,7 +462,7 @@ function SchoolsPage() {
                   <div className="flex px-6">
                     <button
                       type="button"
-                      onClick={() => setActiveTab('basic')}
+                      onClick={() => handleTabChange('basic')}
                       className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${activeTab === 'basic'
                         ? 'border-blue-600 text-blue-600'
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -385,7 +472,17 @@ function SchoolsPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setActiveTab('permissions')}
+                      onClick={() => handleTabChange('admin')}
+                      className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${activeTab === 'admin'
+                        ? 'border-blue-600 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                    >
+                      School Admin
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleTabChange('permissions')}
                       className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${activeTab === 'permissions'
                         ? 'border-blue-600 text-blue-600'
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -598,6 +695,85 @@ function SchoolsPage() {
                     </>
                   )}
 
+                  {/* School Admin Tab */}
+                  {activeTab === 'admin' && (
+                    <div className="space-y-6">
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                        <p className="text-sm text-blue-800">
+                          {editingId ? "Manage the administrator account for this school." : "Create the initial administrator account for this school. This user will have full access to manage the school settings and users."}
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Admin First Name */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            First Name *
+                          </label>
+                          <input
+                            type="text"
+                            name="admin_first_name"
+                            value={formData.admin_first_name}
+                            onChange={handleInputChange}
+                            placeholder="First Name"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            required
+                          />
+                        </div>
+
+                        {/* Admin Last Name */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Last Name *
+                          </label>
+                          <input
+                            type="text"
+                            name="admin_last_name"
+                            value={formData.admin_last_name}
+                            onChange={handleInputChange}
+                            placeholder="Last Name"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            required
+                          />
+                        </div>
+
+                        {/* Admin Email */}
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Admin Email *
+                          </label>
+                          <input
+                            type="email"
+                            name="admin_email"
+                            value={formData.admin_email}
+                            onChange={handleInputChange}
+                            placeholder="admin@school.com"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            required
+                          />
+                        </div>
+
+                        {/* Admin Password */}
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            {editingId ? 'New Password (Optional)' : 'Admin Password *'}
+                          </label>
+                          <input
+                            type="password"
+                            name="admin_password"
+                            value={formData.admin_password}
+                            onChange={handleInputChange}
+                            placeholder={editingId ? "Leave blank to keep current password" : "Create a strong password"}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            minLength={8}
+                            required={!editingId}
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Must be at least 8 characters long</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Permissions Tab */}
                   {activeTab === 'permissions' && (
                     <div className="space-y-6">
@@ -655,7 +831,7 @@ function SchoolsPage() {
                       disabled={loading}
                       className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-2 rounded-lg transition"
                     >
-                      {loading ? 'Processing...' : editingId ? 'Update School' : 'Create School'}
+                      {loading ? 'Processing...' : editingId ? (activeTab === 'admin' ? 'Update Admin' : 'Update School') : 'Create School'}
                     </button>
                     <button
                       type="button"
