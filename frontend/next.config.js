@@ -14,6 +14,14 @@ const nextConfig = {
     // Use default webpack optimization, don't customize splitChunks
     return config;
   },
+  async rewrites() {
+    return [
+      {
+        source: '/uploads/:path*',
+        destination: `${process.env.NEXT_PUBLIC_SCHOOL_API_URL || 'http://localhost:3011'}/uploads/:path*`,
+      },
+    ]
+  },
 };
 
 module.exports = nextConfig;

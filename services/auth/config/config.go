@@ -9,6 +9,11 @@ type Config struct {
 	Port               string
 	Environment        string
 	DatabaseURL        string
+	DBHost             string
+	DBPort             string
+	DBName             string
+	DBUser             string
+	DBPassword         string
 	JWTSecret          string
 	JWTRefreshSecret   string
 	AccessTokenExpiry  time.Duration
@@ -19,6 +24,7 @@ type Config struct {
 	MaxConnections     int
 	SuperAdminEmail    string
 	SuperAdminPassword string
+	EncryptionKey      string
 }
 
 func LoadConfig() *Config {
@@ -31,6 +37,11 @@ func LoadConfig() *Config {
 		Port:               getEnv("PORT", "3001"),
 		Environment:        getEnv("ENVIRONMENT", "development"),
 		DatabaseURL:        getRequiredEnv("DATABASE_URL"),
+		DBHost:             getEnv("DB_HOST", "postgres"),
+		DBPort:             getEnv("DB_PORT", "5432"),
+		DBName:             getEnv("DB_NAME", "school_erp"),
+		DBUser:             getEnv("DB_USER", "postgres"),
+		DBPassword:         getEnv("DB_PASSWORD", "postgres"),
 		JWTSecret:          getRequiredEnv("JWT_SECRET"),
 		JWTRefreshSecret:   getRequiredEnv("REFRESH_TOKEN_SECRET"),
 		AccessTokenExpiry:  accessExpiry,
@@ -41,6 +52,7 @@ func LoadConfig() *Config {
 		MaxConnections:     25,
 		SuperAdminEmail:    getEnv("SUPER_ADMIN_EMAIL", ""),
 		SuperAdminPassword: getEnv("SUPER_ADMIN_PASSWORD", ""),
+		EncryptionKey:      getEnv("ENCRYPTION_KEY", "default-key-change-in-production"),
 	}
 }
 

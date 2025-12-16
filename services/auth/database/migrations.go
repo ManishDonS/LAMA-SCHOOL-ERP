@@ -47,7 +47,7 @@ func RunMigrations(db *pgxpool.Pool) error {
 			sql: `
 			CREATE TABLE IF NOT EXISTS users (
 				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-				school_id UUID NOT NULL REFERENCES schools(id),
+				school_id UUID NOT NULL,
 				email VARCHAR(255) NOT NULL,
 				password_hash VARCHAR(255) NOT NULL,
 				first_name VARCHAR(100),
@@ -67,7 +67,7 @@ func RunMigrations(db *pgxpool.Pool) error {
 			sql: `
 			CREATE TABLE IF NOT EXISTS roles (
 				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-				school_id UUID NOT NULL REFERENCES schools(id),
+				school_id UUID NOT NULL,
 				name VARCHAR(100) NOT NULL,
 				description TEXT,
 				permissions JSONB DEFAULT '[]',

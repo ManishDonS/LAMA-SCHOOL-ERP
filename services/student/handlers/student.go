@@ -14,6 +14,7 @@ import (
 
 	"school-erp/student/config"
 	"school-erp/student/database"
+	"school-erp/student/middleware"
 )
 
 type StudentHandler struct {
@@ -50,7 +51,79 @@ func NewStudentHandler(db *pgxpool.Pool, cfg *config.Config) *StudentHandler {
 // @Success 200 {object} map[string]interface{}
 // @Router /students [get]
 func (h *StudentHandler) ListStudents(c *fiber.Ctx) error {
-	return c.JSON(fiber.Map{"message": "Students list", "students": []database.Student{}})
+	ctx := context.Background()
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
+	query := `
+		SELECT id, first_name, last_name, student_id_number, class, section, 
+		       email, phone, status
+		FROM students
+		ORDER BY created_at DESC
+	`
+
+	rows, err := tenantDB.Query(ctx, query)
+	if err != nil {
+		log.Printf("Failed to query students: %v", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to fetch students",
+		})
+	}
+	defer rows.Close()
+
+	var students []fiber.Map
+	for rows.Next() {
+		var (
+			id              int64
+			firstName       string
+			lastName        string
+			studentIDNumber string
+			className       string
+			section         *string // Nullable
+			email           string
+			phone           *string // Nullable
+			status          string
+		)
+		if err := rows.Scan(&id, &firstName, &lastName, &studentIDNumber, &className, &section, &email, &phone, &status); err != nil {
+			log.Printf("Failed to scan student row: %v", err)
+			continue
+		}
+
+		// Handle nullable fields safely
+		sectionStr := ""
+		if section != nil {
+			sectionStr = *section
+		}
+		phoneStr := ""
+		if phone != nil {
+			phoneStr = *phone
+		}
+
+		students = append(students, fiber.Map{
+			"id":                id,
+			"first_name":        firstName,
+			"last_name":         lastName,
+			"student_id_number": studentIDNumber,
+			"class":             className,
+			"section":           sectionStr,
+			"email":             email,
+			"primary_phone":     phoneStr, // Mapping to frontend expectation 'primary_phone' or similar
+			"status":            status,
+		})
+	}
+
+	if students == nil {
+		students = []fiber.Map{}
+	}
+
+	return c.JSON(fiber.Map{
+		"message":  "Students list",
+		"students": students,
+	})
 }
 
 // CreateStudent godoc
@@ -97,7 +170,22 @@ func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
 	}
 
 	authURL := fmt.Sprintf("%s/api/v1/auth/register", h.cfg.AuthServiceURL)
-	resp, err := http.Post(authURL, "application/json", bytes.NewBuffer(authBody))
+
+	// Create request
+	proxyReq, err := http.NewRequest("POST", authURL, bytes.NewBuffer(authBody))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create auth request"})
+	}
+	proxyReq.Header.Set("Content-Type", "application/json")
+
+	// Forward Tenant Code
+	tenantCode := middleware.GetTenantCode(c)
+	if tenantCode != "" {
+		proxyReq.Header.Set("X-Tenant-Code", tenantCode)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(proxyReq)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to connect to Auth Service"})
 	}
@@ -122,6 +210,13 @@ func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
 
 	// 2. Create Student in Database
 	ctx := context.Background()
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
 	query := `
 		INSERT INTO students (
 			school_id, user_id, first_name, last_name, email, 
@@ -139,10 +234,8 @@ func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
 		}
 	}
 
-	log.Printf("DEBUG: Attempting Insert with SchoolID=%s, UserID=%s", req.SchoolID, userID)
-
 	// Generate Student ID
-	studentIDNumber, err := h.generateStudentID(ctx)
+	studentIDNumber, err := h.generateStudentID(ctx, tenantDB)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to generate student ID",
@@ -152,7 +245,7 @@ func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
 	admissionDate := time.Now()
 
 	var studentID int64
-	err = h.db.QueryRow(ctx, query,
+	err = tenantDB.QueryRow(ctx, query,
 		req.SchoolID, userID, req.FirstName, req.LastName, req.Email,
 		studentIDNumber, // roll_number (using student ID for now)
 		req.ClassID,     // class
@@ -191,6 +284,13 @@ func (h *StudentHandler) GetStudent(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
 	// Get basic student info
 	var student database.Student
 	query := `
@@ -200,7 +300,7 @@ func (h *StudentHandler) GetStudent(c *fiber.Ctx) error {
 		       address, status, created_at, updated_at
 		FROM students WHERE id = $1
 	`
-	err := h.db.QueryRow(ctx, query, studentID).Scan(
+	err := tenantDB.QueryRow(ctx, query, studentID).Scan(
 		&student.ID, &student.SchoolID, &student.UserID, &student.FirstName,
 		&student.LastName, &student.DateOfBirth, &student.Gender, &student.Nationality,
 		&student.StudentIDNumber, &student.RollNumber, &student.Class, &student.Section,
@@ -215,22 +315,22 @@ func (h *StudentHandler) GetStudent(c *fiber.Ctx) error {
 	}
 
 	// Get guardians
-	guardians, _ := h.getStudentGuardians(ctx, studentID)
+	guardians, _ := h.getStudentGuardians(ctx, studentID, tenantDB)
 
 	// Get emergency contacts
-	emergencyContacts, _ := h.getEmergencyContacts(ctx, studentID)
+	emergencyContacts, _ := h.getEmergencyContacts(ctx, studentID, tenantDB)
 
 	// Get current academic performance
-	currentPerformance, _ := h.getCurrentPerformance(ctx, studentID)
+	currentPerformance, _ := h.getCurrentPerformance(ctx, studentID, tenantDB)
 
 	// Get attendance summary
-	attendanceSummary, _ := h.getAttendanceSummary(ctx, studentID)
+	attendanceSummary, _ := h.getAttendanceSummary(ctx, studentID, tenantDB)
 
 	// Get fee summary
-	feeSummary, _ := h.getFeeSummary(ctx, studentID)
+	feeSummary, _ := h.getFeeSummary(ctx, studentID, tenantDB)
 
 	// Get recent activities
-	recentActivities, _ := h.getRecentActivities(ctx, studentID, 10)
+	recentActivities, _ := h.getRecentActivities(ctx, studentID, 10, tenantDB)
 
 	details := database.StudentDetails{
 		Student:            student,
@@ -258,6 +358,13 @@ func (h *StudentHandler) GetStudentStatistics(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
 	stats := database.StudentStatistics{StudentID: 0}
 
 	// Get overall attendance
@@ -266,7 +373,7 @@ func (h *StudentHandler) GetStudentStatistics(c *fiber.Ctx) error {
 		FROM attendance_summary
 		WHERE student_id = $1
 	`
-	h.db.QueryRow(ctx, query, studentID).Scan(&stats.OverallAttendance)
+	tenantDB.QueryRow(ctx, query, studentID).Scan(&stats.OverallAttendance)
 
 	// Get current GPA and percentage
 	query = `
@@ -276,7 +383,7 @@ func (h *StudentHandler) GetStudentStatistics(c *fiber.Ctx) error {
 		ORDER BY created_at DESC
 		LIMIT 1
 	`
-	h.db.QueryRow(ctx, query, studentID).Scan(&stats.CurrentGPA, &stats.CurrentPercentage)
+	tenantDB.QueryRow(ctx, query, studentID).Scan(&stats.CurrentGPA, &stats.CurrentPercentage)
 
 	// Get fee statistics
 	query = `
@@ -286,7 +393,7 @@ func (h *StudentHandler) GetStudentStatistics(c *fiber.Ctx) error {
 		ORDER BY created_at DESC
 		LIMIT 1
 	`
-	h.db.QueryRow(ctx, query, studentID).Scan(&stats.TotalFeesPaid, &stats.OutstandingFees)
+	tenantDB.QueryRow(ctx, query, studentID).Scan(&stats.TotalFeesPaid, &stats.OutstandingFees)
 
 	// Get behavior points
 	query = `
@@ -294,7 +401,7 @@ func (h *StudentHandler) GetStudentStatistics(c *fiber.Ctx) error {
 		FROM behavioral_records
 		WHERE student_id = $1
 	`
-	h.db.QueryRow(ctx, query, studentID).Scan(&stats.BehaviorPoints)
+	tenantDB.QueryRow(ctx, query, studentID).Scan(&stats.BehaviorPoints)
 
 	// Get absence and late counts
 	query = `
@@ -304,15 +411,15 @@ func (h *StudentHandler) GetStudentStatistics(c *fiber.Ctx) error {
 		FROM attendance_summary
 		WHERE student_id = $1
 	`
-	h.db.QueryRow(ctx, query, studentID).Scan(&stats.TotalAbsences, &stats.TotalLateDays)
+	tenantDB.QueryRow(ctx, query, studentID).Scan(&stats.TotalAbsences, &stats.TotalLateDays)
 
 	// Get document count
 	query = `SELECT COUNT(*) FROM student_documents WHERE student_id = $1`
-	h.db.QueryRow(ctx, query, studentID).Scan(&stats.DocumentsCount)
+	tenantDB.QueryRow(ctx, query, studentID).Scan(&stats.DocumentsCount)
 
 	// Get health records count
 	query = `SELECT COUNT(*) FROM health_records WHERE student_id = $1`
-	h.db.QueryRow(ctx, query, studentID).Scan(&stats.HealthRecordsCount)
+	tenantDB.QueryRow(ctx, query, studentID).Scan(&stats.HealthRecordsCount)
 
 	return c.JSON(stats)
 }
@@ -330,6 +437,13 @@ func (h *StudentHandler) GetStudentAcademics(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
 	// Get academic records
 	query := `
 		SELECT id, student_id, academic_year, term, subject, marks_obtained,
@@ -338,7 +452,7 @@ func (h *StudentHandler) GetStudentAcademics(c *fiber.Ctx) error {
 		WHERE student_id = $1
 		ORDER BY academic_year DESC, term DESC, subject ASC
 	`
-	rows, err := h.db.Query(ctx, query, studentID)
+	rows, err := tenantDB.Query(ctx, query, studentID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch academic records"})
 	}
@@ -361,7 +475,7 @@ func (h *StudentHandler) GetStudentAcademics(c *fiber.Ctx) error {
 		WHERE student_id = $1
 		ORDER BY academic_year DESC, term DESC
 	`
-	rows, err = h.db.Query(ctx, query, studentID)
+	rows, err = tenantDB.Query(ctx, query, studentID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch performance"})
 	}
@@ -395,6 +509,13 @@ func (h *StudentHandler) GetStudentAttendance(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
 	// Get attendance records (last 90 days)
 	query := `
 		SELECT id, student_id, date, status, check_in_time, check_out_time,
@@ -403,7 +524,7 @@ func (h *StudentHandler) GetStudentAttendance(c *fiber.Ctx) error {
 		WHERE student_id = $1 AND date >= CURRENT_DATE - INTERVAL '90 days'
 		ORDER BY date DESC
 	`
-	rows, err := h.db.Query(ctx, query, studentID)
+	rows, err := tenantDB.Query(ctx, query, studentID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch attendance"})
 	}
@@ -428,7 +549,7 @@ func (h *StudentHandler) GetStudentAttendance(c *fiber.Ctx) error {
 		ORDER BY academic_year DESC, month DESC
 		LIMIT 12
 	`
-	rows, err = h.db.Query(ctx, query, studentID)
+	rows, err = tenantDB.Query(ctx, query, studentID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch summary"})
 	}
@@ -462,6 +583,13 @@ func (h *StudentHandler) GetStudentFees(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
 	// Get fee payments
 	query := `
 		SELECT id, student_id, academic_year, fee_type, amount_paid, payment_date,
@@ -471,7 +599,7 @@ func (h *StudentHandler) GetStudentFees(c *fiber.Ctx) error {
 		WHERE student_id = $1
 		ORDER BY payment_date DESC
 	`
-	rows, err := h.db.Query(ctx, query, studentID)
+	rows, err := tenantDB.Query(ctx, query, studentID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch payments"})
 	}
@@ -494,7 +622,7 @@ func (h *StudentHandler) GetStudentFees(c *fiber.Ctx) error {
 		WHERE student_id = $1
 		ORDER BY academic_year DESC
 	`
-	rows, err = h.db.Query(ctx, query, studentID)
+	rows, err = tenantDB.Query(ctx, query, studentID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch summary"})
 	}
@@ -528,6 +656,13 @@ func (h *StudentHandler) GetStudentHealth(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
 	query := `
 		SELECT id, student_id, record_type, title, description, severity,
 		       diagnosed_date, doctor_name, hospital, prescription, notes,
@@ -536,7 +671,7 @@ func (h *StudentHandler) GetStudentHealth(c *fiber.Ctx) error {
 		WHERE student_id = $1
 		ORDER BY created_at DESC
 	`
-	rows, err := h.db.Query(ctx, query, studentID)
+	rows, err := tenantDB.Query(ctx, query, studentID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch health records"})
 	}
@@ -567,6 +702,13 @@ func (h *StudentHandler) GetStudentBehavioral(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
 	query := `
 		SELECT id, student_id, record_type, category, title, description,
 		       incident_date, action_taken, reported_by, severity, points,
@@ -575,7 +717,7 @@ func (h *StudentHandler) GetStudentBehavioral(c *fiber.Ctx) error {
 		WHERE student_id = $1
 		ORDER BY incident_date DESC
 	`
-	rows, err := h.db.Query(ctx, query, studentID)
+	rows, err := tenantDB.Query(ctx, query, studentID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch behavioral records"})
 	}
@@ -606,6 +748,13 @@ func (h *StudentHandler) GetStudentDocuments(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
 	query := `
 		SELECT id, student_id, document_type, title, file_name, file_path,
 		       file_size, mime_type, is_verified, verified_by, verified_at,
@@ -614,7 +763,7 @@ func (h *StudentHandler) GetStudentDocuments(c *fiber.Ctx) error {
 		WHERE student_id = $1
 		ORDER BY created_at DESC
 	`
-	rows, err := h.db.Query(ctx, query, studentID)
+	rows, err := tenantDB.Query(ctx, query, studentID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch documents"})
 	}
@@ -645,6 +794,13 @@ func (h *StudentHandler) GetStudentCommunications(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
 	query := `
 		SELECT id, student_id, communication_type, subject, message,
 		       communication_date, initiated_by, teacher_id, parent_id,
@@ -653,7 +809,7 @@ func (h *StudentHandler) GetStudentCommunications(c *fiber.Ctx) error {
 		WHERE student_id = $1
 		ORDER BY communication_date DESC
 	`
-	rows, err := h.db.Query(ctx, query, studentID)
+	rows, err := tenantDB.Query(ctx, query, studentID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch communications"})
 	}
@@ -672,7 +828,7 @@ func (h *StudentHandler) GetStudentCommunications(c *fiber.Ctx) error {
 }
 
 // Helper functions
-func (h *StudentHandler) getStudentGuardians(ctx context.Context, studentID string) ([]database.StudentGuardian, error) {
+func (h *StudentHandler) getStudentGuardians(ctx context.Context, studentID string, db *pgxpool.Pool) ([]database.StudentGuardian, error) {
 	query := `
 		SELECT id, student_id, guardian_type, name, relationship, phone, email,
 		       occupation, address, is_primary, created_at, updated_at
@@ -680,7 +836,7 @@ func (h *StudentHandler) getStudentGuardians(ctx context.Context, studentID stri
 		WHERE student_id = $1
 		ORDER BY is_primary DESC
 	`
-	rows, err := h.db.Query(ctx, query, studentID)
+	rows, err := db.Query(ctx, query, studentID)
 	if err != nil {
 		return nil, err
 	}
@@ -697,7 +853,7 @@ func (h *StudentHandler) getStudentGuardians(ctx context.Context, studentID stri
 	return guardians, nil
 }
 
-func (h *StudentHandler) getEmergencyContacts(ctx context.Context, studentID string) ([]database.EmergencyContact, error) {
+func (h *StudentHandler) getEmergencyContacts(ctx context.Context, studentID string, db *pgxpool.Pool) ([]database.EmergencyContact, error) {
 	query := `
 		SELECT id, student_id, name, relationship, phone, alternate_phone,
 		       address, priority, created_at, updated_at
@@ -705,7 +861,7 @@ func (h *StudentHandler) getEmergencyContacts(ctx context.Context, studentID str
 		WHERE student_id = $1
 		ORDER BY priority ASC
 	`
-	rows, err := h.db.Query(ctx, query, studentID)
+	rows, err := db.Query(ctx, query, studentID)
 	if err != nil {
 		return nil, err
 	}
@@ -722,7 +878,7 @@ func (h *StudentHandler) getEmergencyContacts(ctx context.Context, studentID str
 	return contacts, nil
 }
 
-func (h *StudentHandler) getCurrentPerformance(ctx context.Context, studentID string) (*database.AcademicPerformance, error) {
+func (h *StudentHandler) getCurrentPerformance(ctx context.Context, studentID string, db *pgxpool.Pool) (*database.AcademicPerformance, error) {
 	var perf database.AcademicPerformance
 	query := `
 		SELECT id, student_id, academic_year, term, gpa, percentage, rank,
@@ -732,7 +888,7 @@ func (h *StudentHandler) getCurrentPerformance(ctx context.Context, studentID st
 		ORDER BY created_at DESC
 		LIMIT 1
 	`
-	err := h.db.QueryRow(ctx, query, studentID).Scan(
+	err := db.QueryRow(ctx, query, studentID).Scan(
 		&perf.ID, &perf.StudentID, &perf.AcademicYear, &perf.Term, &perf.GPA,
 		&perf.Percentage, &perf.Rank, &perf.TotalStudents, &perf.Remarks,
 		&perf.CreatedAt, &perf.UpdatedAt,
@@ -743,7 +899,7 @@ func (h *StudentHandler) getCurrentPerformance(ctx context.Context, studentID st
 	return &perf, nil
 }
 
-func (h *StudentHandler) getAttendanceSummary(ctx context.Context, studentID string) (*database.AttendanceSummary, error) {
+func (h *StudentHandler) getAttendanceSummary(ctx context.Context, studentID string, db *pgxpool.Pool) (*database.AttendanceSummary, error) {
 	var summary database.AttendanceSummary
 	query := `
 		SELECT id, student_id, academic_year, month, total_days, present_days,
@@ -754,7 +910,7 @@ func (h *StudentHandler) getAttendanceSummary(ctx context.Context, studentID str
 		ORDER BY created_at DESC
 		LIMIT 1
 	`
-	err := h.db.QueryRow(ctx, query, studentID).Scan(
+	err := db.QueryRow(ctx, query, studentID).Scan(
 		&summary.ID, &summary.StudentID, &summary.AcademicYear, &summary.Month,
 		&summary.TotalDays, &summary.PresentDays, &summary.AbsentDays, &summary.LateDays,
 		&summary.ExcusedDays, &summary.AttendancePercentage, &summary.CreatedAt, &summary.UpdatedAt,
@@ -765,7 +921,7 @@ func (h *StudentHandler) getAttendanceSummary(ctx context.Context, studentID str
 	return &summary, nil
 }
 
-func (h *StudentHandler) getFeeSummary(ctx context.Context, studentID string) (*database.FeeSummary, error) {
+func (h *StudentHandler) getFeeSummary(ctx context.Context, studentID string, db *pgxpool.Pool) (*database.FeeSummary, error) {
 	var summary database.FeeSummary
 	query := `
 		SELECT id, student_id, academic_year, total_fee, paid_amount, outstanding_amount,
@@ -775,7 +931,7 @@ func (h *StudentHandler) getFeeSummary(ctx context.Context, studentID string) (*
 		ORDER BY created_at DESC
 		LIMIT 1
 	`
-	err := h.db.QueryRow(ctx, query, studentID).Scan(
+	err := db.QueryRow(ctx, query, studentID).Scan(
 		&summary.ID, &summary.StudentID, &summary.AcademicYear, &summary.TotalFee,
 		&summary.PaidAmount, &summary.OutstandingAmount, &summary.LastPaymentDate,
 		&summary.CreatedAt, &summary.UpdatedAt,
@@ -786,7 +942,7 @@ func (h *StudentHandler) getFeeSummary(ctx context.Context, studentID string) (*
 	return &summary, nil
 }
 
-func (h *StudentHandler) getRecentActivities(ctx context.Context, studentID string, limit int) ([]database.StudentActivity, error) {
+func (h *StudentHandler) getRecentActivities(ctx context.Context, studentID string, limit int, db *pgxpool.Pool) ([]database.StudentActivity, error) {
 	query := fmt.Sprintf(`
 		SELECT id, student_id, activity_type, title, description, metadata,
 		       performed_by, activity_date, created_at
@@ -796,7 +952,7 @@ func (h *StudentHandler) getRecentActivities(ctx context.Context, studentID stri
 		LIMIT %d
 	`, limit)
 
-	rows, err := h.db.Query(ctx, query, studentID)
+	rows, err := db.Query(ctx, query, studentID)
 	if err != nil {
 		return nil, err
 	}
@@ -886,7 +1042,7 @@ func (h *StudentHandler) RemoveEnrollment(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Enrollment removed", "enrollment_id": id})
 }
 
-func (h *StudentHandler) generateStudentID(ctx context.Context) (string, error) {
+func (h *StudentHandler) generateStudentID(ctx context.Context, db *pgxpool.Pool) (string, error) {
 	year := time.Now().Year()
 	prefix := fmt.Sprintf("STU-%d", year)
 
@@ -900,7 +1056,7 @@ func (h *StudentHandler) generateStudentID(ctx context.Context) (string, error) 
 	`
 
 	var lastID string
-	err := h.db.QueryRow(ctx, query, prefix+"%").Scan(&lastID)
+	err := db.QueryRow(ctx, query, prefix+"%").Scan(&lastID)
 
 	if err != nil {
 		if err.Error() == "no rows in result set" {

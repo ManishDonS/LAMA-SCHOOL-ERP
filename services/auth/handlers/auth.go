@@ -13,6 +13,7 @@ import (
 	"school-erp/auth/config"
 	"school-erp/auth/database"
 	"school-erp/auth/messaging"
+	"school-erp/auth/middleware"
 	"school-erp/auth/pkg/logger"
 	"school-erp/auth/pkg/monitoring"
 	"school-erp/auth/utils"
@@ -89,7 +90,14 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 
 	// Insert user
 	var userID string
-	err = h.db.QueryRow(
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
+	err = tenantDB.QueryRow(
 		c.Context(),
 		`INSERT INTO users (school_id, email, password_hash, first_name, last_name, role, status)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -117,7 +125,7 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	}
 
 	// Store refresh token in database
-	if err := h.storeRefreshToken(c.Context(), userID, tokens.RefreshToken); err != nil {
+	if err := h.storeRefreshToken(c.Context(), userID, tokens.RefreshToken, tenantDB); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to store token",
 		})
@@ -160,7 +168,7 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	}
 
 	// Log audit
-	if err := h.logAudit(c.Context(), userID, "REGISTER", "user", c.IP()); err != nil {
+	if err := h.logAudit(c.Context(), userID, "REGISTER", "user", c.IP(), tenantDB); err != nil {
 		// Log error but don't fail request
 		logger.ErrorLog("handlers", err, "Failed to log audit for user registration")
 	}
@@ -206,7 +214,14 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 
 	// Find user
 	var user database.User
-	err := h.db.QueryRow(
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
+	err := tenantDB.QueryRow(
 		c.Context(),
 		`SELECT id, school_id, email, password_hash, first_name, last_name, role, status
 		 FROM users WHERE email = $1`,
@@ -254,7 +269,7 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	}
 
 	// Store refresh token
-	if err := h.storeRefreshToken(c.Context(), user.ID, tokens.RefreshToken); err != nil {
+	if err := h.storeRefreshToken(c.Context(), user.ID, tokens.RefreshToken, tenantDB); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to store token",
 		})
@@ -272,7 +287,7 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	})
 
 	// Log audit
-	if err := h.logAudit(c.Context(), user.ID, "LOGIN", "user", c.IP()); err != nil {
+	if err := h.logAudit(c.Context(), user.ID, "LOGIN", "user", c.IP(), tenantDB); err != nil {
 		// Log error but don't fail request
 		logger.ErrorLog("handlers", err, "Failed to log audit for user login")
 	}
@@ -338,7 +353,14 @@ func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
 
 	// Get user from database to get fresh data
 	var user database.User
-	err = h.db.QueryRow(
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
+	err = tenantDB.QueryRow(
 		c.Context(),
 		`SELECT id, school_id, email, first_name, last_name, role, status FROM users WHERE id = $1`,
 		claims.Subject,
@@ -361,7 +383,7 @@ func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
 	}
 
 	// Store new refresh token
-	if err := h.storeRefreshToken(c.Context(), user.ID, tokens.RefreshToken); err != nil {
+	if err := h.storeRefreshToken(c.Context(), user.ID, tokens.RefreshToken, tenantDB); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to store token",
 		})
@@ -408,7 +430,14 @@ func (h *AuthHandler) GetMe(c *fiber.Ctx) error {
 
 	// Get user from database
 	var user database.User
-	err := h.db.QueryRow(
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
+	err := tenantDB.QueryRow(
 		c.Context(),
 		`SELECT id, school_id, email, first_name, last_name, role, status, created_at FROM users WHERE id = $1`,
 		userID,
@@ -456,7 +485,14 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	}
 
 	// Revoke all refresh tokens for the user
-	_, err := h.db.Exec(
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
+	_, err := tenantDB.Exec(
 		c.Context(),
 		`UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`,
 		userID,
@@ -468,7 +504,7 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := h.logAudit(c.Context(), userID, "LOGOUT", "user", c.IP()); err != nil {
+	if err := h.logAudit(c.Context(), userID, "LOGOUT", "user", c.IP(), tenantDB); err != nil {
 		// Log error but don't fail request
 		logger.ErrorLog("handlers", err, "Failed to log audit for user logout")
 	}
@@ -495,9 +531,9 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	})
 }
 
-func (h *AuthHandler) storeRefreshToken(ctx context.Context, userID string, token string) error {
+func (h *AuthHandler) storeRefreshToken(ctx context.Context, userID string, token string, db *pgxpool.Pool) error {
 	expiresAt := time.Now().Add(h.cfg.RefreshTokenExpiry)
-	_, err := h.db.Exec(
+	_, err := db.Exec(
 		ctx,
 		`INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)`,
 		userID, token, expiresAt,
@@ -505,8 +541,8 @@ func (h *AuthHandler) storeRefreshToken(ctx context.Context, userID string, toke
 	return err
 }
 
-func (h *AuthHandler) logAudit(ctx context.Context, userID string, action, resource, ipAddress string) error {
-	_, err := h.db.Exec(
+func (h *AuthHandler) logAudit(ctx context.Context, userID string, action, resource, ipAddress string, db *pgxpool.Pool) error {
+	_, err := db.Exec(
 		ctx,
 		`INSERT INTO audit_logs (user_id, action, resource, ip_address) VALUES ($1, $2, $3, $4)`,
 		userID, action, resource, ipAddress,

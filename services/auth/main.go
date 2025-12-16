@@ -16,10 +16,13 @@ import (
 	"school-erp/auth/database"
 	_ "school-erp/auth/docs" // load API Docs files (will be created by swag init)
 	"school-erp/auth/messaging"
+	"school-erp/auth/middleware"
 	"school-erp/auth/pkg/logger"
 	"school-erp/auth/pkg/monitoring"
+	"school-erp/auth/pkg/tenant"
 	"school-erp/auth/routes"
 	"school-erp/auth/utils"
+	"strconv"
 )
 
 // Helper function to check if an origin is in the allowed list
@@ -90,6 +93,27 @@ func main() {
 
 	// Setup middleware
 	setupMiddleware(app)
+
+	// Initialize Tenant Manager
+	tenantManager, err := tenant.NewTenantManager(
+		cfg.EncryptionKey,
+		10, // Max open conns
+		5,  // Max idle conns
+		5*time.Minute,
+		cfg.DBPassword,
+	)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize tenant manager")
+	}
+
+	// Register Tenant Resolver Middleware
+	dbPort, _ := strconv.Atoi(cfg.DBPort)
+	app.Use(middleware.NewTenantResolver(middleware.TenantResolverConfig{
+		TenantManager: tenantManager,
+		MainDB:        db,
+		DBHost:        cfg.DBHost,
+		DBPort:        dbPort,
+	}))
 
 	// Swagger Route
 	app.Get("/swagger/*", swagger.HandlerDefault)
@@ -229,7 +253,7 @@ func setupMiddleware(app *fiber.App) {
 		}
 
 		c.Set("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS,PATCH")
-		c.Set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With")
+		c.Set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With,x-tenant-code")
 		c.Set("Access-Control-Allow-Credentials", "true")
 
 		if c.Method() == "OPTIONS" {

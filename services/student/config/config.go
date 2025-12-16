@@ -3,8 +3,6 @@ package config
 import (
 	"log"
 	"os"
-	"strconv"
-	"time"
 )
 
 type Config struct {
@@ -21,6 +19,7 @@ type Config struct {
 	RedisURL       string
 	AuthServiceURL string
 	LogLevel       string
+	EncryptionKey  string
 }
 
 func LoadConfig() *Config {
@@ -38,6 +37,7 @@ func LoadConfig() *Config {
 		RedisURL:       getEnv("REDIS_URL", "redis://localhost:6379"),
 		LogLevel:       getEnv("LOG_LEVEL", "info"),
 		AuthServiceURL: getEnv("AUTH_SERVICE_URL", "http://localhost:3001"),
+		EncryptionKey:  getEnv("ENCRYPTION_KEY", "default-key-change-in-production"),
 	}
 	log.Printf("[Student Service] Environment: %s, Port: %s", cfg.Environment, cfg.Port)
 	return cfg
@@ -48,21 +48,4 @@ func getEnv(key, defaultVal string) string {
 		return value
 	}
 	return defaultVal
-}
-
-func getEnvInt(key string, defaultVal int) int {
-	if value, exists := os.LookupEnv(key); exists {
-		if intVal, err := strconv.Atoi(value); err == nil {
-			return intVal
-		}
-	}
-	return defaultVal
-}
-
-func parseDuration(s string) time.Duration {
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		return 15 * time.Minute
-	}
-	return d
 }

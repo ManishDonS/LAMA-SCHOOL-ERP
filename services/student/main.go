@@ -9,10 +9,15 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/joho/godotenv"
 
+	"strconv"
+	"time"
+
 	"school-erp/student/config"
 	"school-erp/student/database"
-	_ "school-erp/student/docs" // load API Docs files (will be created by swag init)
+	_ "school-erp/student/docs" // load API Docs files
 	"school-erp/student/messaging"
+	"school-erp/student/middleware"
+	"school-erp/student/pkg/tenant"
 	"school-erp/student/routes"
 
 	"github.com/gofiber/swagger"
@@ -79,6 +84,27 @@ func main() {
 		})
 	})
 
+	// Initialize Tenant Manager
+	tenantManager, err := tenant.NewTenantManager(
+		cfg.EncryptionKey,
+		10, // Max open conns
+		5,  // Max idle conns
+		5*time.Minute,
+		cfg.DBPassword,
+	)
+	if err != nil {
+		log.Fatalf("Failed to initialize tenant manager: %v", err)
+	}
+
+	// Register Tenant Resolver Middleware
+	dbPort, _ := strconv.Atoi(cfg.DBPort)
+	app.Use(middleware.NewTenantResolver(middleware.TenantResolverConfig{
+		TenantManager: tenantManager,
+		MainDB:        db,
+		DBHost:        cfg.DBHost,
+		DBPort:        dbPort,
+	}))
+
 	routes.SetupRoutes(app, db, cfg)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -111,7 +137,7 @@ func setupMiddleware(app *fiber.App) {
 			c.Set("Access-Control-Allow-Credentials", "true")
 		}
 		c.Set("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
-		c.Set("Access-Control-Allow-Headers", "Content-Type,Authorization")
+		c.Set("Access-Control-Allow-Headers", "Content-Type,Authorization,x-tenant-code")
 		if c.Method() == "OPTIONS" {
 			return c.SendStatus(204)
 		}

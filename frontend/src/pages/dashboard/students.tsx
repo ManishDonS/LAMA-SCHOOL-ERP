@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import Sidebar from '@/components/Sidebar'
 import Navbar from '@/components/Navbar'
 import { useAuthStore } from '@/store/authStore'
+import { studentAPI } from '@/services/api'
 import NepaliDatePicker from '@/components/NepaliDatePicker'
 
 interface Student {
@@ -57,50 +58,7 @@ interface Student {
   password?: string
 }
 
-const DEFAULT_STUDENTS = [
-  {
-    id: 1,
-    firstName: 'John',
-    lastName: 'Doe',
-    dateOfBirth: '2008-05-15',
-    gender: 'Male',
-    nationality: 'Indian',
-    studentId: 'STU-2024-0001',
-    enrollmentDate: '2020-06-01',
-    currentClass: '10A',
-    section: 'A',
-    rollNumber: '1',
-    fatherName: 'Robert Doe',
-    motherName: 'Mary Doe',
-    guardianName: '',
-    guardianRelation: '',
-    primaryPhone: '+1234567890',
-    secondaryPhone: '',
-    email: 'john@school.com',
-    homeAddress: '123 Main St',
-    emergencyContactName: 'Mary Doe',
-    emergencyContactPhone: '+1234567890',
-    emergencyContactRelation: 'Mother',
-    previousSchool: 'Primary School',
-    subjects: 'English, Math, Science',
-    feeCategory: 'Regular',
-    house: 'Red',
-    medicalConditions: 'None',
-    allergies: 'None',
-    medications: 'None',
-    specialNeeds: 'None',
-    bloodGroup: 'O+',
-    rfidNumber: 'RF001',
-    busRoute: 'Route A',
-    uniformSize: 'Large',
-    pickupAddress: '123 Main St',
-    dropoffAddress: '123 Main St',
-    driverInfo: 'Driver Name',
-    status: 'Active',
-    username: 'john.doe',
-    notes: 'Good student',
-  },
-]
+const DEFAULT_STUDENTS: Student[] = []
 
 const TABS = [
   { id: 'basic', label: 'Basic Profile' },
@@ -505,14 +463,48 @@ export default function StudentsPage() {
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const newStudent = {
-      ...formData,
-      id: Math.max(...students.map((s) => s.id), 0) + 1,
+
+    // Get selected school from local storage
+    let schoolId = ''
+    if (typeof window !== 'undefined') {
+      const selectedSchoolStr = localStorage.getItem('selected_school')
+      if (selectedSchoolStr) {
+        try {
+          const selectedSchool = JSON.parse(selectedSchoolStr)
+          schoolId = selectedSchool.id || ''
+        } catch (e) {
+          console.error('Failed to parse selected_school', e)
+        }
+      }
     }
-    setStudents((prev) => [...prev, newStudent])
-    handleCloseModal()
+
+    if (!schoolId) {
+      alert('School ID not found. Please select a school first.')
+      return
+    }
+
+    const newStudentPayload = {
+      first_name: formData.firstName,
+      last_name: formData.lastName,
+      email: formData.email,
+      password: 'ChangeMe@123', // Default password
+      date_of_birth: formData.dateOfBirth,
+      class_id: formData.currentClass, // Using currentClass as class_id for now
+      school_id: schoolId,
+      // Map other fields as needed by backend
+    }
+
+    try {
+      await studentAPI.create(newStudentPayload)
+      // Refresh list
+      fetchStudents()
+      handleCloseModal()
+    } catch (error: any) {
+      console.error('Failed to create student:', error)
+      alert(error.response?.data?.error || 'Failed to create student')
+    }
   }
 
   const handleEditSubmit = (e: React.FormEvent) => {
@@ -571,41 +563,68 @@ export default function StudentsPage() {
     setFilters({ class: '', section: '', status: '', gender: '' })
   }
 
-  // Load from localStorage
+  // Load from API
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedStudents = localStorage.getItem('students')
-      if (savedStudents) {
-        try {
-          setStudents(JSON.parse(savedStudents))
-        } catch (error) {
-          console.error('Failed to load students:', error)
-          setStudents(DEFAULT_STUDENTS)
-        }
-      }
-      setIsHydrated(true)
-    }
+    fetchStudents()
   }, [])
 
-  // Save to localStorage
-  useEffect(() => {
-    if (isHydrated && typeof window !== 'undefined') {
-      localStorage.setItem('students', JSON.stringify(students))
+  const fetchStudents = async () => {
+    try {
+      const response = await studentAPI.list()
+      // Map API response to frontend model
+      // Backend returns snake_case, frontend uses camelCase
+      const mappedStudents: Student[] = response.data.students.map((s: any) => ({
+        id: s.id,
+        firstName: s.first_name,
+        lastName: s.last_name,
+        dateOfBirth: s.date_of_birth || '',
+        gender: s.gender || 'Male',
+        nationality: s.nationality || 'Nepalese',
+        studentId: s.student_id_number,
+        enrollmentDate: s.enrollment_date || '',
+        currentClass: s.class,
+        section: s.section,
+        rollNumber: s.roll_number || '',
+        // Parent info might be missing in list view, handle gracefully
+        fatherName: '',
+        motherName: '',
+        guardianName: '',
+        guardianRelation: '',
+        primaryPhone: s.primary_phone || '',
+        secondaryPhone: '',
+        email: s.email,
+        homeAddress: '',
+        emergencyContactName: '',
+        emergencyContactPhone: '',
+        emergencyContactRelation: '',
+        previousSchool: '',
+        subjects: '',
+        feeCategory: '',
+        house: '',
+        medicalConditions: '',
+        allergies: '',
+        medications: '',
+        specialNeeds: '',
+        bloodGroup: '',
+        rfidNumber: '',
+        busRoute: '',
+        uniformSize: '',
+        pickupAddress: '',
+        dropoffAddress: '',
+        driverInfo: '',
+        status: s.status || 'Active',
+        username: s.email, // using email as username wrapper
+        notes: '',
+      }))
+      setStudents(mappedStudents)
+    } catch (error) {
+      console.error('Failed to fetch students:', error)
+      // Provide empty list or keep existing state on error, but don't fallback to dummy 'John Doe'
+      setStudents([])
+    } finally {
+      setIsHydrated(true)
     }
-  }, [students, isHydrated])
-
-  // Handle Edit Action from Query Params
-  useEffect(() => {
-    if (isHydrated && router.query.action === 'edit' && router.query.id && students.length > 0) {
-      const studentId = Number(router.query.id)
-      const foundStudent = students.find(s => s.id === studentId)
-      if (foundStudent) {
-        handleEditClick(foundStudent)
-        // Clear query to prevents reopening on refresh
-        router.replace('/dashboard/students', undefined, { shallow: true })
-      }
-    }
-  }, [isHydrated, router.query, students])
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-indigo-100 flex flex-col">

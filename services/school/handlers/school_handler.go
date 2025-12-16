@@ -107,7 +107,16 @@ func (h *SchoolHandler) CreateSchool(c *fiber.Ctx) error {
 	var school School
 	var retActiveModulesJSON, retModulePermissionsJSON []byte
 
-	err := h.db.QueryRow(ctx, query,
+	// Encrypt DB Password for storage in main DB
+	encryptedDBPassword, err := h.tenantManager.EncryptPassword(dbPassword)
+	if err != nil {
+		log.Printf("Failed to encrypt DB password: %v", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to encrypt database password",
+		})
+	}
+
+	err = h.db.QueryRow(ctx, query,
 		req.Name,
 		req.Code,
 		req.Domain,
@@ -115,7 +124,7 @@ func (h *SchoolHandler) CreateSchool(c *fiber.Ctx) error {
 		req.Timezone,
 		dbName,
 		dbUser,
-		dbPassword,
+		encryptedDBPassword, // Store Encrypted Password
 		req.Email,
 		req.Phone,
 		req.Address,
@@ -223,16 +232,19 @@ func (h *SchoolHandler) CreateSchool(c *fiber.Ctx) error {
 		createUsersTableSQL := `
 		CREATE TABLE IF NOT EXISTS users (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			email VARCHAR(255) NOT NULL UNIQUE,
-			password TEXT NOT NULL,
-			first_name VARCHAR(100) NOT NULL,
-			last_name VARCHAR(100) NOT NULL,
-			role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'teacher', 'student', 'parent')),
-			phone VARCHAR(20),
-			is_active BOOLEAN DEFAULT true,
+			school_id UUID NOT NULL,
+			email VARCHAR(255) NOT NULL,
+			password_hash VARCHAR(255) NOT NULL,
+			first_name VARCHAR(100),
+			last_name VARCHAR(100),
+			role VARCHAR(50) NOT NULL DEFAULT 'student',
+			status VARCHAR(50) DEFAULT 'active',
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(school_id, email)
 		);
+		CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+		CREATE INDEX IF NOT EXISTS idx_users_school_id ON users(school_id);
 		`
 		if _, err := tenantDB.Exec(bgCtx, createUsersTableSQL); err != nil {
 			log.Printf("Failed to create users table for school %s: %v", school.Code, err)
@@ -248,10 +260,11 @@ func (h *SchoolHandler) CreateSchool(c *fiber.Ctx) error {
 
 		// Insert Admin User
 		insertAdminSQL := `
-		INSERT INTO users (email, password, first_name, last_name, role)
-		VALUES ($1, $2, $3, $4, 'admin')
+		INSERT INTO users (school_id, email, password_hash, first_name, last_name, role, status)
+		VALUES ($1, $2, $3, $4, $5, 'admin', 'active')
 		`
-		if _, err := tenantDB.Exec(bgCtx, insertAdminSQL, req.AdminEmail, string(hashedPassword), req.AdminFirstName, req.AdminLastName); err != nil {
+		// We need school.ID here as UUID. school.ID is string from response, let's assume it parses.
+		if _, err := tenantDB.Exec(bgCtx, insertAdminSQL, school.ID, req.AdminEmail, string(hashedPassword), req.AdminFirstName, req.AdminLastName); err != nil {
 			log.Printf("Failed to insert admin user for school %s: %v", school.Code, err)
 			return
 		}

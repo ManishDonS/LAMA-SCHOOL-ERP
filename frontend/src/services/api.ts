@@ -20,24 +20,58 @@ const schoolApiClient: AxiosInstance = axios.create({
 })
 
 // Add request interceptor to include token
+// Add request interceptor to include token and tenant code
 api.interceptors.request.use(
   (config) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+
+    // Add Tenant Code header
+    if (typeof window !== 'undefined') {
+      const selectedSchoolStr = localStorage.getItem('selected_school')
+      if (selectedSchoolStr) {
+        try {
+          const selectedSchool = JSON.parse(selectedSchoolStr)
+          if (selectedSchool && selectedSchool.code) {
+            config.headers['X-Tenant-Code'] = selectedSchool.code
+          }
+        } catch (e) {
+          console.error('Failed to parse selected_school from localStorage', e)
+        }
+      }
+    }
+
     return config
   },
   (error) => Promise.reject(error)
 )
 
 // Add request interceptor to school API client to include token
+// Add request interceptor to school API client to include token and tenant code
 schoolApiClient.interceptors.request.use(
   (config) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+
+    // Add Tenant Code header (some school API endpoints might need it for context)
+    if (typeof window !== 'undefined') {
+      const selectedSchoolStr = localStorage.getItem('selected_school')
+      if (selectedSchoolStr) {
+        try {
+          const selectedSchool = JSON.parse(selectedSchoolStr)
+          if (selectedSchool && selectedSchool.code) {
+            config.headers['X-Tenant-Code'] = selectedSchool.code
+          }
+        } catch (e) {
+          console.error('Failed to parse selected_school from localStorage', e)
+        }
+      }
+    }
+
     return config
   },
   (error) => Promise.reject(error)
@@ -161,12 +195,50 @@ export const authAPI = {
     api.post('/api/v1/auth/reset-password', { token, new_password: newPassword }),
 }
 
+// Separate API client for student service
+export const STUDENT_API_URL = process.env.NEXT_PUBLIC_STUDENT_API_URL || 'http://localhost:3003'
+
+const studentApiClient: AxiosInstance = axios.create({
+  baseURL: STUDENT_API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Add request interceptor to student API client to include token
+studentApiClient.interceptors.request.use(
+  (config) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+
+    // Add Tenant Code header
+    if (typeof window !== 'undefined') {
+      const selectedSchoolStr = localStorage.getItem('selected_school')
+      if (selectedSchoolStr) {
+        try {
+          const selectedSchool = JSON.parse(selectedSchoolStr)
+          if (selectedSchool && selectedSchool.code) {
+            config.headers['X-Tenant-Code'] = selectedSchool.code
+          }
+        } catch (e) {
+          console.error('Failed to parse selected_school from localStorage', e)
+        }
+      }
+    }
+
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
 export const studentAPI = {
-  list: (params?: any) => api.get('/api/v1/students', { params }),
-  get: (id: number) => api.get(`/api/v1/students/${id}`),
-  create: (data: any) => api.post('/api/v1/students', data),
-  update: (id: number, data: any) => api.put(`/api/v1/students/${id}`, data),
-  delete: (id: number) => api.delete(`/api/v1/students/${id}`),
+  list: (params?: any) => studentApiClient.get('/api/v1/students', { params }),
+  get: (id: number) => studentApiClient.get(`/api/v1/students/${id}`),
+  create: (data: any) => studentApiClient.post('/api/v1/students', data),
+  update: (id: number, data: any) => studentApiClient.put(`/api/v1/students/${id}`, data),
+  delete: (id: number) => studentApiClient.delete(`/api/v1/students/${id}`),
 }
 
 export const teacherAPI = {
