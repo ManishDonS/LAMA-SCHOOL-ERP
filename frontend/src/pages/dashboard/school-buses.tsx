@@ -1652,7 +1652,7 @@ export default function SchoolBusesPage() {
                       onClick={async () => {
                         const devices = await fetchTraccarDevices()
                         if (devices.length > 0) {
-                          alert(`Found ${devices.length} devices. Check browser console for details:\n\n${devices.map(d => `ID: ${d.id}, Name: ${d.name}, IMEI: ${d.uniqueId}`).join('\n')}`)
+                          alert(`Found ${devices.length} devices. Check browser console for details:\n\n${devices.map((d: any) => `ID: ${d.id}, Name: ${d.name}, IMEI: ${d.uniqueId}`).join('\n')}`)
                         } else {
                           alert('No devices found or authentication failed. Make sure you\'re connected to Traccar.')
                         }

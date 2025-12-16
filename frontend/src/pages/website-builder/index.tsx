@@ -5,7 +5,7 @@ import { useRouter } from 'next/router';
 import { Plus, Globe, BarChart2, Settings, ExternalLink } from 'lucide-react';
 
 // Mock data until API is fully integrated
-const MOCK_WEBSITES = [
+const MOCK_WEBSITES: any[] = [
     // { id: 1, name: 'Greenwood Academy', domain: 'greenwood.lama.school', status: 'published', visitors: 1245, industry: 'Education' },
 ];
 
@@ -72,8 +72,8 @@ export default function WebsiteBuilderDashboard() {
                                     {/* Status Badge */}
                                     <div className="absolute top-4 left-4">
                                         <span className={`px-3 py-1 rounded-full text-xs font-medium border ${site.status === 'published'
-                                                ? 'bg-green-500/10 text-green-400 border-green-500/20'
-                                                : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                                            ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                                            : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
                                             }`}>
                                             {site.status === 'published' ? 'Published' : 'Draft'}
                                         </span>

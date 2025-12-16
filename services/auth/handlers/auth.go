@@ -81,8 +81,15 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	}
 
 	// Hash password
+	// Hash password
 	hashedPassword, err := utils.GeneratePasswordHash(h.cfg, req.Password)
 	if err != nil {
+		// Check for complexity error
+		if complexityErr, ok := err.(*utils.PasswordComplexityError); ok {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": complexityErr.Message,
+			})
+		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to process password",
 		})

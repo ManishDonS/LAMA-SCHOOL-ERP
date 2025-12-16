@@ -4,12 +4,13 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"school-erp/user/config"
 	"school-erp/user/handlers"
 	"school-erp/user/middleware"
 )
 
-func SetupRoutes(app *fiber.App, db *pgxpool.Pool) {
-	h := handlers.NewUserHandler(db)
+func SetupRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config) {
+	h := handlers.NewUserHandler(db, cfg)
 
 	// Setup event subscriptions
 	h.SetupEventSubscriptions()

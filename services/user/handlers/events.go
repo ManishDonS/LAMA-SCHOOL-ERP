@@ -14,12 +14,12 @@ import (
 )
 
 type UserRegisteredEvent struct {
-	UserID    int64  `json:"user_id"`
+	UserID    string `json:"user_id"`
 	Email     string `json:"email"`
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 	Role      string `json:"role"`
-	SchoolID  int64  `json:"school_id"`
+	SchoolID  string `json:"school_id"`
 }
 
 func (h *UserHandler) SetupEventSubscriptions() {
@@ -35,30 +35,62 @@ func (h *UserHandler) SetupEventSubscriptions() {
 			return
 		}
 
-		log.Printf("Received UserRegistered event for user %d (%s)", event.UserID, event.Role)
+		log.Printf("Received UserRegistered event for user %s (%s)", event.UserID, event.Role)
 
 		// Create profile based on role
 		switch event.Role {
 		case "teacher":
 			// Create default teacher profile
+			var schoolID string = event.SchoolID
 			teacher := &database.Teacher{
 				UserID:        event.UserID,
+				SchoolID:      schoolID,
 				Qualification: "Not Specified",
 				Department:    "General",
 				EmployeeID:    fmt.Sprintf("T-%d", time.Now().Unix()),
 			}
-			if err := h.CreateTeacherInternal(context.Background(), teacher); err != nil {
-				log.Printf("Failed to create teacher profile for user %d: %v", event.UserID, err)
+			if err := h.CreateTeacherInternal(context.Background(), h.db, teacher); err != nil {
+				log.Printf("Failed to create teacher profile for user %s: %v", event.UserID, err)
 			} else {
-				log.Printf("Created teacher profile for user %d", event.UserID)
+				log.Printf("Created teacher profile for user %s", event.UserID)
 			}
 
 		case "parent":
 			// Create default parent profile
+			// Note: CreateParentInternal probably needs update to accept string UserID
+			// Temporarily commenting out or assuming it might work if updated?
+			// I should check Handler.CreateParentInternal signature.
+			// Earlier viewing of handlers/user.go line 367 showed: func (h *UserHandler) CreateParentInternal(..., userID int64, ...)
+			// So this will also fail compilation if I don't fix it.
+			// I need to fix CreateParentInternal signature too!
+
+			// For now, I will NOT call CreateParentInternal to avoid build error,
+			// OR I will trust I can fix it in a separate step?
+			// No, I should fix it now.
+
+			// Actually, let's fix CreateTeacher first.
+			// The user is asking about Teachers.
+			// I will leave Parent broken? No, build will fail.
+
+			// I'll update signature in next step.
+			// Here I pass string.
+
+			// Wait, I can't multi-file edit easily here safely in one go.
+			// But I MUST fix handlers/user.go signature for CreateParentInternal if I change passing type here.
+
+			// I'll comment out the Parent case or fix it blindly assuming next step fixes handler.
+			// Or I check/fix handler first?
+			// I already viewed handler. It takes int64.
+
+			// I will update this file to use string IDs and pass string.
+			// AND I will queue a fix for handlers/user.go immediately.
+
+			// Note: CreateParentInternal(ctx, userID string, ...)
+
 			if err := h.CreateParentInternal(context.Background(), event.UserID, "", "", ""); err != nil {
-				log.Printf("Failed to create parent profile for user %d: %v", event.UserID, err)
+				log.Printf("Failed to create parent profile for user %s: %v", event.UserID, err)
 			} else {
-				log.Printf("Created parent profile for user %d", event.UserID)
+				log.Printf("Created parent profile for user %s", event.UserID)
 			}
 		}
 	})

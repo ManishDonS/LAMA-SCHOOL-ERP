@@ -11,7 +11,7 @@ export class ModuleMarketplace {
   private cache: Map<string, MarketplaceModule[]> = new Map();
   private cacheExpiry: number = 5 * 60 * 1000; // 5 minutes
 
-  private constructor() {}
+  private constructor() { }
 
   static getInstance(): ModuleMarketplace {
     if (!ModuleMarketplace.instance) {
@@ -382,11 +382,11 @@ export class ModuleMarketplace {
       }
 
       if (filter.priceMin !== undefined) {
-        filtered = filtered.filter((m) => m.price >= filter.priceMin!);
+        filtered = filtered.filter((m) => (m.price ?? 0) >= filter.priceMin!);
       }
 
       if (filter.priceMax !== undefined) {
-        filtered = filtered.filter((m) => m.price <= filter.priceMax!);
+        filtered = filtered.filter((m) => (m.price ?? 0) <= filter.priceMax!);
       }
 
       // Sort

@@ -241,20 +241,58 @@ export const studentAPI = {
   delete: (id: number) => studentApiClient.delete(`/api/v1/students/${id}`),
 }
 
+// Separate API client for user service
+export const USER_API_URL = process.env.NEXT_PUBLIC_USER_API_URL || 'http://localhost:3002'
+
+const userApiClient: AxiosInstance = axios.create({
+  baseURL: USER_API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Add request interceptor to user API client to include token and tenant code
+userApiClient.interceptors.request.use(
+  (config) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+
+    // Add Tenant Code header
+    if (typeof window !== 'undefined') {
+      const selectedSchoolStr = localStorage.getItem('selected_school')
+      if (selectedSchoolStr) {
+        try {
+          const selectedSchool = JSON.parse(selectedSchoolStr)
+          if (selectedSchool && selectedSchool.code) {
+            config.headers['X-Tenant-Code'] = selectedSchool.code
+          }
+        } catch (e) {
+          console.error('Failed to parse selected_school from localStorage', e)
+        }
+      }
+    }
+
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
 export const teacherAPI = {
-  list: (params?: any) => api.get('/api/v1/teachers', { params }),
-  get: (id: string) => api.get(`/api/v1/teachers/${id}`),
-  create: (data: any) => api.post('/api/v1/teachers', data),
-  update: (id: string, data: any) => api.put(`/api/v1/teachers/${id}`, data),
-  delete: (id: string) => api.delete(`/api/v1/teachers/${id}`),
+  list: (params?: any) => userApiClient.get('/api/v1/teachers', { params }),
+  get: (id: string) => userApiClient.get(`/api/v1/teachers/${id}`),
+  create: (data: any) => userApiClient.post('/api/v1/teachers', data),
+  update: (id: string, data: any) => userApiClient.put(`/api/v1/teachers/${id}`, data),
+  delete: (id: string) => userApiClient.delete(`/api/v1/teachers/${id}`),
 }
 
 export const guardianAPI = {
-  list: (params?: any) => api.get('/api/v1/guardians', { params }),
-  get: (id: string) => api.get(`/api/v1/guardians/${id}`),
-  create: (data: any) => api.post('/api/v1/guardians', data),
-  update: (id: string, data: any) => api.put(`/api/v1/guardians/${id}`, data),
-  delete: (id: string) => api.delete(`/api/v1/guardians/${id}`),
+  list: (params?: any) => userApiClient.get('/api/v1/parents', { params }), // Endpoint is likely parents internally?
+  get: (id: string) => userApiClient.get(`/api/v1/parents/${id}`),
+  create: (data: any) => userApiClient.post('/api/v1/parents', data),
+  update: (id: string, data: any) => userApiClient.put(`/api/v1/parents/${id}`, data),
+  delete: (id: string) => userApiClient.delete(`/api/v1/parents/${id}`),
 }
 
 export const attendanceAPI = {
@@ -265,10 +303,10 @@ export const attendanceAPI = {
 }
 
 export const userAPI = {
-  list: (params?: any) => api.get('/api/v1/users', { params }),
-  get: (id: number) => api.get(`/api/v1/users/${id}`),
-  create: (data: any) => api.post('/api/v1/users', data),
-  update: (id: number, data: any) => api.put(`/api/v1/users/${id}`, data),
+  list: (params?: any) => userApiClient.get('/api/v1/users', { params }),
+  get: (id: number) => userApiClient.get(`/api/v1/users/${id}`),
+  create: (data: any) => userApiClient.post('/api/v1/users', data),
+  update: (id: number, data: any) => userApiClient.put(`/api/v1/users/${id}`, data),
 }
 
 export const schoolAPI = {

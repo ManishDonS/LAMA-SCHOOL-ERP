@@ -14,6 +14,7 @@ import {
   ModuleModel,
   ModuleView,
   ModuleMenu,
+  ModuleHooks,
 } from './types';
 import { DependencyResolver } from './DependencyResolver';
 import { ModuleLoader } from './ModuleLoader';
@@ -596,7 +597,7 @@ export class ModuleRegistry implements ModuleAPI {
 
   private async executeModuleHook(
     manifest: ModuleManifest,
-    hookName: keyof ModuleManifest['hooks'],
+    hookName: keyof ModuleHooks,
     ...args: any[]
   ): Promise<void> {
     const hook = manifest.hooks?.[hookName];
