@@ -120,9 +120,10 @@ func main() {
 		status := health["status"].(string)
 
 		httpStatus := fiber.StatusOK
-		if status == "unhealthy" {
+		switch status {
+		case "unhealthy":
 			httpStatus = fiber.StatusServiceUnavailable
-		} else if status == "degraded" {
+		case "degraded":
 			httpStatus = fiber.StatusOK // Still return 200 but indicate degraded state
 		}
 

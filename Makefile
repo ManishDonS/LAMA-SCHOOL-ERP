@@ -93,12 +93,7 @@ migrate:
 	@echo "$(BLUE)Running migrations...$(NC)"
 	@echo "$(GREEN)Auth Service:$(NC)"
 	@docker-compose exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c "SELECT 1" > /dev/null && echo "Database connected" || exit 1
-	@docker-compose exec -T auth-service /app/auth migrate-up || true
-	@echo "$(GREEN)✓ Migrations completed$(NC)"
-
-migrate-auth:
-	@echo "$(BLUE)Running Auth service migrations...$(NC)"
-	docker-compose exec -T auth-service /app/auth migrate-up
+	@echo "$(GREEN)✓ Migrations completed (managed by services on startup)$(NC)"
 
 db-reset:
 	@echo "$(RED)WARNING: This will delete all data. Continue? [y/N]$(NC)"

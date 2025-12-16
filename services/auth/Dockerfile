@@ -19,7 +19,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=vendor -a -installsuffix
 # Final stage
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates tzdata
+# *** FIX APPLIED HERE: Added 'curl' for the health check ***
+# 'wget' (which was used previously) is not included in the base Alpine image.
+RUN apk --no-cache add ca-certificates tzdata curl
 
 WORKDIR /root/
 
@@ -31,7 +33,8 @@ COPY --from=builder /app/docs ./docs
 EXPOSE 3001
 
 # Health check
+# *** FIX APPLIED HERE: Changed CMD to use 'curl --fail' ***
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD wget --quiet --tries=1 --spider http://localhost:3001/health || exit 1
+    CMD curl --fail http://localhost:3001/health || exit 1
 
 CMD ["./auth-service"]
