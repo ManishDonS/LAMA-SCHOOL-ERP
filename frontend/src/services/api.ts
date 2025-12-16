@@ -1,8 +1,8 @@
 import axios, { AxiosInstance, AxiosError } from 'axios'
 import { AuthResponse, LoginRequest, RegisterRequest } from '../types'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
-const SCHOOL_API_URL = process.env.NEXT_PUBLIC_SCHOOL_API_URL || 'http://localhost:3011'
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
+export const SCHOOL_API_URL = process.env.NEXT_PUBLIC_SCHOOL_API_URL || 'http://localhost:3011'
 
 const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,

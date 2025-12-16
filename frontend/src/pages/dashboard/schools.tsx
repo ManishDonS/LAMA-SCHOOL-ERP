@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { useState, useEffect } from 'react'
-import { schoolAPI } from '../../services/api'
+import { schoolAPI, SCHOOL_API_URL } from '../../services/api'
 import { useAuthStore } from '@/store/authStore'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import Sidebar from '@/components/Sidebar'
@@ -62,8 +62,10 @@ function SchoolsPage() {
   const [pagination, setPagination] = useState({ limit: 10, offset: 0 })
   const [stats, setStats] = useState<Record<string, any>>({})
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null)
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [activeTab, setActiveTab] = useState<'basic' | 'permissions'>('basic')
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string; name: string } | null>(null)
   const [permissions, setPermissions] = useState({
     students: { create: true, read: true, update: true, delete: false },
     teachers: { create: true, read: true, update: true, delete: false },
@@ -74,6 +76,12 @@ function SchoolsPage() {
     reports: { create: false, read: true, update: false, delete: false },
     settings: { create: false, read: false, update: false, delete: false },
   })
+
+  const getImageUrl = (path: string) => {
+    if (!path) return ''
+    if (path.startsWith('http')) return path
+    return `${SCHOOL_API_URL}${path}`
+  }
 
   useEffect(() => {
     fetchSchools()
@@ -111,6 +119,7 @@ function SchoolsPage() {
       // Fetch stats for each school
       const statsMap: Record<string, any> = {}
       for (const school of schoolsList) {
+        if (!school.code) continue
         try {
           const statsRes = await schoolAPI.stats(school.code)
           statsMap[school.code] = statsRes.data.stats
@@ -211,22 +220,27 @@ function SchoolsPage() {
     setShowForm(true)
   }
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to delete "${name}"? This cannot be undone.`)) {
-      return
-    }
+  const handleDelete = (id: string, name: string) => {
+    setDeleteConfirmation({ id, name })
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteConfirmation) return
 
     setLoading(true)
     try {
-      await schoolAPI.delete(id)
+      await schoolAPI.delete(deleteConfirmation.id)
       setSuccess('School deleted successfully')
+      setDeleteConfirmation(null)
       fetchSchools()
     } catch (err: any) {
+      console.error("Delete request failed:", err)
       setError(err.response?.data?.error || 'Failed to delete school')
     } finally {
       setLoading(false)
     }
   }
+
 
   const handleCloseForm = () => {
     setShowForm(false)
@@ -243,8 +257,18 @@ function SchoolsPage() {
     setShowForm(true)
   }
 
-  const toggleMenu = (schoolId: string) => {
-    setOpenMenuId(openMenuId === schoolId ? null : schoolId)
+  const toggleMenu = (schoolId: string, event: React.MouseEvent<HTMLButtonElement>) => {
+    if (openMenuId === schoolId) {
+      setOpenMenuId(null)
+      setMenuPosition(null)
+    } else {
+      const rect = event.currentTarget.getBoundingClientRect()
+      setMenuPosition({
+        top: rect.bottom + window.scrollY,
+        left: rect.right - 192 + window.scrollX, // 192px is w-48 (12rem)
+      })
+      setOpenMenuId(schoolId)
+    }
   }
 
   const handleLoginToSchool = (school: School) => {
@@ -436,7 +460,7 @@ function SchoolsPage() {
                         {formData.logo_url && (
                           <div className="mb-3">
                             <img
-                              src={formData.logo_url}
+                              src={getImageUrl(formData.logo_url)}
                               alt="School logo preview"
                               className="h-20 w-20 object-cover rounded-lg border border-gray-300"
                             />
@@ -715,7 +739,7 @@ function SchoolsPage() {
                           <div className="flex items-center">
                             {school.logo_url ? (
                               <img
-                                src={school.logo_url}
+                                src={getImageUrl(school.logo_url)}
                                 alt={school.name}
                                 className="h-8 w-8 rounded-full mr-3"
                               />
@@ -758,7 +782,7 @@ function SchoolsPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium relative menu-container">
                           <button
-                            onClick={() => toggleMenu(school.id)}
+                            onClick={(e) => toggleMenu(school.id, e)}
                             className="text-gray-600 hover:text-gray-900 transition p-2 rounded-lg hover:bg-gray-100"
                             aria-label="More options"
                           >
@@ -767,8 +791,14 @@ function SchoolsPage() {
                             </svg>
                           </button>
 
-                          {openMenuId === school.id && (
-                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-20">
+                          {openMenuId === school.id && menuPosition && (
+                            <div
+                              className="fixed bg-white rounded-lg shadow-lg border border-gray-200 z-50 w-48"
+                              style={{
+                                top: `${menuPosition.top}px`,
+                                left: `${menuPosition.left}px`,
+                              }}
+                            >
                               <div className="py-1">
                                 <button
                                   onClick={() => {
@@ -795,7 +825,8 @@ function SchoolsPage() {
                                   Edit
                                 </button>
                                 <button
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation()
                                     handleDelete(school.id, school.name)
                                     setOpenMenuId(null)
                                   }}
@@ -862,11 +893,37 @@ function SchoolsPage() {
           </div>
         </main>
       </div>
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full p-6 shadow-xl">
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Delete School</h3>
+            <p className="text-gray-500 mb-6">
+              Are you sure you want to delete <strong>{deleteConfirmation.name}</strong>? This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteConfirmation(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700"
+                disabled={loading}
+              >
+                {loading ? 'Deleting...' : 'Delete School'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-export default function ProtectedSchoolsPage() {
+export default function Schools() {
   return (
     <ProtectedRoute>
       <SchoolsPage />

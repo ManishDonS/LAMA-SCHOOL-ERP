@@ -21,7 +21,8 @@ func RunMigrations(db *pgxpool.Pool) error {
 
 // createSchoolsTable creates the schools metadata table
 func createSchoolsTable(ctx context.Context, db *pgxpool.Pool) error {
-	query := `
+	// 1. Create Table
+	createTableQuery := `
 	CREATE TABLE IF NOT EXISTS schools (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 		name VARCHAR(255) NOT NULL,
@@ -39,7 +40,69 @@ func createSchoolsTable(ctx context.Context, db *pgxpool.Pool) error {
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 	);
+	`
 
+	if _, err := db.Exec(ctx, createTableQuery); err != nil {
+		return fmt.Errorf("failed to create table: %w", err)
+	}
+
+	// 2. Run Schema Migration (Add missing columns to existing table)
+	migrationQuery := `
+	DO $$ 
+	BEGIN 
+		-- Add code column
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='code') THEN
+			ALTER TABLE schools ADD COLUMN code VARCHAR(20) NOT NULL DEFAULT '';
+		END IF;
+
+		-- Add db_name column
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='db_name') THEN
+			ALTER TABLE schools ADD COLUMN db_name VARCHAR(100) NOT NULL DEFAULT '';
+		END IF;
+
+		-- Add db_user column
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='db_user') THEN
+			ALTER TABLE schools ADD COLUMN db_user VARCHAR(100) NOT NULL DEFAULT '';
+		END IF;
+
+		-- Add db_password column
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='db_password') THEN
+			ALTER TABLE schools ADD COLUMN db_password TEXT NOT NULL DEFAULT '';
+		END IF;
+
+		-- Add db_host column
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='db_host') THEN
+			ALTER TABLE schools ADD COLUMN db_host VARCHAR(255) NOT NULL DEFAULT 'postgres';
+		END IF;
+
+		-- Add db_port column
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='db_port') THEN
+			ALTER TABLE schools ADD COLUMN db_port INTEGER NOT NULL DEFAULT 5432;
+		END IF;
+
+		-- Add domain column
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='domain') THEN
+			ALTER TABLE schools ADD COLUMN domain VARCHAR(255) NOT NULL DEFAULT '';
+		END IF;
+
+		-- Add logo_url column
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='logo_url') THEN
+			ALTER TABLE schools ADD COLUMN logo_url TEXT;
+		END IF;
+
+		-- Add timezone column
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='timezone') THEN
+			ALTER TABLE schools ADD COLUMN timezone VARCHAR(50) NOT NULL DEFAULT 'UTC';
+		END IF;
+	END $$;
+	`
+
+	if _, err := db.Exec(ctx, migrationQuery); err != nil {
+		return fmt.Errorf("failed to run schema migration: %w", err)
+	}
+
+	// 3. Create Indexes and Triggers
+	createIndexesQuery := `
 	-- Create indexes
 	CREATE INDEX IF NOT EXISTS idx_schools_code ON schools(code);
 	CREATE INDEX IF NOT EXISTS idx_schools_status ON schools(status);
@@ -62,11 +125,12 @@ func createSchoolsTable(ctx context.Context, db *pgxpool.Pool) error {
 	EXECUTE FUNCTION update_schools_updated_at();
 	`
 
-	if _, err := db.Exec(ctx, query); err != nil {
-		return err
+	if _, err := db.Exec(ctx, createIndexesQuery); err != nil {
+		return fmt.Errorf("failed to create indexes: %w", err)
 	}
 
 	return nil
+
 }
 
 // RunTenantMigrations runs migrations for a tenant database

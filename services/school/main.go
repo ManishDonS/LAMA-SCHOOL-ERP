@@ -29,6 +29,11 @@ func main() {
 	}
 	defer mainDB.Close()
 
+	// Run database migrations
+	if err := database.RunMigrations(mainDB); err != nil {
+		log.Fatalf("Failed to run migrations: %v\n", err)
+	}
+
 	// Create tenant manager for handling multi-tenant connections
 	tenantManager, err := tenant.NewTenantManager(
 		cfg.EncryptionKey,

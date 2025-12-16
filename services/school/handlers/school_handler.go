@@ -33,9 +33,19 @@ func NewSchoolHandler(db *pgxpool.Pool, tm *tenant.TenantManager) *SchoolHandler
 }
 
 // School represents the school model in response
+// School represents the school model in response
 type School struct {
 	ID            string    `json:"id" db:"id"`
 	Name          string    `json:"name" db:"name"`
+	Code          string    `json:"code" db:"code"`
+	Domain        string    `json:"domain" db:"domain"`
+	LogoURL       string    `json:"logo_url" db:"logo_url"`
+	Timezone      string    `json:"timezone" db:"timezone"`
+	DBName        string    `json:"db_name" db:"db_name"`
+	DBUser        string    `json:"db_user" db:"db_user"`
+	DBPassword    string    `json:"-" db:"db_password"` // Never expose
+	DBHost        string    `json:"db_host" db:"db_host"`
+	DBPort        int       `json:"db_port" db:"db_port"`
 	Email         string    `json:"email" db:"email"`
 	Phone         string    `json:"phone" db:"phone"`
 	Address       string    `json:"address" db:"address"`
@@ -51,30 +61,41 @@ type School struct {
 }
 
 // CreateSchoolRequest is the request body for creating a school
+// CreateSchoolRequest is the request body for creating a school
 type CreateSchoolRequest struct {
-	Name    string `json:"name" validate:"required,min=2,max=255"`
-	Email   string `json:"email" validate:"omitempty,email"`
-	Phone   string `json:"phone" validate:"omitempty"`
-	Address string `json:"address" validate:"omitempty"`
-	City    string `json:"city" validate:"omitempty"`
-	State   string `json:"state" validate:"omitempty"`
-	Country string `json:"country" validate:"omitempty"`
-	Pincode string `json:"pincode" validate:"omitempty"`
-	Website string `json:"website" validate:"omitempty"`
+	Name       string `json:"name" validate:"required,min=2,max=255"`
+	Code       string `json:"code" validate:"required,min=2,max=20"` // Removed strictly alphanumeric to allow hyphens/underscores
+	Domain     string `json:"domain" validate:"required"`
+	LogoURL    string `json:"logo_url" validate:"omitempty"` // Removed url tag to allow relative paths from uploads
+	Timezone   string `json:"timezone" validate:"required"`
+	DBUser     string `json:"db_user" validate:"omitempty"`
+	DBPassword string `json:"db_password" validate:"omitempty"`
+	Email      string `json:"email" validate:"omitempty,email"`
+	Phone      string `json:"phone" validate:"omitempty"`
+	Address    string `json:"address" validate:"omitempty"`
+	City       string `json:"city" validate:"omitempty"`
+	State      string `json:"state" validate:"omitempty"`
+	Country    string `json:"country" validate:"omitempty"`
+	Pincode    string `json:"pincode" validate:"omitempty"`
+	Website    string `json:"website" validate:"omitempty"`
 }
 
 // UpdateSchoolRequest is the request body for updating a school
+// UpdateSchoolRequest is the request body for updating a school
 type UpdateSchoolRequest struct {
-	Name    string `json:"name" validate:"omitempty,min=2,max=255"`
-	Email   string `json:"email" validate:"omitempty,email"`
-	Phone   string `json:"phone" validate:"omitempty"`
-	Address string `json:"address" validate:"omitempty"`
-	City    string `json:"city" validate:"omitempty"`
-	State   string `json:"state" validate:"omitempty"`
-	Country string `json:"country" validate:"omitempty"`
-	Pincode string `json:"pincode" validate:"omitempty"`
-	Website string `json:"website" validate:"omitempty"`
-	Status  string `json:"status" validate:"omitempty,oneof=active inactive suspended"`
+	Name     string `json:"name" validate:"omitempty,min=2,max=255"`
+	Domain   string `json:"domain" validate:"omitempty"`
+	LogoURL  string `json:"logo_url" validate:"omitempty,url"`
+	Timezone string `json:"timezone" validate:"omitempty"`
+	Email    string `json:"email" validate:"omitempty,email"`
+	Phone    string `json:"phone" validate:"omitempty"`
+	Address  string `json:"address" validate:"omitempty"`
+	City     string `json:"city" validate:"omitempty"`
+	State    string `json:"state" validate:"omitempty"`
+	Country  string `json:"country" validate:"omitempty"`
+	Pincode  string `json:"pincode" validate:"omitempty"`
+	Website  string `json:"website" validate:"omitempty"`
+	Status   string `json:"status" validate:"omitempty,oneof=active inactive suspended"`
 }
 
 // CreateSchool handles POST /api/v1/schools
@@ -90,6 +111,7 @@ func (h *SchoolHandler) CreateSchool(c *fiber.Ctx) error {
 
 	// Validate request
 	if err := h.validator.Struct(&req); err != nil {
+		log.Printf("CreateSchool validation failed: %v", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": err.Error(),
 		})
@@ -99,17 +121,37 @@ func (h *SchoolHandler) CreateSchool(c *fiber.Ctx) error {
 
 	// Insert school record in main database
 	query := `
-	INSERT INTO schools (name, email, phone, address, city, state, country, pincode, website, status, active_modules)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, '[]'::jsonb)
-	RETURNING id, name, COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''),
+	INSERT INTO schools (name, code, domain, logo_url, timezone, db_name, db_user, db_password, email, phone, address, city, state, country, pincode, website, status, active_modules)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, '[]'::jsonb)
+	RETURNING id, name, code, domain, COALESCE(logo_url, ''), timezone, db_name, db_user, 
+	          COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''),
 	          COALESCE(city, ''), COALESCE(state, ''), COALESCE(country, ''),
 	          COALESCE(pincode, ''), COALESCE(website, ''), status, active_modules, created_at, updated_at
 	`
+
+	// Auto-generate DB fields if not provided
+	dbName := fmt.Sprintf("school_%s_db", req.Code)
+	dbUser := req.DBUser
+	if dbUser == "" {
+		dbUser = fmt.Sprintf("school_%s_user", req.Code)
+	}
+	// In a real app, generate a secure random password if empty
+	dbPassword := req.DBPassword
+	if dbPassword == "" {
+		dbPassword = fmt.Sprintf("pass_%s_%d", req.Code, time.Now().Unix())
+	}
 
 	var school School
 	var activeModulesJSON []byte
 	err := h.db.QueryRow(ctx, query,
 		req.Name,
+		req.Code,
+		req.Domain,
+		req.LogoURL,
+		req.Timezone,
+		dbName,
+		dbUser,
+		dbPassword,
 		req.Email,
 		req.Phone,
 		req.Address,
@@ -122,6 +164,12 @@ func (h *SchoolHandler) CreateSchool(c *fiber.Ctx) error {
 	).Scan(
 		&school.ID,
 		&school.Name,
+		&school.Code,
+		&school.Domain,
+		&school.LogoURL,
+		&school.Timezone,
+		&school.DBName,
+		&school.DBUser,
 		&school.Email,
 		&school.Phone,
 		&school.Address,
@@ -167,7 +215,8 @@ func (h *SchoolHandler) GetSchools(c *fiber.Ctx) error {
 	}
 
 	query := `
-	SELECT id, name, COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''), 
+	SELECT id, name, COALESCE(code, ''), COALESCE(domain, ''), COALESCE(logo_url, ''), COALESCE(timezone, ''), COALESCE(db_name, ''), COALESCE(db_user, ''), 
+	       COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''), 
 	       COALESCE(city, ''), COALESCE(state, ''), COALESCE(country, ''), 
 	       COALESCE(pincode, ''), COALESCE(website, ''), status, active_modules, created_at, updated_at
 	FROM schools
@@ -192,6 +241,12 @@ func (h *SchoolHandler) GetSchools(c *fiber.Ctx) error {
 		if err := rows.Scan(
 			&school.ID,
 			&school.Name,
+			&school.Code,
+			&school.Domain,
+			&school.LogoURL,
+			&school.Timezone,
+			&school.DBName,
+			&school.DBUser,
 			&school.Email,
 			&school.Phone,
 			&school.Address,
@@ -231,7 +286,8 @@ func (h *SchoolHandler) GetSchool(c *fiber.Ctx) error {
 	ctx := context.Background()
 
 	query := `
-	SELECT id, name, COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''), 
+	SELECT id, name, COALESCE(code, ''), COALESCE(domain, ''), COALESCE(logo_url, ''), COALESCE(timezone, ''), COALESCE(db_name, ''), COALESCE(db_user, ''), 
+	       COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''), 
 	       COALESCE(city, ''), COALESCE(state, ''), COALESCE(country, ''), 
 	       COALESCE(pincode, ''), COALESCE(website, ''), status, active_modules, created_at, updated_at
 	FROM schools
@@ -243,6 +299,12 @@ func (h *SchoolHandler) GetSchool(c *fiber.Ctx) error {
 	err := h.db.QueryRow(ctx, query, schoolID).Scan(
 		&school.ID,
 		&school.Name,
+		&school.Code,
+		&school.Domain,
+		&school.LogoURL,
+		&school.Timezone,
+		&school.DBName,
+		&school.DBUser,
 		&school.Email,
 		&school.Phone,
 		&school.Address,
@@ -285,7 +347,6 @@ func (h *SchoolHandler) UpdateSchool(c *fiber.Ctx) error {
 
 	ctx := context.Background()
 
-	// Build dynamic update query
 	updateFields := ""
 	args := []interface{}{schoolID}
 	argIndex := 2
@@ -293,6 +354,21 @@ func (h *SchoolHandler) UpdateSchool(c *fiber.Ctx) error {
 	if req.Name != "" {
 		updateFields += fmt.Sprintf(", name = $%d", argIndex)
 		args = append(args, req.Name)
+		argIndex++
+	}
+	if req.Domain != "" {
+		updateFields += fmt.Sprintf(", domain = $%d", argIndex)
+		args = append(args, req.Domain)
+		argIndex++
+	}
+	if req.LogoURL != "" {
+		updateFields += fmt.Sprintf(", logo_url = $%d", argIndex)
+		args = append(args, req.LogoURL)
+		argIndex++
+	}
+	if req.Timezone != "" {
+		updateFields += fmt.Sprintf(", timezone = $%d", argIndex)
+		args = append(args, req.Timezone)
 		argIndex++
 	}
 	if req.Email != "" {
@@ -351,7 +427,8 @@ func (h *SchoolHandler) UpdateSchool(c *fiber.Ctx) error {
 	UPDATE schools
 	SET updated_at = CURRENT_TIMESTAMP %s
 	WHERE id = $1
-	RETURNING id, name, COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''),
+	RETURNING id, name, code, domain, COALESCE(logo_url, ''), timezone, db_name, db_user, 
+	          COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''),
 	          COALESCE(city, ''), COALESCE(state, ''), COALESCE(country, ''),
 	          COALESCE(pincode, ''), COALESCE(website, ''), status, active_modules, created_at, updated_at
 	`, updateFields)
@@ -361,6 +438,12 @@ func (h *SchoolHandler) UpdateSchool(c *fiber.Ctx) error {
 	err := h.db.QueryRow(ctx, query, args...).Scan(
 		&school.ID,
 		&school.Name,
+		&school.Code,
+		&school.Domain,
+		&school.LogoURL,
+		&school.Timezone,
+		&school.DBName,
+		&school.DBUser,
 		&school.Email,
 		&school.Phone,
 		&school.Address,
@@ -395,13 +478,14 @@ func (h *SchoolHandler) DeleteSchool(c *fiber.Ctx) error {
 	schoolID := c.Params("id")
 	ctx := context.Background()
 
-	// Delete school record
-	deleteQuery := `DELETE FROM schools WHERE id = $1`
+	// Soft delete school record (set status to suspended)
+	log.Printf("Attempting to soft delete school with ID: %s", schoolID)
+	deleteQuery := `UPDATE schools SET status = 'suspended', updated_at = NOW() WHERE id = $1`
 	result, err := h.db.Exec(ctx, deleteQuery, schoolID)
 	if err != nil {
-		log.Printf("Failed to delete school: %v\n", err)
+		log.Printf("Failed to delete school (SQL Error): %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to delete school",
+			"error": fmt.Sprintf("Failed to delete school: %v", err),
 		})
 	}
 
