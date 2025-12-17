@@ -230,7 +230,7 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 
 	err := tenantDB.QueryRow(
 		c.Context(),
-		`SELECT id, school_id, email, password_hash, first_name, last_name, role, status
+		`SELECT id, COALESCE(school_id::text, ''), email, password_hash, first_name, last_name, role, status
 		 FROM users WHERE email = $1`,
 		req.Email,
 	).Scan(
@@ -369,7 +369,7 @@ func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
 
 	err = tenantDB.QueryRow(
 		c.Context(),
-		`SELECT id, school_id, email, first_name, last_name, role, status FROM users WHERE id = $1`,
+		`SELECT id, COALESCE(school_id::text, ''), email, first_name, last_name, role, status FROM users WHERE id = $1`,
 		claims.Subject,
 	).Scan(
 		&user.ID, &user.SchoolID, &user.Email, &user.FirstName, &user.LastName, &user.Role, &user.Status,
@@ -446,7 +446,7 @@ func (h *AuthHandler) GetMe(c *fiber.Ctx) error {
 
 	err := tenantDB.QueryRow(
 		c.Context(),
-		`SELECT id, school_id, email, first_name, last_name, role, status, created_at FROM users WHERE id = $1`,
+		`SELECT id, COALESCE(school_id::text, ''), email, first_name, last_name, role, status, created_at FROM users WHERE id = $1`,
 		userID,
 	).Scan(
 		&user.ID, &user.SchoolID, &user.Email, &user.FirstName, &user.LastName, &user.Role, &user.Status, &user.CreatedAt,

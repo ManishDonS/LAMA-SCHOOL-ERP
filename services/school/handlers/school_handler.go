@@ -421,7 +421,7 @@ func (h *SchoolHandler) UpdateSchoolAdmin(c *fiber.Ctx) error {
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to hash password"})
 		}
-		updateFields += fmt.Sprintf(", password = $%d", argIndex)
+		updateFields += fmt.Sprintf(", password_hash = $%d", argIndex)
 		args = append(args, string(hashedPassword))
 		argIndex++
 	}

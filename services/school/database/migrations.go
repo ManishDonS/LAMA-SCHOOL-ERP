@@ -142,8 +142,39 @@ func createSchoolsTable(ctx context.Context, db *pgxpool.Pool) error {
 		return fmt.Errorf("failed to create indexes: %w", err)
 	}
 
+	// 4. Create Users Table in MainDB (for Super Admin)
+	if err := createMainDBUsersTable(ctx, db); err != nil {
+		return fmt.Errorf("failed to create users table in main db: %w", err)
+	}
+
 	return nil
 
+}
+
+// createMainDBUsersTable creates users table in the main database for super admins
+func createMainDBUsersTable(ctx context.Context, db *pgxpool.Pool) error {
+	query := `
+	CREATE TABLE IF NOT EXISTS users (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		school_id UUID,
+		email VARCHAR(255) NOT NULL UNIQUE,
+		password_hash TEXT NOT NULL,
+		first_name VARCHAR(100) NOT NULL,
+		last_name VARCHAR(100) NOT NULL,
+		role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'teacher', 'student', 'parent', 'staff')),
+		status VARCHAR(20) NOT NULL DEFAULT 'active',
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+	`
+
+	if _, err := db.Exec(ctx, query); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // RunTenantMigrations runs migrations for a tenant database
@@ -169,19 +200,21 @@ func createTenantUsersTable(ctx context.Context, db *pgxpool.Pool) error {
 	query := `
 	CREATE TABLE IF NOT EXISTS users (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		school_id UUID,
 		email VARCHAR(255) NOT NULL UNIQUE,
-		password TEXT NOT NULL,
+		password_hash TEXT NOT NULL,
 		first_name VARCHAR(100) NOT NULL,
 		last_name VARCHAR(100) NOT NULL,
 		role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'teacher', 'student', 'parent')),
 		phone VARCHAR(20),
-		is_active BOOLEAN DEFAULT true,
+		status VARCHAR(50) DEFAULT 'active',
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 	CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+	CREATE INDEX IF NOT EXISTS idx_users_school_id ON users(school_id);
 	`
 
 	if _, err := db.Exec(ctx, query); err != nil {

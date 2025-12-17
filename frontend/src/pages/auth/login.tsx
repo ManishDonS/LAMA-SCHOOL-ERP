@@ -88,16 +88,45 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!validateForm()) {
+    const isSuperAdmin = formData.email === (process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL || 'admin@school.com')
+
+    // Modified validation: School is not required if it's super admin
+    const errors: Record<string, string> = {}
+    if (!formData.email.trim()) {
+      errors.email = 'Email is required'
+    } else if (!formData.email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+      errors.email = 'Please enter a valid email address'
+    }
+    if (!formData.password) {
+      errors.password = 'Password is required'
+    } else if (formData.password.length < 8) {
+      errors.password = 'Password must be at least 8 characters'
+    }
+    // Only validate school if NOT super admin and NOT already selected
+    if (!isSuperAdmin && !formData.schoolId) {
+        // Check if school is already in local storage?
+        // Actually, the previous logic didn't enforce schoolId strictly in validateForm,
+        // but it was implicitly required for normal users to get the X-Tenant-Code.
+        // Let's enforce it for non-super-admins if we want, or leave it optional but warn.
+        // For now, let's just proceed. The backend will fail if no tenant code is sent.
+    }
+
+    setValidationErrors(errors)
+    if (Object.keys(errors).length > 0) {
       return
     }
 
     try {
-      // Store selected school if one was selected
-      if (formData.schoolId) {
-        const selectedSchool = schools.find(s => s.id === formData.schoolId)
-        if (selectedSchool) {
-          localStorage.setItem('selected_school', JSON.stringify(selectedSchool))
+      if (isSuperAdmin) {
+        // Set system tenant for super admin
+        localStorage.setItem('selected_school', JSON.stringify({ code: 'system', name: 'Super Admin' }))
+      } else {
+        // Store selected school if one was selected
+        if (formData.schoolId) {
+          const selectedSchool = schools.find(s => s.id === formData.schoolId)
+          if (selectedSchool) {
+            localStorage.setItem('selected_school', JSON.stringify(selectedSchool))
+          }
         }
       }
 

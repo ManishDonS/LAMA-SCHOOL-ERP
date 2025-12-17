@@ -45,19 +45,49 @@ func RunMigrations(db *pgxpool.Pool) error {
 		{
 			name: "create_users_table",
 			sql: `
-			CREATE TABLE IF NOT EXISTS users (
-				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-				school_id UUID NOT NULL,
-				email VARCHAR(255) NOT NULL,
-				password_hash VARCHAR(255) NOT NULL,
-				first_name VARCHAR(100),
-				last_name VARCHAR(100),
-				role VARCHAR(50) NOT NULL DEFAULT 'student',
-				status VARCHAR(50) DEFAULT 'active',
-				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-				UNIQUE(school_id, email)
-			);
+			DO $$ 
+			BEGIN 
+				CREATE TABLE IF NOT EXISTS users (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					school_id UUID,
+					email VARCHAR(255) NOT NULL,
+					password_hash VARCHAR(255) NOT NULL,
+					first_name VARCHAR(100),
+					last_name VARCHAR(100),
+					role VARCHAR(50) NOT NULL DEFAULT 'student',
+					status VARCHAR(50) DEFAULT 'active',
+					created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+					updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+					UNIQUE(school_id, email)
+				);
+
+				-- Add permissions for existing tables
+				IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND table_schema='public' AND column_name='school_id') THEN
+					ALTER TABLE users ADD COLUMN school_id UUID;
+				END IF;
+
+				IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND table_schema='public' AND column_name='password_hash') THEN
+					ALTER TABLE users ADD COLUMN password_hash VARCHAR(255);
+					-- Attempt to migrate data if 'password' column exists
+					IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND table_schema='public' AND column_name='password') THEN
+						UPDATE users SET password_hash = password WHERE password_hash IS NULL;
+					END IF;
+				END IF;
+
+				IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND table_schema='public' AND column_name='status') THEN
+					ALTER TABLE users ADD COLUMN status VARCHAR(50) DEFAULT 'active';
+					
+					-- Migrate is_active to status if it exists
+					IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND table_schema='public' AND column_name='is_active') THEN
+						UPDATE users SET status = CASE WHEN is_active THEN 'active' ELSE 'inactive' END;
+					END IF;
+				END IF;
+			END $$;
+			`,
+		},
+		{
+			name: "create_users_indexes",
+			sql: `
 			CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 			CREATE INDEX IF NOT EXISTS idx_users_school_id ON users(school_id);
 			`,

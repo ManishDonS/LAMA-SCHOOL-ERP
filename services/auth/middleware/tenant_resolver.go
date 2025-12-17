@@ -53,6 +53,18 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 		ctx := context.Background()
 
 		// Fetch school credentials from main database
+		// Special case for system tenant (Super Admin)
+		if tenantCode == "system" {
+			// Use MainDB as tenantDB
+			c.Locals(TenantCodeContextKey, tenantCode)
+			c.Locals(TenantDBContextKey, cfg.MainDB)
+
+			ctx = context.WithValue(ctx, TenantCodeContextKey, tenantCode)
+			ctx = context.WithValue(ctx, TenantDBContextKey, cfg.MainDB)
+
+			return c.Next()
+		}
+
 		var dbUser, encryptedPassword string
 		query := `SELECT db_user, db_password FROM schools WHERE code = $1 AND status = 'active'`
 		err := cfg.MainDB.QueryRow(ctx, query, tenantCode).Scan(&dbUser, &encryptedPassword)
