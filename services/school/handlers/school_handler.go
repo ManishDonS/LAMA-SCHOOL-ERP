@@ -879,10 +879,12 @@ func (h *SchoolHandler) GetSchoolStats(c *fiber.Ctx) error {
 	}
 
 	// 3. Connect to Tenant DB
-	encryptedPass, err := h.tenantManager.EncryptPassword(school.DBPassword)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to encrypt password"})
-	}
+	// Password from DB is already encrypted, pass it directly
+	// encryptedPass, err := h.tenantManager.EncryptPassword(school.DBPassword)
+	// if err != nil {
+	// 	return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to encrypt password"})
+	// }
+	encryptedPass := school.DBPassword
 
 	// Ensure defaults
 	if school.DBHost == "" {

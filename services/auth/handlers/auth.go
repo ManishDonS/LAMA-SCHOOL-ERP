@@ -43,14 +43,15 @@ type RefreshTokenRequest struct {
 }
 
 type UserResponse struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	FirstName string    `json:"first_name"`
-	LastName  string    `json:"last_name"`
-	Role      string    `json:"role"`
-	SchoolID  string    `json:"school_id"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          string    `json:"id"`
+	Email       string    `json:"email"`
+	FirstName   string    `json:"first_name"`
+	LastName    string    `json:"last_name"`
+	Role        string    `json:"role"`
+	SchoolID    string    `json:"school_id"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	Permissions []string  `json:"permissions"`
 }
 
 func NewAuthHandler(db *pgxpool.Pool, cfg *config.Config) *AuthHandler {
@@ -111,6 +112,22 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		 RETURNING id`,
 		req.SchoolID, req.Email, hashedPassword, req.FirstName, req.LastName, req.Role, "active",
 	).Scan(&userID)
+
+	if err == nil {
+		// Assign role in user_roles table
+		// Find role ID first
+		var roleID string
+		errRole := tenantDB.QueryRow(c.Context(), "SELECT id FROM roles WHERE name = $1", req.Role).Scan(&roleID)
+		if errRole == nil {
+			_, errRoleAssign := tenantDB.Exec(c.Context(), "INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)", userID, roleID)
+			if errRoleAssign != nil {
+				logger.ErrorLog("handlers", errRoleAssign, "Failed to assign role to user")
+				// Non-fatal, but user won't have permissions via RBAC until fixed/migrated
+			}
+		} else {
+			logger.ErrorLog("handlers", errRole, "Failed to find role for assignment: "+req.Role)
+		}
+	}
 
 	if err != nil {
 		if err.Error() == "duplicate key value violates unique constraint \"users_school_id_email_key\"" {
@@ -293,6 +310,29 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		Path:     "/api/v1/auth/refresh",
 	})
 
+	// Fetch permissions
+	var permissions []string
+	permRows, err := tenantDB.Query(c.Context(), `
+		SELECT DISTINCT p.slug
+		FROM permissions p
+		JOIN role_permissions rp ON p.id = rp.permission_id
+		JOIN roles r ON rp.role_id = r.id
+		LEFT JOIN user_roles ur ON r.id = ur.role_id
+		WHERE ur.user_id = $1 OR r.name = $2
+	`, user.ID, user.Role)
+
+	if err == nil {
+		defer permRows.Close()
+		for permRows.Next() {
+			var slug string
+			if err := permRows.Scan(&slug); err == nil {
+				permissions = append(permissions, slug)
+			}
+		}
+	} else {
+		logger.ErrorLog("handlers", err, "Failed to fetch permissions")
+	}
+
 	// Log audit
 	if err := h.logAudit(c.Context(), user.ID, "LOGIN", "user", c.IP(), tenantDB); err != nil {
 		// Log error but don't fail request
@@ -308,14 +348,15 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"message": "Login successful",
 		"data": UserResponse{
-			ID:        user.ID,
-			Email:     user.Email,
-			FirstName: user.FirstName,
-			LastName:  user.LastName,
-			Role:      user.Role,
-			SchoolID:  user.SchoolID,
-			Status:    user.Status,
-			CreatedAt: user.CreatedAt,
+			ID:          user.ID,
+			Email:       user.Email,
+			FirstName:   user.FirstName,
+			LastName:    user.LastName,
+			Role:        user.Role,
+			SchoolID:    user.SchoolID,
+			Status:      user.Status,
+			CreatedAt:   user.CreatedAt,
+			Permissions: permissions,
 		},
 		"tokens": fiber.Map{
 			"accessToken": tokens.AccessToken,
@@ -458,17 +499,39 @@ func (h *AuthHandler) GetMe(c *fiber.Ctx) error {
 		})
 	}
 
+	// Fetch permissions
+	var permissions []string
+	permRows, err := tenantDB.Query(c.Context(), `
+		SELECT DISTINCT p.slug
+		FROM permissions p
+		JOIN role_permissions rp ON p.id = rp.permission_id
+		JOIN roles r ON rp.role_id = r.id
+		LEFT JOIN user_roles ur ON r.id = ur.role_id
+		WHERE ur.user_id = $1 OR r.name = $2
+	`, user.ID, user.Role)
+
+	if err == nil {
+		defer permRows.Close()
+		for permRows.Next() {
+			var slug string
+			if err := permRows.Scan(&slug); err == nil {
+				permissions = append(permissions, slug)
+			}
+		}
+	}
+
 	return c.JSON(fiber.Map{
 		"message": "User retrieved successfully",
 		"data": UserResponse{
-			ID:        user.ID,
-			Email:     user.Email,
-			FirstName: user.FirstName,
-			LastName:  user.LastName,
-			Role:      user.Role,
-			SchoolID:  user.SchoolID,
-			Status:    user.Status,
-			CreatedAt: user.CreatedAt,
+			ID:          user.ID,
+			Email:       user.Email,
+			FirstName:   user.FirstName,
+			LastName:    user.LastName,
+			Role:        user.Role,
+			SchoolID:    user.SchoolID,
+			Status:      user.Status,
+			CreatedAt:   user.CreatedAt,
+			Permissions: permissions,
 		},
 	})
 }

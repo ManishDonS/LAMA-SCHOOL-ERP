@@ -14,6 +14,7 @@ import (
 
 	"school-erp/school/config"
 	"school-erp/school/database"
+	"school-erp/school/middleware"
 	"school-erp/school/pkg/tenant"
 	"school-erp/school/routes"
 )
@@ -56,6 +57,14 @@ func main() {
 	// Setup middleware
 	setupMiddleware(app)
 
+	// Register Tenant Resolver Middleware
+	app.Use(middleware.NewTenantResolver(middleware.TenantResolverConfig{
+		TenantManager: tenantManager,
+		MainDB:        mainDB,
+		DBHost:        cfg.MainDBHost,
+		DBPort:        cfg.MainDBPort,
+	}))
+
 	// Welcome route
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
@@ -69,11 +78,11 @@ func main() {
 		})
 	})
 
-	// Setup routes
-	routes.SetupRoutes(app, mainDB, tenantManager)
-
-	// Serve static files (uploaded logos)
+	// Serve static files (uploaded logos) - MUST be before API routes
 	app.Static("/uploads", "/app/uploads")
+
+	// Setup routes
+	routes.SetupRoutes(app, mainDB, tenantManager, cfg)
 
 	// Health check endpoint
 	app.Get("/health", func(c *fiber.Ctx) error {

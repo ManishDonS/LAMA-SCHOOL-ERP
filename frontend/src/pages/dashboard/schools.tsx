@@ -589,11 +589,11 @@ function SchoolsPage() {
 
                         {/* Logo Preview */}
                         {formData.logo_url && (
-                          <div className="mb-3">
+                          <div className="mb-3 p-4 bg-gray-50 rounded-lg border border-gray-300 inline-block">
                             <img
                               src={getImageUrl(formData.logo_url)}
                               alt="School logo preview"
-                              className="h-20 w-20 object-cover rounded-lg border border-gray-300"
+                              className="max-h-40 w-auto object-contain"
                             />
                           </div>
                         )}

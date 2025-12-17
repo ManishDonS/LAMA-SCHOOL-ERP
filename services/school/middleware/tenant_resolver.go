@@ -2,8 +2,8 @@ package middleware
 
 import (
 	"context"
-	"fmt"
 	"log"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,9 +12,11 @@ import (
 )
 
 // TenantContext key for storing tenant information in request context
+type contextKey string
+
 const (
-	TenantCodeContextKey = "tenant_code"
-	TenantDBContextKey   = "tenant_db"
+	TenantCodeContextKey contextKey = "tenant_code"
+	TenantDBContextKey   contextKey = "tenant_db"
 )
 
 // TenantResolverConfig holds configuration for the tenant resolver middleware
@@ -44,24 +46,29 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 		tenantCode := extractTenantCode(c)
 		if tenantCode == "" {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"error": "Tenant code is required",
+				"error":   "Tenant code is required",
 				"details": "Provide tenant code via header (X-Tenant-Code), query parameter (tenant_code), or subdomain",
 			})
 		}
 
 		ctx := context.Background()
 
-		// Fetch school credentials from main database
-		var dbUser, encryptedPassword string
-		query := `SELECT db_user, db_password FROM schools WHERE code = $1 AND status = 'active'`
-		err := cfg.MainDB.QueryRow(ctx, query, tenantCode).Scan(&dbUser, &encryptedPassword)
+		// Fetch school credentials and permissions from main database
+		var dbUser, encryptedPassword, dbName string
+		var modulePermissionsJSON []byte
+
+		query := `SELECT db_user, db_password, db_name, module_permissions FROM schools WHERE code = $1 AND status = 'active'`
+		err := cfg.MainDB.QueryRow(ctx, query, tenantCode).Scan(&dbUser, &encryptedPassword, &dbName, &modulePermissionsJSON)
 		if err != nil {
 			log.Printf("School not found or inactive for tenant %s: %v\n", tenantCode, err)
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-				"error": "School not found or inactive",
+				"error":       "School not found or inactive",
 				"tenant_code": tenantCode,
 			})
 		}
+
+		// Store module permissions (raw JSON bytes to be parsed by middleware if needed)
+		c.Locals("module_permissions_json", modulePermissionsJSON)
 
 		// Get or create tenant database connection
 		tenantDB, err := cfg.TenantManager.GetConnection(
@@ -69,7 +76,7 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 			tenantCode,
 			cfg.DBHost,
 			cfg.DBPort,
-			fmt.Sprintf("school_%s_db", tenantCode),
+			dbName, // Use the fetched DB name
 			dbUser,
 			encryptedPassword,
 		)
@@ -77,18 +84,21 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 		if err != nil {
 			log.Printf("Failed to get tenant database connection for tenant %s: %v\n", tenantCode, err)
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": "Failed to connect to tenant database",
+				"error":       "Failed to connect to tenant database",
 				"tenant_code": tenantCode,
 			})
 		}
 
-		// Store tenant info in context
+		// Store tenant info in Fiber Locals (for easy access in handlers)
 		c.Locals(TenantCodeContextKey, tenantCode)
 		c.Locals(TenantDBContextKey, tenantDB)
 
-		// Also set it in the request context for downstream handlers
+		// Also set it in the request context for downstream handlers that use context.Context
 		ctx = context.WithValue(ctx, TenantCodeContextKey, tenantCode)
 		ctx = context.WithValue(ctx, TenantDBContextKey, tenantDB)
+
+		// Update the Fiber context's UserContext with our populated context
+		c.SetUserContext(ctx)
 
 		return c.Next()
 	}
@@ -153,16 +163,21 @@ func extractSubdomain(hostname string) string {
 // This includes health checks, public endpoints, and metadata operations
 func shouldSkipTenantResolution(c *fiber.Ctx) bool {
 	path := c.Path()
+	// EXCEPTION: Do NOT skip if the path involves roles or permissions (RBAC)
+	if strings.Contains(path, "/roles") || strings.Contains(path, "/permissions") {
+		return false
+	}
 
 	// Skip tenant resolution for these paths
 	skipPaths := []string{
 		"/health",
-		"/api/v1/schools",           // SuperAdmin school management doesn't need tenant resolution
-		"/api/v1/schools/",          // SuperAdmin operations
-		"/api/v1/auth",              // Authentication endpoints
-		"/api/v1/metrics",           // Metrics endpoint
-		"/api/v1/readiness",         // Readiness probe
-		"/api/v1/liveness",          // Liveness probe
+		"/uploads/",         // Static files (logos) don't need tenant resolution
+		"/api/v1/schools",   // SuperAdmin school management doesn't need tenant resolution
+		"/api/v1/schools/",  // SuperAdmin operations
+		"/api/v1/auth",      // Authentication endpoints
+		"/api/v1/metrics",   // Metrics endpoint
+		"/api/v1/readiness", // Readiness probe
+		"/api/v1/liveness",  // Liveness probe
 	}
 
 	for _, skipPath := range skipPaths {
@@ -199,7 +214,7 @@ func GetTenantDB(c *fiber.Ctx) *pgxpool.Pool {
 func TenantErrorHandler(c *fiber.Ctx, err error) error {
 	log.Printf("Tenant middleware error: %v\n", err)
 	return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-		"error": "Internal server error",
+		"error":   "Internal server error",
 		"message": "Failed to process tenant request",
 	})
 }

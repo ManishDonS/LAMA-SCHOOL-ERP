@@ -101,3 +101,21 @@ export interface School {
   created_at: string
   updated_at: string
 }
+
+export interface Role {
+  id: string
+  name: string
+  description?: string
+  is_system: boolean
+  permissions: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface Permission {
+  id: string
+  slug: string
+  module: string
+  description: string
+  created_at: string
+}

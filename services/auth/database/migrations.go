@@ -97,14 +97,141 @@ func RunMigrations(db *pgxpool.Pool) error {
 			sql: `
 			CREATE TABLE IF NOT EXISTS roles (
 				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-				school_id UUID NOT NULL,
-				name VARCHAR(100) NOT NULL,
+				name VARCHAR(100) NOT NULL UNIQUE,
 				description TEXT,
-				permissions JSONB DEFAULT '[]',
+				is_system BOOLEAN DEFAULT FALSE,
 				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-				UNIQUE(school_id, name)
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 			);`,
+		},
+		{
+			name: "add_is_system_to_roles",
+			sql: `
+			ALTER TABLE roles ADD COLUMN IF NOT EXISTS is_system BOOLEAN DEFAULT FALSE;
+			`,
+		},
+		{
+			name: "add_unique_constraint_roles_name",
+			sql: `
+			DO $$ 
+			BEGIN 
+				IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'roles_name_key') THEN 
+					ALTER TABLE roles ADD CONSTRAINT roles_name_key UNIQUE (name); 
+				END IF; 
+			END $$;
+			`,
+		},
+		{
+			name: "drop_school_id_from_roles",
+			sql: `
+			ALTER TABLE roles DROP COLUMN IF EXISTS school_id;
+			`,
+		},
+		{
+			name: "create_permissions_table",
+			sql: `
+			CREATE TABLE IF NOT EXISTS permissions (
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				slug VARCHAR(100) NOT NULL UNIQUE,
+				module VARCHAR(100) NOT NULL,
+				description TEXT,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);`,
+		},
+		{
+			name: "create_role_permissions_table",
+			sql: `
+			CREATE TABLE IF NOT EXISTS role_permissions (
+				role_id UUID REFERENCES roles(id) ON DELETE CASCADE,
+				permission_id UUID REFERENCES permissions(id) ON DELETE CASCADE,
+				PRIMARY KEY (role_id, permission_id)
+			);`,
+		},
+		{
+			name: "create_user_roles_table",
+			sql: `
+			CREATE TABLE IF NOT EXISTS user_roles (
+				user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+				role_id UUID REFERENCES roles(id) ON DELETE CASCADE,
+				PRIMARY KEY (user_id, role_id)
+			);`,
+		},
+		{
+			name: "seed_system_roles",
+			sql: `
+			INSERT INTO roles (name, description, is_system) VALUES
+			('admin', 'School Administrator', TRUE),
+			('teacher', 'Teacher', TRUE),
+			('student', 'Student', TRUE),
+			('parent', 'Parent', TRUE),
+			('staff', 'Staff Member', TRUE)
+			ON CONFLICT (name) DO NOTHING;
+			`,
+		},
+		{
+			name: "seed_permissions",
+			sql: `
+			INSERT INTO permissions (slug, module, description) VALUES
+			-- Students
+			('students.view', 'students', 'View students'),
+			('students.create', 'students', 'Create students'),
+			('students.update', 'students', 'Update students'),
+			('students.delete', 'students', 'Delete students'),
+			-- Teachers
+			('teachers.view', 'teachers', 'View teachers'),
+			('teachers.create', 'teachers', 'Create teachers'),
+			('teachers.update', 'teachers', 'Update teachers'),
+			('teachers.delete', 'teachers', 'Delete teachers'),
+			-- Attendance
+			('attendance.view', 'attendance', 'View attendance'),
+			('attendance.create', 'attendance', 'Mark attendance'),
+			('attendance.update', 'attendance', 'Update attendance'),
+			('attendance.delete', 'attendance', 'Delete attendance'),
+			-- Accounting
+			('accounting.view', 'accounting', 'View accounting'),
+			('accounting.create', 'accounting', 'Create records'),
+			('accounting.update', 'accounting', 'Update records'),
+			('accounting.delete', 'accounting', 'Delete records'),
+			-- Library
+			('library.view', 'library', 'View library'),
+			('library.create', 'library', 'Add books'),
+			('library.update', 'library', 'Update books'),
+			('library.delete', 'library', 'Delete books'),
+			-- Exams
+			('exams.view', 'exams', 'View exams'),
+			('exams.create', 'exams', 'Create exams'),
+			('exams.update', 'exams', 'Update exams'),
+			('exams.delete', 'exams', 'Delete exams'),
+			-- Transport
+			('transport.view', 'transport', 'View transport'),
+			('transport.create', 'transport', 'Create routes'),
+			('transport.update', 'transport', 'Update routes'),
+			('transport.delete', 'transport', 'Delete routes'),
+			-- Communication
+			('communication.view', 'communication', 'View messages'),
+			('communication.create', 'communication', 'Send messages'),
+			-- Website
+			('website.view', 'website', 'View website settings'),
+			('website.update', 'website', 'Update website content'),
+			-- Roles & Permissions (RBAC)
+			('roles.view', 'roles', 'View roles'),
+			('roles.create', 'roles', 'Create roles'),
+			('roles.update', 'roles', 'Update roles'),
+			('roles.delete', 'roles', 'Delete roles'),
+			('permissions.view', 'permissions', 'View permissions')
+			ON CONFLICT (slug) DO NOTHING;
+			`,
+		},
+		{
+			name: "seed_admin_permissions",
+			sql: `
+			-- Grant ALL permissions to Admin role
+			INSERT INTO role_permissions (role_id, permission_id)
+			SELECT r.id, p.id 
+			FROM roles r CROSS JOIN permissions p
+			WHERE r.name = 'admin'
+			ON CONFLICT DO NOTHING;
+			`,
 		},
 		{
 			name: "create_refresh_tokens_table",
@@ -135,6 +262,22 @@ func RunMigrations(db *pgxpool.Pool) error {
 			);
 			CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
 			CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+			`,
+		},
+		{
+			name: "seed_super_admin_role_and_permissions",
+			sql: `
+			-- Create super_admin role if not exists
+			INSERT INTO roles (name, description, is_system) 
+			VALUES ('super_admin', 'Super Administrator', TRUE)
+			ON CONFLICT (name) DO NOTHING;
+
+			-- Grant ALL permissions to super_admin role
+			INSERT INTO role_permissions (role_id, permission_id)
+			SELECT r.id, p.id 
+			FROM roles r CROSS JOIN permissions p
+			WHERE r.name = 'super_admin'
+			ON CONFLICT DO NOTHING;
 			`,
 		},
 	}

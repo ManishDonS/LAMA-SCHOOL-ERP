@@ -63,8 +63,8 @@ router.post('/upload-logo', upload.single('logo'), (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Return the URL of the uploaded file
-    const fileUrl = `http://localhost:${process.env.GATEWAY_PORT || 8080}/uploads/${req.file.filename}`;
+    // Return the relative URL path (frontend will prepend SCHOOL_API_URL)
+    const fileUrl = `/uploads/${req.file.filename}`;
     res.json({
       message: 'Logo uploaded successfully',
       url: fileUrl,
