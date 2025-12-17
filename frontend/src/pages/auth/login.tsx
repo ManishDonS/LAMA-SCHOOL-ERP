@@ -88,49 +88,50 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    const isSuperAdmin = formData.email === (process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL || 'admin@school.com')
-
-    // Modified validation: School is not required if it's super admin
+    // Validate Requirement: Email & Password are fully required.
+    // School is optional: If empty, we attempt 'system' (Super Admin) login.
     const errors: Record<string, string> = {}
     if (!formData.email.trim()) {
       errors.email = 'Email is required'
-    } else if (!formData.email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-      errors.email = 'Please enter a valid email address'
-    }
-    if (!formData.password) {
-      errors.password = 'Password is required'
-    } else if (formData.password.length < 8) {
-      errors.password = 'Password must be at least 8 characters'
-    }
-    // Only validate school if NOT super admin and NOT already selected
-    if (!isSuperAdmin && !formData.schoolId) {
-        // Check if school is already in local storage?
-        // Actually, the previous logic didn't enforce schoolId strictly in validateForm,
-        // but it was implicitly required for normal users to get the X-Tenant-Code.
-        // Let's enforce it for non-super-admins if we want, or leave it optional but warn.
-        // For now, let's just proceed. The backend will fail if no tenant code is sent.
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      errors.email = 'Email is invalid'
     }
 
-    setValidationErrors(errors)
+    if (!formData.password) {
+      errors.password = 'Password is required'
+    }
+
+    setValidationErrors(errors) // Use existing setValidationErrors
     if (Object.keys(errors).length > 0) {
       return
     }
 
+    // Clear any previous auth error
+    clearError()
+
     try {
-      if (isSuperAdmin) {
-        // Set system tenant for super admin
-        localStorage.setItem('selected_school', JSON.stringify({ code: 'system', name: 'Super Admin' }))
-      } else {
-        // Store selected school if one was selected
-        if (formData.schoolId) {
-          const selectedSchool = schools.find(s => s.id === formData.schoolId)
-          if (selectedSchool) {
-            localStorage.setItem('selected_school', JSON.stringify(selectedSchool))
-          }
+      // Determine tenant code: if a school is selected, use its code; otherwise, default to 'system'
+      let tenantCode = 'system'
+      let selectedSchoolData: School | null = null
+
+      if (formData.schoolId) {
+        selectedSchoolData = schools.find(s => s.id === formData.schoolId) || null
+        if (selectedSchoolData) {
+          tenantCode = selectedSchoolData.code
         }
       }
 
-      await login(formData.email, formData.password)
+      await login(formData.email, formData.password, tenantCode) // Pass tenantCode to login
+
+      // Store selected school if one was selected
+      if (selectedSchoolData) {
+        localStorage.setItem('selected_school', JSON.stringify(selectedSchoolData))
+      } else {
+        // If no school was selected, but login was successful (e.g., system admin),
+        // store a placeholder for the system tenant.
+        localStorage.setItem('selected_school', JSON.stringify({ id: 'system', name: 'System Admin', code: 'system' }))
+      }
+
       toast.success('Login successful!')
       router.push('/dashboard')
     } catch (error: any) {

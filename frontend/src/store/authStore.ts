@@ -27,7 +27,7 @@ interface AuthStore extends AuthState {
   fetchActiveModules: () => Promise<void>
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string, tenantCode?: string) => Promise<void>
   register: (data: any) => Promise<void>
   logout: () => Promise<void>
   clearError: () => void
@@ -58,10 +58,21 @@ export const useAuthStore = create<AuthStore>()(
 
         // ... login/register/logout methods unchanged ...
 
-        login: async (email, password) => {
+        login: async (email, password, tenantCode) => {
           set({ isLoading: true, error: null })
           try {
-            const response = await authAPI.login({ email, password })
+            // Pass tenantCode in header via API configuration or argument?
+            // Since authAPI.login takes an object, we need to see its definition.
+            // Assuming we need to pass headers. But authAPI.login likely takes {email, password}.
+            // We'll update api.ts if needed, but for now let's assume we can pass it as config to axios 
+            // OR the valid way for this project: set header on global instance?
+            // Actually, `authAPI` is likely an object wrapper. 
+            // We should check `api.ts` first. For now, assuming authAPI.login accepts headers as second arg or similar requires checking.
+            // But to fix the TYPE ERROR in login.tsx, we definitely need to update this signature.
+
+            // Wait, I need to check api.ts to know how to pass the header.
+            // For now, I will update the signature.
+            const response = await authAPI.login({ email, password }, tenantCode)
             const { data, tokens } = response.data
 
             set({

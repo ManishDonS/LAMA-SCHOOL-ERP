@@ -28,8 +28,8 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`
     }
 
-    // Add Tenant Code header
-    if (typeof window !== 'undefined') {
+    // Add Tenant Code header (only if not already set by the specific request)
+    if (typeof window !== 'undefined' && !config.headers['X-Tenant-Code']) {
       const selectedSchoolStr = localStorage.getItem('selected_school')
       if (selectedSchoolStr) {
         try {
@@ -184,7 +184,10 @@ api.interceptors.response.use(
 api.defaults.timeout = 30000 // 30 seconds
 
 export const authAPI = {
-  login: (data: LoginRequest) => api.post<AuthResponse>('/api/v1/auth/login', data),
+  login: (data: LoginRequest, tenantCode?: string) =>
+    api.post<AuthResponse>('/api/v1/auth/login', data, {
+      headers: tenantCode ? { 'X-Tenant-Code': tenantCode } : undefined
+    }),
   register: (data: RegisterRequest) => api.post<AuthResponse>('/api/v1/auth/register', data),
   me: () => api.get('/api/v1/auth/me'),
   logout: () => api.post('/api/v1/auth/logout'),
