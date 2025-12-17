@@ -324,10 +324,7 @@ func (h *SchoolHandler) GetSchoolAdmin(c *fiber.Ctx) error {
 	}
 
 	// 2. Connect to Tenant DB
-	encryptedPass, err := h.tenantManager.EncryptPassword(school.DBPassword)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to encrypt password"})
-	}
+	// Note: school.DBPassword is already encrypted in the database, use it directly
 
 	// Ensure defaults
 	if school.DBHost == "" {
@@ -337,7 +334,7 @@ func (h *SchoolHandler) GetSchoolAdmin(c *fiber.Ctx) error {
 		school.DBPort = 5432
 	}
 
-	tenantDB, err := h.tenantManager.GetConnection(ctx, school.Code, school.DBHost, school.DBPort, school.DBName, school.DBUser, encryptedPass)
+	tenantDB, err := h.tenantManager.GetConnection(ctx, school.Code, school.DBHost, school.DBPort, school.DBName, school.DBUser, school.DBPassword)
 	if err != nil {
 		log.Printf("Failed to connect to tenant DB: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to connect to school database"})
@@ -379,10 +376,7 @@ func (h *SchoolHandler) UpdateSchoolAdmin(c *fiber.Ctx) error {
 	}
 
 	// 2. Connect to Tenant DB
-	encryptedPass, err := h.tenantManager.EncryptPassword(school.DBPassword)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to encrypt password"})
-	}
+	// Note: school.DBPassword is already encrypted in the database, use it directly
 
 	if school.DBHost == "" {
 		school.DBHost = "postgres"
@@ -391,7 +385,7 @@ func (h *SchoolHandler) UpdateSchoolAdmin(c *fiber.Ctx) error {
 		school.DBPort = 5432
 	}
 
-	tenantDB, err := h.tenantManager.GetConnection(ctx, school.Code, school.DBHost, school.DBPort, school.DBName, school.DBUser, encryptedPass)
+	tenantDB, err := h.tenantManager.GetConnection(ctx, school.Code, school.DBHost, school.DBPort, school.DBName, school.DBUser, school.DBPassword)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to connect to school database"})
 	}
