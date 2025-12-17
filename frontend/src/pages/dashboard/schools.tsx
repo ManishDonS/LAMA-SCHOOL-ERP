@@ -19,6 +19,7 @@ interface School {
   created_at: string
   updated_at: string
   module_permissions?: Record<string, any>
+  active_modules?: string[]
 }
 
 interface FormData {
@@ -75,7 +76,8 @@ function SchoolsPage() {
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [activeTab, setActiveTab] = useState<'basic' | 'admin' | 'permissions'>('basic')
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string; name: string } | null>(null)
-  const [permissions, setPermissions] = useState({
+
+  const DEFAULT_PERMISSIONS = {
     students: { create: true, read: true, update: true, delete: false },
     teachers: { create: true, read: true, update: true, delete: false },
     guardians: { create: true, read: true, update: true, delete: false },
@@ -95,7 +97,9 @@ function SchoolsPage() {
     reports: { create: false, read: true, update: false, delete: false },
     website: { create: true, read: true, update: true, delete: false },
     settings: { create: false, read: true, update: true, delete: false },
-  })
+  }
+
+  const [permissions, setPermissions] = useState(DEFAULT_PERMISSIONS)
 
   const getImageUrl = (path: string) => {
     if (!path) return ''
@@ -141,6 +145,7 @@ function SchoolsPage() {
       // Handle both response.data.data and response.data formats
       const schoolsData = response.data.data || response.data || []
       const schoolsList = Array.isArray(schoolsData) ? schoolsData : []
+      console.log('Fetched schools:', schoolsList.map(s => ({ id: s.id, name: s.name, module_permissions: s.module_permissions })))
       setSchools(schoolsList)
 
       // Fetch stats for each school
@@ -250,7 +255,31 @@ function SchoolsPage() {
             timezone: formData.timezone,
             module_permissions: permissions // Sent for basic/permissions tab just in case
           }
-          await schoolAPI.update(editingId, updateData)
+          console.log('Updating school with permissions:', permissions)
+          const response = await schoolAPI.update(editingId, updateData)
+
+          if (typeof window !== 'undefined') {
+            const selectedSchoolJson = localStorage.getItem('selected_school')
+            if (selectedSchoolJson) {
+              try {
+                const selectedSchool = JSON.parse(selectedSchoolJson)
+                if (selectedSchool.id === editingId) {
+                  const updatedSchool = response.data
+                  localStorage.setItem('selected_school', JSON.stringify({
+                    id: updatedSchool.id,
+                    name: updatedSchool.name,
+                    code: updatedSchool.code,
+                    logo_url: updatedSchool.logo_url,
+                    module_permissions: updatedSchool.module_permissions || {},
+                    active_modules: updatedSchool.active_modules || []
+                  }))
+                }
+              } catch (e) {
+                console.error("Error updating local storage", e)
+              }
+            }
+          }
+
           setSuccess('School updated successfully')
           setEditingId(null)
           setShowForm(false) // Close form only on success of main school update
@@ -292,10 +321,12 @@ function SchoolsPage() {
       admin_last_name: '',
     })
 
-    // @ts-ignore - module_permissions might exist on school
-    if (school.module_permissions) {
-      // @ts-ignore
-      setPermissions(school.module_permissions)
+    if (school.module_permissions && Object.keys(school.module_permissions).length > 0) {
+      console.log('Loading permissions from school:', school.module_permissions)
+      setPermissions(school.module_permissions as any)
+    } else {
+      console.log('No permissions found, using defaults')
+      setPermissions(DEFAULT_PERMISSIONS)
     }
 
     setShowForm(true)
@@ -327,6 +358,7 @@ function SchoolsPage() {
     setShowForm(false)
     setEditingId(null)
     setFormData(DEFAULT_FORM_STATE)
+    setPermissions(DEFAULT_PERMISSIONS) // Reset permissions on close
     setError(null)
     setActiveTab('basic')
   }
@@ -334,6 +366,7 @@ function SchoolsPage() {
   const handleNewSchool = () => {
     setEditingId(null)
     setFormData(DEFAULT_FORM_STATE)
+    setPermissions(DEFAULT_PERMISSIONS) // Reset permissions for new school
     setError(null)
     setShowForm(true)
   }
@@ -359,7 +392,8 @@ function SchoolsPage() {
       name: school.name,
       code: school.code,
       logo_url: school.logo_url,
-      module_permissions: school.module_permissions || {}
+      module_permissions: school.module_permissions || {},
+      active_modules: school.active_modules || []
     }))
     setSuccess(`Switched to ${school.name}. Redirecting to dashboard...`)
     setTimeout(() => {
@@ -488,7 +522,7 @@ function SchoolsPage() {
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                         }`}
                     >
-                      Permissions
+                      Module Activation
                     </button>
                   </div>
                 </div>
@@ -779,7 +813,7 @@ function SchoolsPage() {
                     <div className="space-y-6">
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
                         <p className="text-sm text-blue-800">
-                          Configure which modules and actions are available for this school. These permissions apply to all users within this school.
+                          Manage active modules and features for this school. Disabling a module here hides it for ALL users.
                         </p>
                       </div>
 

@@ -229,7 +229,8 @@ func (h *SchoolHandler) CreateSchool(c *fiber.Ctx) error {
 		// To avoid cycle, we'll execute the SQL directly here or use a shared package.
 		// Given time constraints, I will execute the critical SQL here directly.
 
-		createUsersTableSQL := `
+		createSchemaSQL := `
+		-- Users Table
 		CREATE TABLE IF NOT EXISTS users (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			school_id UUID NOT NULL,
@@ -245,9 +246,48 @@ func (h *SchoolHandler) CreateSchool(c *fiber.Ctx) error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 		CREATE INDEX IF NOT EXISTS idx_users_school_id ON users(school_id);
+
+		-- RBAC Tables
+		CREATE TABLE IF NOT EXISTS roles (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			name VARCHAR(100) NOT NULL UNIQUE,
+			description TEXT,
+			is_system BOOLEAN DEFAULT FALSE,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS permissions (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			slug VARCHAR(100) NOT NULL UNIQUE,
+			module VARCHAR(100) NOT NULL,
+			description TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS role_permissions (
+			role_id UUID REFERENCES roles(id) ON DELETE CASCADE,
+			permission_id UUID REFERENCES permissions(id) ON DELETE CASCADE,
+			PRIMARY KEY (role_id, permission_id)
+		);
+
+		CREATE TABLE IF NOT EXISTS user_roles (
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			role_id UUID REFERENCES roles(id) ON DELETE CASCADE,
+			PRIMARY KEY (user_id, role_id)
+		);
+
+		-- Seed System Roles
+		INSERT INTO roles (name, description, is_system) VALUES
+		('admin', 'School Administrator', TRUE),
+		('teacher', 'Teacher', TRUE),
+		('student', 'Student', TRUE),
+		('parent', 'Parent', TRUE),
+		('staff', 'Staff Member', TRUE)
+		ON CONFLICT (name) DO NOTHING;
 		`
-		if _, err := tenantDB.Exec(bgCtx, createUsersTableSQL); err != nil {
-			log.Printf("Failed to create users table for school %s: %v", school.Code, err)
+		if _, err := tenantDB.Exec(bgCtx, createSchemaSQL); err != nil {
+			log.Printf("Failed to create schema for school %s: %v", school.Code, err)
 			return
 		}
 
@@ -262,11 +302,24 @@ func (h *SchoolHandler) CreateSchool(c *fiber.Ctx) error {
 		insertAdminSQL := `
 		INSERT INTO users (school_id, email, password_hash, first_name, last_name, role, status)
 		VALUES ($1, $2, $3, $4, $5, 'admin', 'active')
+		RETURNING id
 		`
-		// We need school.ID here as UUID. school.ID is string from response, let's assume it parses.
-		if _, err := tenantDB.Exec(bgCtx, insertAdminSQL, school.ID, req.AdminEmail, string(hashedPassword), req.AdminFirstName, req.AdminLastName); err != nil {
+
+		var newAdminID string
+		// We need school.ID here as UUID. school.ID is string from response.
+		if err := tenantDB.QueryRow(bgCtx, insertAdminSQL, school.ID, req.AdminEmail, string(hashedPassword), req.AdminFirstName, req.AdminLastName).Scan(&newAdminID); err != nil {
 			log.Printf("Failed to insert admin user for school %s: %v", school.Code, err)
 			return
+		}
+
+		// Assign Admin Role
+		assignRoleSQL := `
+		INSERT INTO user_roles (user_id, role_id)
+		SELECT $1, id FROM roles WHERE name = 'admin'
+		`
+		if _, err := tenantDB.Exec(bgCtx, assignRoleSQL, newAdminID); err != nil {
+			log.Printf("Failed to assign admin role for school %s: %v", school.Code, err)
+			// Don't fail the whole process but log error
 		}
 
 		// 5. Register Admin in Auth Service (Central User DB)
@@ -459,7 +512,7 @@ func (h *SchoolHandler) GetSchools(c *fiber.Ctx) error {
 	SELECT id, name, COALESCE(code, ''), COALESCE(domain, ''), COALESCE(logo_url, ''), COALESCE(timezone, ''), COALESCE(db_name, ''), COALESCE(db_user, ''), 
 	       COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''), 
 	       COALESCE(city, ''), COALESCE(state, ''), COALESCE(country, ''), 
-	       COALESCE(pincode, ''), COALESCE(website, ''), status, active_modules, created_at, updated_at
+	       COALESCE(pincode, ''), COALESCE(website, ''), status, active_modules, module_permissions, created_at, updated_at
 	FROM schools
 	WHERE status != 'suspended'
 	ORDER BY created_at DESC
@@ -478,7 +531,7 @@ func (h *SchoolHandler) GetSchools(c *fiber.Ctx) error {
 	var schools []School
 	for rows.Next() {
 		var school School
-		var activeModulesJSON []byte
+		var activeModulesJSON, modulePermissionsJSON []byte
 		if err := rows.Scan(
 			&school.ID,
 			&school.Name,
@@ -498,6 +551,7 @@ func (h *SchoolHandler) GetSchools(c *fiber.Ctx) error {
 			&school.Website,
 			&school.Status,
 			&activeModulesJSON,
+			&modulePermissionsJSON,
 			&school.CreatedAt,
 			&school.UpdatedAt,
 		); err != nil {
@@ -509,7 +563,21 @@ func (h *SchoolHandler) GetSchools(c *fiber.Ctx) error {
 		} else {
 			school.ActiveModules = []string{}
 		}
+
+		if len(modulePermissionsJSON) > 0 {
+			json.Unmarshal(modulePermissionsJSON, &school.ModulePermissions)
+			log.Printf("DEBUG: Unmarshaled permissions for %s: %v (from JSON: %s)", school.Code, school.ModulePermissions, string(modulePermissionsJSON))
+		} else {
+			school.ModulePermissions = make(map[string]map[string]bool)
+			log.Printf("DEBUG: No permissions JSON for %s, initialized empty map", school.Code)
+		}
+
 		schools = append(schools, school)
+	}
+
+	// Debug: Log what we're returning
+	for _, s := range schools {
+		log.Printf("Returning school %s with module_permissions: %v", s.Code, s.ModulePermissions)
 	}
 
 	return c.JSON(fiber.Map{
@@ -669,6 +737,18 @@ func (h *SchoolHandler) UpdateSchool(c *fiber.Ctx) error {
 		if err == nil {
 			updateFields += fmt.Sprintf(", module_permissions = $%d", argIndex)
 			args = append(args, permissionsJSON)
+			argIndex++
+
+			// Recalculate Active Modules
+			var activeModules []string
+			for module, permissions := range req.ModulePermissions {
+				if permissions["read"] || permissions["create"] || permissions["update"] || permissions["delete"] {
+					activeModules = append(activeModules, module)
+				}
+			}
+			activeModulesJSON, _ := json.Marshal(activeModules)
+			updateFields += fmt.Sprintf(", active_modules = $%d", argIndex)
+			args = append(args, activeModulesJSON)
 			argIndex++
 		}
 	}

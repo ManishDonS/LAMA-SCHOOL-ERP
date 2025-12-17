@@ -188,6 +188,9 @@ const MODULE_PERMISSION_MAP: Record<string, string> = {
   '/dashboard/reports': 'reports',
   '/website-builder': 'website',
   '/dashboard/settings': 'settings',
+  '/dashboard/fees': 'fees',
+  '/dashboard/expenses': 'expenses',
+  '/dashboard/communication': 'notifications', // Using notifications permission for communication module
 }
 
 /**
@@ -197,8 +200,11 @@ const getModuleForPath = (path: string): string | null => {
   if (path.includes('communication')) return 'communication'
   if (path.includes('website-builder')) return 'website'
 
-  // School related modules (Students, Teachers, Attendance, etc.) and core features
-  // are always visible regardless of active_modules setting
+  // Check if there is a direct mapping in MODULE_PERMISSION_MAP
+  const mappedModule = MODULE_PERMISSION_MAP[path]
+  if (mappedModule) return mappedModule
+
+  // Core features (Dashboard, etc.) are always visible
   return null
 }
 
@@ -214,7 +220,20 @@ export const getAccessibleMenuItems = (
 
   let menuItems = getMenuItemsWithPermissions()
 
-  // Super admin bypasses module permission checks
+  // Filter by active modules if provided (Applies to ALL roles, including Super Admin)
+  if (activeModules) {
+    menuItems = menuItems.filter((item) => {
+      const module = getModuleForPath(item.href)
+      // If item belongs to a module, check if it's active
+      if (module) {
+        return activeModules.includes(module)
+      }
+      // If not mapped to a module (core feature), always show
+      return true
+    })
+  }
+
+  // Super admin bypasses module PERMISSION (read/write) checks, but not Active Module checks
   if (userRole !== 'super_admin') {
     // Filter by module permissions for school admins and other roles
     if (modulePermissions) {
@@ -229,19 +248,6 @@ export const getAccessibleMenuItems = (
         if (!perms) return false
 
         return perms.read || perms.create || perms.update || perms.delete
-      })
-    }
-
-    // Filter by active modules if provided
-    if (activeModules) {
-      menuItems = menuItems.filter((item) => {
-        const module = getModuleForPath(item.href)
-        // If item belongs to a module, check if it's active
-        if (module) {
-          return activeModules.includes(module)
-        }
-        // If not mapped to a module (core feature), always show
-        return true
       })
     }
   }

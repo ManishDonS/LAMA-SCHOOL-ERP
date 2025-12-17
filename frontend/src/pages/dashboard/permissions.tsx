@@ -1,206 +1,380 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect, Fragment } from 'react'
 import { useRouter } from 'next/router'
-import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
-import { MENU_ITEMS, getAccessibleMenuItems, type UserRole, type MenuItem } from '@/utils/permissions'
+import { schoolAPI } from '@/services/api'
+import { Role, Permission } from '@/types'
 import toast from 'react-hot-toast'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import Sidebar from '@/components/Sidebar'
 import Navbar from '@/components/Navbar'
 
-interface RolePermissions {
-  [module: string]: UserRole[]
+interface RolePermissionsMap {
+  [roleId: string]: string[] // List of permission slugs for each role
 }
 
 function PermissionsPage() {
   const router = useRouter()
   const { user } = useAuthStore()
-  const [permissions, setPermissions] = useState<RolePermissions>({})
-  const [loading, setLoading] = useState(false)
-  const [hasChanges, setHasChanges] = useState(false)
+  const [roles, setRoles] = useState<Role[]>([])
+  const [permissionsList, setPermissionsList] = useState<Permission[]>([])
+  // Group permissions by module for UI display
+  const [groupedPermissions, setGroupedPermissions] = useState<{ [module: string]: Permission[] }>({})
 
-  const roles: UserRole[] = ['super_admin', 'admin', 'teacher', 'student', 'parent', 'staff']
-
-  const menuItems = getAccessibleMenuItems(user?.role)
+  const [rolePermissions, setRolePermissions] = useState<RolePermissionsMap>({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [originalPermissions, setOriginalPermissions] = useState<RolePermissionsMap>({})
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [newRoleName, setNewRoleName] = useState('')
+  const [newRoleDescription, setNewRoleDescription] = useState('')
+  const [creatingRole, setCreatingRole] = useState(false)
 
   useEffect(() => {
-    // Check if user is super admin
-    if (user && user.role !== 'super_admin') {
-      toast.error('Access denied: Only super admins can manage permissions')
+    // Check if user has access (school admin or super admin)
+    if (user && !['super_admin', 'admin'].includes(user.role)) {
+      toast.error('Access denied')
       router.push('/dashboard')
       return
     }
 
-    // Load current permissions
-    loadPermissions()
+    if (user?.schoolId) {
+      fetchData(user.schoolId.toString())
+    }
   }, [user, router])
 
-  const loadPermissions = () => {
-    // Load permissions from MENU_ITEMS
-    const currentPermissions: RolePermissions = {}
-    MENU_ITEMS.forEach((item) => {
-      currentPermissions[item.href] = [...item.roles]
-    })
-    setPermissions(currentPermissions)
-  }
-
-  const togglePermission = (moduleHref: string, role: UserRole) => {
-    setPermissions((prev) => {
-      const moduleRoles = prev[moduleHref] || []
-      const hasRole = moduleRoles.includes(role)
-
-      return {
-        ...prev,
-        [moduleHref]: hasRole
-          ? moduleRoles.filter((r) => r !== role)
-          : [...moduleRoles, role],
-      }
-    })
-    setHasChanges(true)
-  }
-
-  const handleSave = async () => {
-    setLoading(true)
+  const fetchData = async (schoolId: string) => {
     try {
-      // In a real application, this would save to the backend
-      // For now, we'll store in localStorage
-      localStorage.setItem('custom_permissions', JSON.stringify(permissions))
-      toast.success('Permissions updated successfully')
-      setHasChanges(false)
+      setLoading(true)
+      const [rolesRes, permsRes, schoolRes] = await Promise.all([
+        schoolAPI.listRoles(schoolId),
+        schoolAPI.listPermissions(schoolId),
+        schoolAPI.get(schoolId)
+      ])
+
+      const fetchedRoles: Role[] = rolesRes.data
+      let fetchedPerms: Permission[] = permsRes.data
+      const schoolModulePermissions = schoolRes.data.module_permissions || {}
+
+      // Filter permissions based on school's active modules
+      fetchedPerms = fetchedPerms.filter(perm => {
+        // If module mapping exists, check if it's enabled for the school
+        const modulePerms = schoolModulePermissions[perm.module]
+        // If module entry exists, check if at least one action is enabled
+        if (modulePerms) {
+          return modulePerms.read || modulePerms.create || modulePerms.update || modulePerms.delete
+        }
+        // If no entry in school config, assume enabled (or disabled? Safe to assume enabled for core/unmapped modules)
+        // However, for mapped modules like 'students', if key is missing, it might mean disabled.
+        // Let's assume if it's a known module key but missing, it's disabled.
+        // But we need to know if 'perm.module' is a known module key.
+        // For now, let's keep it simple: if the module key exists in the permission config, we check it.
+        // If it DOESN'T exist, we might want to show it (e.g. system permissions).
+        return true
+      })
+
+      setRoles(fetchedRoles)
+      setPermissionsList(fetchedPerms)
+
+      // Group permissions by module
+      const grouped: { [module: string]: Permission[] } = {}
+      fetchedPerms.forEach(p => {
+        if (!grouped[p.module]) grouped[p.module] = []
+        grouped[p.module].push(p)
+      })
+      setGroupedPermissions(grouped)
+
+      // Map initial permissions
+      const initialMap: RolePermissionsMap = {}
+      fetchedRoles.forEach(r => {
+        initialMap[r.id] = r.permissions || []
+      })
+      setRolePermissions(initialMap)
+      setOriginalPermissions(JSON.parse(JSON.stringify(initialMap)))
+
     } catch (error) {
-      toast.error('Failed to save permissions')
+      console.error(error)
+      toast.error('Failed to load roles and permissions')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleReset = () => {
-    if (confirm('Are you sure you want to reset all permissions to default?')) {
-      localStorage.removeItem('custom_permissions')
-      loadPermissions()
-      setHasChanges(false)
-      toast.success('Permissions reset to default')
+  const togglePermission = (roleId: string, slug: string) => {
+    setRolePermissions(prev => {
+      const current = prev[roleId] || []
+      const hasPerm = current.includes(slug)
+
+      const updated = hasPerm
+        ? current.filter(s => s !== slug)
+        : [...current, slug]
+
+      return {
+        ...prev,
+        [roleId]: updated
+      }
+    })
+  }
+
+  const hasChanges = () => {
+    return JSON.stringify(rolePermissions) !== JSON.stringify(originalPermissions)
+  }
+
+  const handleSave = async () => {
+    if (!user?.schoolId) return
+    setSaving(true)
+
+    // Find modified roles
+    const modifiedRoleIds = Object.keys(rolePermissions).filter(roleId => {
+      const original = originalPermissions[roleId] || []
+      const current = rolePermissions[roleId] || []
+
+      // Simple comparison (arrays might be different order, but usually fine here)
+      // Better: compare sorted JSON strings
+      return JSON.stringify(original.sort()) !== JSON.stringify(current.sort())
+    })
+
+    try {
+      // Update each modified role
+      await Promise.all(modifiedRoleIds.map(roleId => {
+        const role = roles.find(r => r.id === roleId)
+        if (!role) return Promise.resolve()
+
+        return schoolAPI.updateRole(user.schoolId.toString(), roleId, {
+          name: role.name, // Keep existing name
+          description: role.description, // Keep existing description
+          permissions: rolePermissions[roleId]
+        })
+      })) // Concurrent updates might hit rate limits or DB locks, but for few roles it's fine.
+
+      toast.success('Permissions updated successfully')
+      setOriginalPermissions(JSON.parse(JSON.stringify(rolePermissions)))
+      // Ideally re-fetch to sync
+      fetchData(user.schoolId.toString())
+    } catch (error) {
+      console.error(error)
+      toast.error('Failed to save permissions')
+    } finally {
+      setSaving(false)
     }
   }
 
+  const handleReset = () => {
+    if (confirm('Discard unsaved changes?')) {
+      setRolePermissions(JSON.parse(JSON.stringify(originalPermissions)))
+      toast.success('Changes discarded')
+    }
+  }
+
+  const handleCreateRole = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user?.schoolId || !newRoleName) return
+
+    setCreatingRole(true)
+    try {
+      await schoolAPI.createRole(user.schoolId.toString(), {
+        name: newRoleName,
+        description: newRoleDescription,
+        permissions: [] // Start with no permissions
+      })
+      toast.success('Role created successfully')
+      setShowCreateModal(false)
+      setNewRoleName('')
+      setNewRoleDescription('')
+      fetchData(user.schoolId.toString())
+    } catch (error) {
+      console.error(error)
+      toast.error('Failed to create role')
+    } finally {
+      setCreatingRole(false)
+    }
+  }
+
+  const handleDeleteRole = async (roleId: string) => {
+    if (!user?.schoolId) return
+    if (!confirm('Are you sure you want to delete this role? This cannot be undone.')) return
+
+    try {
+      await schoolAPI.deleteRole(user.schoolId.toString(), roleId)
+      toast.success('Role deleted successfully')
+      fetchData(user.schoolId.toString())
+    } catch (error) {
+      console.error(error)
+      toast.error('Failed to delete role')
+    }
+  }
+
+  if (loading) {
+    return (
+      <ProtectedRoute>
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </ProtectedRoute>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-indigo-100 flex flex-col">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <Navbar showBackButton={true} backLink="/dashboard" />
 
-      {/* Main Content */}
       <div className="flex flex-1">
         <Sidebar />
 
-        {/* Main Content Area */}
-        <main className="flex-1 py-8 px-6">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
-              Role Permissions
-            </h1>
-            <p className="text-gray-600">Configure which roles can access each module</p>
+        <main className="flex-1 py-8 px-6 overflow-x-auto">
+          <div className="mb-6 flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-800">Role Permissions</h1>
+              <p className="text-gray-600 mt-1">Manage access control for your school roles</p>
+              <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Permissions for disabled modules are hidden. Enable them in School Settings &gt; Module Activation.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition shadow"
+              >
+                + Create Role
+              </button>
+              <button
+                onClick={handleReset}
+                disabled={!hasChanges() || saving}
+                className="px-4 py-2 border border-gray-300 rounded hover:bg-white disabled:opacity-50 transition"
+              >
+                Discard Changes
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={!hasChanges() || saving}
+                className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-blue-300 transition shadow"
+              >
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="mb-6 flex justify-end gap-3">
-            <button
-              onClick={handleReset}
-              className="px-6 py-3 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition"
-            >
-              Reset to Default
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={!hasChanges || loading}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-semibold transition shadow-md"
-            >
-              {loading ? 'Saving...' : 'Save Changes'}
-            </button>
-          </div>
-
-          {/* Permissions Table */}
-          <div className="bg-white rounded-lg shadow overflow-hidden">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">
-                    <th className="px-6 py-4 text-left text-sm font-semibold">Module</th>
-                    {roles.map((role) => (
-                      <th key={role} className="px-4 py-4 text-center text-sm font-semibold">
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="capitalize">{role.replace('_', ' ')}</span>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="px-6 py-4 text-left font-semibold text-gray-700 min-w-[200px] sticky left-0 bg-gray-50">Permission</th>
+                    {roles.map(role => (
+                      <th key={role.id} className="px-4 py-4 text-center font-semibold text-gray-700 min-w-[120px] group">
+                        <div className="flex flex-col items-center">
+                          <span className="capitalize">{role.name}</span>
+                          {role.is_system && <span className="text-xs px-2 py-0.5 bg-gray-200 rounded-full mt-1 text-gray-600">System</span>}
+                          {!role.is_system && (
+                            <button
+                              onClick={() => handleDeleteRole(role.id)}
+                              className="mt-1 text-red-500 hover:text-red-700 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Delete Role"
+                            >
+                              Delete
+                            </button>
+                          )}
                         </div>
                       </th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {MENU_ITEMS.map((item) => (
-                    <tr key={item.href} className="hover:bg-gray-50 transition">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <span className="text-2xl">{item.icon}</span>
-                          <div>
-                            <div className="font-semibold text-gray-900">{item.label}</div>
-                            <div className="text-xs text-gray-500">{item.href}</div>
-                          </div>
-                        </div>
-                      </td>
-                      {roles.map((role) => {
-                        const hasAccess = permissions[item.href]?.includes(role) || false
-                        return (
-                          <td key={role} className="px-4 py-4 text-center">
-                            <label className="inline-flex items-center cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={hasAccess}
-                                onChange={() => togglePermission(item.href, role)}
-                                className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
-                              />
-                            </label>
+                <tbody className="divide-y divide-gray-100">
+                  {Object.entries(groupedPermissions).map(([module, perms]) => (
+                    <Fragment key={module}>
+                      <tr className="bg-blue-50/50">
+                        <td colSpan={roles.length + 1} className="px-6 py-2 font-bold text-blue-800 uppercase text-xs tracking-wider">
+                          Module: {module}
+                        </td>
+                      </tr>
+                      {perms.map(perm => (
+                        <tr key={perm.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-3 sticky left-0 bg-white">
+                            <div className="font-medium text-gray-900">{perm.description}</div>
+                            <div className="text-xs text-gray-400 font-mono">{perm.slug}</div>
                           </td>
-                        )
-                      })}
-                    </tr>
+                          {roles.map(role => {
+                            const hasAccess = rolePermissions[role.id]?.includes(perm.slug) || false
+                            // Admin always has all permissions (usually), but simpler to just show checked if they have it
+                            // For System Admin role, maybe disable uncheck?
+                            // For now, let's allow editing everything except maybe if it breaks access.
+                            const isAdmin = role.name === 'admin'
+
+                            return (
+                              <td key={`${role.id}-${perm.id}`} className="px-4 py-3 text-center">
+                                <label className="inline-flex items-center justify-center w-full h-full cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={hasAccess}
+                                    onChange={() => togglePermission(role.id, perm.slug)}
+                                    // disabled={isAdmin} // Uncomment if we want to lock Admin permissions
+                                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                  />
+                                </label>
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
             </div>
           </div>
-
-          {/* Info Section */}
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-              <h3 className="text-lg font-semibold text-blue-900 mb-2">Role Hierarchy</h3>
-              <ul className="text-sm text-blue-700 space-y-1">
-                <li><strong>Super Admin:</strong> Full system access, manage schools</li>
-                <li><strong>Admin:</strong> Manage school operations</li>
-                <li><strong>Teacher:</strong> Manage students, attendance, classes</li>
-                <li><strong>Student:</strong> View own data and resources</li>
-                <li><strong>Parent:</strong> View child data and fees</li>
-                <li><strong>Staff:</strong> Limited administrative access</li>
-              </ul>
-            </div>
-            <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-              <h3 className="text-lg font-semibold text-green-900 mb-2">Tips</h3>
-              <ul className="text-sm text-green-700 space-y-1">
-                <li>• Check the box to grant access to a module for a specific role</li>
-                <li>• Changes are saved to your browser and will persist across sessions</li>
-                <li>• Use "Reset to Default" to restore original permissions</li>
-                <li>• Ensure each role has access to the Dashboard module</li>
-              </ul>
-            </div>
-          </div>
-
-          {hasChanges && (
-            <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <p className="text-yellow-800 font-medium">
-                ⚠️ You have unsaved changes. Click "Save Changes" to apply them.
-              </p>
-            </div>
-          )}
         </main>
       </div>
+
+      {/* Create Role Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-96 max-w-full shadow-xl">
+            <h2 className="text-xl font-bold mb-4">Create New Role</h2>
+            <form onSubmit={handleCreateRole}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role Name</label>
+                <input
+                  type="text"
+                  value={newRoleName}
+                  onChange={(e) => setNewRoleName(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                  placeholder="e.g. library_manager"
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-1">Use lowercase and underscores</p>
+              </div>
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={newRoleDescription}
+                  onChange={(e) => setNewRoleDescription(e.target.value)}
+                  placeholder="What is this role for?"
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
+                  rows={3}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingRole}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-blue-300"
+                >
+                  {creatingRole ? 'Creating...' : 'Create Role'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

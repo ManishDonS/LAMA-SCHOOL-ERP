@@ -91,97 +91,102 @@ const addRefreshSubscriber = (callback: (token: string | null) => void) => {
   refreshSubscribers.push(callback)
 }
 
-// Add response interceptor for error handling
-api.interceptors.response.use(
-  (response) => response,
-  async (error: AxiosError) => {
-    // Handle network errors
-    if (!error.response) {
-      if (error.code === 'ECONNABORTED') {
-        return Promise.reject({
-          message: 'Request timeout. Please check your connection.',
-          code: 'TIMEOUT',
-          originalError: error,
-        })
-      }
-
-      if (error.message === 'Network Error') {
-        return Promise.reject({
-          message: 'Network error. Please check your internet connection.',
-          code: 'NETWORK_ERROR',
-          originalError: error,
-        })
-      }
-    }
-
-    const originalRequest = error.config as any
-
-    // Handle 401 Unauthorized
-    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
-      originalRequest._retry = true
-
-      if (!isRefreshing) {
-        isRefreshing = true
-
-        // Create a single refresh promise that all requests can wait for
-        refreshPromise = new Promise(async (resolve) => {
-          try {
-            // Refresh token is in HttpOnly cookie, sent automatically by browser
-            const response = await api.post('/api/v1/auth/refresh', {})
-
-            if (response.data.tokens) {
-              const newAccessToken = response.data.tokens.accessToken
-              // Only store access token, refresh token stays in HttpOnly cookie
-              localStorage.setItem('access_token', newAccessToken)
-
-              // Notify all waiting requests
-              onRefreshed(newAccessToken)
-              resolve(newAccessToken)
-            } else {
-              throw new Error('No tokens in refresh response')
-            }
-          } catch (refreshError) {
-            // Refresh failed, logout user
-            if (typeof window !== 'undefined') {
-              localStorage.removeItem('access_token')
-              // No need to remove refresh_token as it's in HttpOnly cookie
-              window.location.href = '/auth/login'
-            }
-            onRefreshed(null)
-            resolve(null)
-          } finally {
-            isRefreshing = false
-            refreshPromise = null
-          }
-        })
-
-        // Wait for refresh to complete
-        const newToken = await refreshPromise
-        if (newToken && originalRequest.headers) {
-          originalRequest.headers.Authorization = `Bearer ${newToken}`
-          return api(originalRequest)
+// Shared response interceptor handles 401 negotiation
+const createResponseInterceptor = (client: AxiosInstance) => {
+  client.interceptors.response.use(
+    (response) => response,
+    async (error: AxiosError) => {
+      // Handle network errors
+      if (!error.response) {
+        if (error.code === 'ECONNABORTED') {
+          return Promise.reject({
+            message: 'Request timeout. Please check your connection.',
+            code: 'TIMEOUT',
+            originalError: error,
+          })
         }
-      } else {
-        // Wait for the existing refresh promise
-        return new Promise((resolve, reject) => {
-          addRefreshSubscriber((token: string | null) => {
-            if (token) {
-              originalRequest.headers.Authorization = `Bearer ${token}`
-              resolve(api(originalRequest))
-            } else {
-              reject(new Error('Token refresh failed'))
+
+        if (error.message === 'Network Error') {
+          return Promise.reject({
+            message: 'Network error. Please check your internet connection.',
+            code: 'NETWORK_ERROR',
+            originalError: error,
+          })
+        }
+      }
+
+      const originalRequest = error.config as any
+
+      // Handle 401 Unauthorized
+      if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+        originalRequest._retry = true
+
+        if (!isRefreshing) {
+          isRefreshing = true
+
+          // Create a single refresh promise that all requests can wait for
+          refreshPromise = new Promise(async (resolve) => {
+            try {
+              // Refresh token is in HttpOnly cookie, sent automatically by browser
+              // Use 'api' client to refresh, or fetch directly to avoid circular dependency loop if 'api' is the one failing?
+              // 'api' instance is safe to use here as long as /refresh endpoint doesn't return 401 loop.
+              const response = await api.post('/api/v1/auth/refresh', {})
+
+              if (response.data.tokens) {
+                const newAccessToken = response.data.tokens.accessToken
+                // Only store access token, refresh token stays in HttpOnly cookie
+                localStorage.setItem('access_token', newAccessToken)
+
+                // Notify all waiting requests
+                onRefreshed(newAccessToken)
+                resolve(newAccessToken)
+              } else {
+                throw new Error('No tokens in refresh response')
+              }
+            } catch (refreshError) {
+              // Refresh failed, logout user
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('access_token')
+                // No need to remove refresh_token as it's in HttpOnly cookie
+                window.location.href = '/auth/login'
+              }
+              onRefreshed(null)
+              resolve(null)
+            } finally {
+              isRefreshing = false
+              refreshPromise = null
             }
           })
-        })
+
+          // Wait for refresh to complete
+          const newToken = await refreshPromise
+          if (newToken && originalRequest.headers) {
+            originalRequest.headers.Authorization = `Bearer ${newToken}`
+            return client(originalRequest)
+          }
+        } else {
+          // Wait for the existing refresh promise
+          return new Promise((resolve, reject) => {
+            addRefreshSubscriber((token: string | null) => {
+              if (token) {
+                originalRequest.headers.Authorization = `Bearer ${token}`
+                resolve(client(originalRequest))
+              } else {
+                reject(new Error('Token refresh failed'))
+              }
+            })
+          })
+        }
       }
+
+      return Promise.reject(error)
     }
+  )
+}
 
-    return Promise.reject(error)
-  }
-)
-
-// Set default timeout
-api.defaults.timeout = 30000 // 30 seconds
+// Set default timeout for main clients
+api.defaults.timeout = 30000
+schoolApiClient.defaults.timeout = 30000
 
 export const authAPI = {
   login: (data: LoginRequest, tenantCode?: string) =>
@@ -208,15 +213,14 @@ const studentApiClient: AxiosInstance = axios.create({
   },
 })
 
-// Add request interceptor to student API client to include token
+// Add request interceptor to student API client to include token and tenant code
 studentApiClient.interceptors.request.use(
   (config) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
-
-    // Add Tenant Code header
+    // Add Tenant Code header (some student API endpoints might need it for context)
     if (typeof window !== 'undefined') {
       const selectedSchoolStr = localStorage.getItem('selected_school')
       if (selectedSchoolStr) {
@@ -230,7 +234,6 @@ studentApiClient.interceptors.request.use(
         }
       }
     }
-
     return config
   },
   (error) => Promise.reject(error)
@@ -261,8 +264,7 @@ userApiClient.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
-
-    // Add Tenant Code header
+    // Add Tenant Code header 
     if (typeof window !== 'undefined') {
       const selectedSchoolStr = localStorage.getItem('selected_school')
       if (selectedSchoolStr) {
@@ -276,7 +278,6 @@ userApiClient.interceptors.request.use(
         }
       }
     }
-
     return config
   },
   (error) => Promise.reject(error)
@@ -291,7 +292,7 @@ export const teacherAPI = {
 }
 
 export const guardianAPI = {
-  list: (params?: any) => userApiClient.get('/api/v1/parents', { params }), // Endpoint is likely parents internally?
+  list: (params?: any) => userApiClient.get('/api/v1/parents', { params }),
   get: (id: string) => userApiClient.get(`/api/v1/parents/${id}`),
   create: (data: any) => userApiClient.post('/api/v1/parents', data),
   update: (id: string, data: any) => userApiClient.put(`/api/v1/parents/${id}`, data),
@@ -336,6 +337,14 @@ export const schoolAPI = {
     }),
   getAdmin: (id: string) => schoolApiClient.get(`/api/v1/schools/${id}/admin`),
   updateAdmin: (id: string, data: any) => schoolApiClient.put(`/api/v1/schools/${id}/admin`, data),
+
+  // Roles & Permissions
+  listRoles: (schoolId: string) => schoolApiClient.get(`/api/v1/schools/${schoolId}/roles`),
+  createRole: (schoolId: string, data: any) => schoolApiClient.post(`/api/v1/schools/${schoolId}/roles`, data),
+  getRole: (schoolId: string, roleId: string) => schoolApiClient.get(`/api/v1/schools/${schoolId}/roles/${roleId}`),
+  updateRole: (schoolId: string, roleId: string, data: any) => schoolApiClient.put(`/api/v1/schools/${schoolId}/roles/${roleId}`, data),
+  deleteRole: (schoolId: string, roleId: string) => schoolApiClient.delete(`/api/v1/schools/${schoolId}/roles/${roleId}`),
+  listPermissions: (schoolId: string) => schoolApiClient.get(`/api/v1/schools/${schoolId}/permissions`),
 }
 
 // Separate API client for transport service
@@ -398,5 +407,18 @@ export const transportAPI = {
   getSettings: () => transportApiClient.get('/api/v1/transport/settings'),
   updateSettings: (data: any) => transportApiClient.put('/api/v1/transport/settings', data),
 }
+
+// Apply refresh interceptors to other clients NOW that they are defined
+// Apply interceptors to all clients
+createResponseInterceptor(api)
+createResponseInterceptor(schoolApiClient)
+createResponseInterceptor(studentApiClient)
+createResponseInterceptor(userApiClient)
+createResponseInterceptor(transportApiClient)
+
+// Set timeout for other clients
+studentApiClient.defaults.timeout = 30000
+userApiClient.defaults.timeout = 30000
+transportApiClient.defaults.timeout = 30000
 
 export default api

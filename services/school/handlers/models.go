@@ -4,6 +4,26 @@ import (
 	"time"
 )
 
+// Role represents a user role in a tenant
+type Role struct {
+	ID          string    `json:"id" db:"id"`
+	Name        string    `json:"name" validate:"required"`
+	Description string    `json:"description" validate:"omitempty"`
+	IsSystem    bool      `json:"is_system" db:"is_system"`
+	Permissions []string  `json:"permissions"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// Permission represents a granular permission
+type Permission struct {
+	ID          string    `json:"id" db:"id"`
+	Slug        string    `json:"slug" db:"slug"`
+	Module      string    `json:"module" db:"module"`
+	Description string    `json:"description" db:"description"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+}
+
 // School represents a school tenant
 type School struct {
 	ID                string                     `json:"id" db:"id"`
