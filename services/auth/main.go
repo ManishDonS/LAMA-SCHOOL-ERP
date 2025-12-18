@@ -22,7 +22,6 @@ import (
 	"school-erp/auth/pkg/tenant"
 	"school-erp/auth/routes"
 	"school-erp/auth/utils"
-	"strconv"
 )
 
 // Helper function to check if an origin is in the allowed list
@@ -119,12 +118,9 @@ func main() {
 	}
 
 	// Register Tenant Resolver Middleware
-	dbPort, _ := strconv.Atoi(cfg.DBPort)
 	app.Use(middleware.NewTenantResolver(middleware.TenantResolverConfig{
 		TenantManager: tenantManager,
 		MainDB:        db,
-		DBHost:        cfg.DBHost,
-		DBPort:        dbPort,
 	}))
 
 	// Swagger Route

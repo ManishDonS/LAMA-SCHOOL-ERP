@@ -22,8 +22,6 @@ const (
 type TenantResolverConfig struct {
 	TenantManager *tenant.TenantManager
 	MainDB        *pgxpool.Pool // Main database for school metadata lookup
-	DBHost        string
-	DBPort        int
 }
 
 // TenantInfo holds tenant-specific information extracted from request
@@ -65,9 +63,10 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 			return c.Next()
 		}
 
-		var dbUser, encryptedPassword string
-		query := `SELECT db_user, db_password FROM schools WHERE code = $1 AND status = 'active'`
-		err := cfg.MainDB.QueryRow(ctx, query, tenantCode).Scan(&dbUser, &encryptedPassword)
+		var dbHost, dbUser, encryptedPassword string
+		var dbPort int
+		query := `SELECT db_host, db_port, db_user, db_password FROM schools WHERE code = $1 AND status = 'active'`
+		err := cfg.MainDB.QueryRow(ctx, query, tenantCode).Scan(&dbHost, &dbPort, &dbUser, &encryptedPassword)
 		if err != nil {
 			log.Printf("School not found or inactive for tenant %s: %v\n", tenantCode, err)
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -80,8 +79,8 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 		tenantDB, err := cfg.TenantManager.GetConnection(
 			ctx,
 			tenantCode,
-			cfg.DBHost,
-			cfg.DBPort,
+			dbHost,
+			dbPort,
 			fmt.Sprintf("school_%s_db", tenantCode),
 			dbUser,
 			encryptedPassword,
