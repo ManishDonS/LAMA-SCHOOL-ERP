@@ -4,9 +4,12 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"io"
+
+	"golang.org/x/crypto/pbkdf2"
 )
 
 // Cipher manages encryption and decryption of sensitive data
@@ -14,21 +17,23 @@ type Cipher struct {
 	key []byte
 }
 
-// NewCipher creates a new cipher instance
+// NewCipher creates a new cipher instance with proper key derivation
 func NewCipher(key string) (*Cipher, error) {
-	// Ensure key is 32 bytes (256-bit)
-	keyBytes := []byte(key)
-	if len(keyBytes) < 32 {
-		// Pad with zeros if too short (not recommended for production)
-		for len(keyBytes) < 32 {
-			keyBytes = append(keyBytes, 0)
-		}
-	} else if len(keyBytes) > 32 {
-		keyBytes = keyBytes[:32]
+	if key == "" {
+		return nil, fmt.Errorf("encryption key cannot be empty")
 	}
 
+	// Use PBKDF2 to derive a proper 256-bit key
+	// Salt should ideally be per-tenant and stored, but for system-wide encryption
+	// we use a fixed salt. For production, consider using a random salt per tenant.
+	salt := []byte("lama-school-erp-salt-v1") // Fixed salt for system-wide key
+	iterations := 100000                       // PBKDF2 iterations (100k is good balance)
+
+	// Derive 32-byte (256-bit) key using PBKDF2-HMAC-SHA256
+	derivedKey := pbkdf2.Key([]byte(key), salt, iterations, 32, sha256.New)
+
 	return &Cipher{
-		key: keyBytes,
+		key: derivedKey,
 	}, nil
 }
 

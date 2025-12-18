@@ -106,6 +106,7 @@ services:
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
       AUTH_SERVICE_URL: http://auth-service:3001
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
     depends_on:
       postgres:
         condition: service_healthy
@@ -136,6 +137,7 @@ services:
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
       AUTH_SERVICE_URL: http://auth-service:3001
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
     depends_on:
       postgres:
         condition: service_healthy
