@@ -52,7 +52,7 @@ func LoadConfig() *Config {
 		MaxConnections:     25,
 		SuperAdminEmail:    getEnv("SUPER_ADMIN_EMAIL", ""),
 		SuperAdminPassword: getEnv("SUPER_ADMIN_PASSWORD", ""),
-		EncryptionKey:      getEnv("ENCRYPTION_KEY", "default-key-change-in-production"),
+		EncryptionKey:      getRequiredEnv("ENCRYPTION_KEY"),
 	}
 }
 

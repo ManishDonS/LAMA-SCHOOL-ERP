@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LAMA School ERP - API Documentation Portal</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .info-box {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-radius: 4px;
+        }
+
+        .info-box h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .service-card {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .service-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .service-card h3 {
+            color: #667eea;
+            margin-bottom: 8px;
+            font-size: 1.2em;
+        }
+
+        .service-card .port {
+            font-size: 0.9em;
+            color: #6c757d;
+            margin-bottom: 12px;
+        }
+
+        .service-card .description {
+            font-size: 0.95em;
+            color: #495057;
+            margin-bottom: 15px;
+        }
+
+        .service-card .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+
+        .status.documented {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.in-progress {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .swagger-btn {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-weight: 500;
+            margin-top: 10px;
+            transition: background 0.3s ease;
+        }
+
+        .swagger-btn:hover {
+            background: #5568d3;
+        }
+
+        .quick-start {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 4px;
+        }
+
+        .quick-start h3 {
+            color: #2196F3;
+            margin-bottom: 15px;
+        }
+
+        .quick-start code {
+            background: #263238;
+            color: #aed581;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .quick-start pre {
+            background: #263238;
+            color: #aed581;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+
+        footer {
+            background: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+
+        .legend {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎓 LAMA School ERP</h1>
+            <p class="subtitle">API Documentation Portal</p>
+        </header>
+
+        <div class="content">
+            <div class="info-box">
+                <h3>📚 Welcome to the API Documentation</h3>
+                <p>LAMA School ERP provides 15 microservices with RESTful APIs. Each service exposes interactive Swagger UI for easy API exploration and testing.</p>
+                <p style="margin-top: 10px;"><strong>Base URL:</strong> http://localhost:{port}/api/v1/{endpoint}</p>
+            </div>
+
+            <div class="legend">
+                <div class="legend-item">
+                    <span class="status documented">●</span>
+                    <span>Fully Documented</span>
+                </div>
+                <div class="legend-item">
+                    <span class="status in-progress">●</span>
+                    <span>In Progress</span>
+                </div>
+            </div>
+
+            <div class="services-grid">
+                <!-- Auth Service -->
+                <div class="service-card" onclick="window.open('http://localhost:3001/swagger/', '_blank')">
+                    <h3>🔐 Auth Service</h3>
+                    <div class="port">Port: 3001</div>
+                    <div class="description">Authentication, JWT tokens, user login/logout, refresh tokens</div>
+                    <span class="status documented">Fully Documented</span>
+                    <a href="http://localhost:3001/swagger/" class="swagger-btn" target="_blank">Open Swagger UI →</a>
+                </div>
+
+                <!-- School Service -->
+                <div class="service-card" onclick="window.open('http://localhost:3011/swagger/', '_blank')">
+                    <h3>🏫 School Service</h3>
+                    <div class="port">Port: 3011</div>
+                    <div class="description">School management, logo uploads, statistics, multi-tenant operations</div>
+                    <span class="status in-progress">In Progress</span>
+                    <a href="http://localhost:3011/swagger/" class="swagger-btn" target="_blank">Open Swagger UI →</a>
+                </div>
+
+                <!-- User Service -->
+                <div class="service-card" onclick="window.open('http://localhost:3002/swagger/', '_blank')">
+                    <h3>👤 User Service</h3>
+                    <div class="port">Port: 3002</div>
+                    <div class="description">User management, roles, permissions, RBAC</div>
+                    <span class="status in-progress">In Progress</span>
+                    <a href="http://localhost:3002/swagger/" class="swagger-btn" target="_blank">Open Swagger UI →</a>
+                </div>
+
+                <!-- Student Service -->
+                <div class="service-card" onclick="window.open('http://localhost:3003/swagger/', '_blank')">
+                    <h3>🎓 Student Service</h3>
+                    <div class="port">Port: 3003</div>
+                    <div class="description">Student records, academic history, class management</div>
+                    <span class="status in-progress">In Progress</span>
+                    <a href="http://localhost:3003/swagger/" class="swagger-btn" target="_blank">Open Swagger UI →</a>
+                </div>
+
+                <!-- Attendance Service -->
+                <div class="service-card" onclick="window.open('http://localhost:3004/swagger/', '_blank')">
+                    <h3>✓ Attendance Service</h3>
+                    <div class="port">Port: 3004</div>
+                    <div class="description">Attendance tracking, reports, student attendance history</div>
+                    <span class="status in-progress">In Progress</span>
+                    <a href="http://localhost:3004/swagger/" class="swagger-btn" target="_blank">Open Swagger UI →</a>
+                </div>
+
+                <!-- Fee Service -->
+                <div class="service-card" onclick="window.open('http://localhost:3005/swagger/', '_blank')">
+                    <h3>💰 Fee Service</h3>
+                    <div class="port">Port: 3005</div>
+                    <div class="description">Fee management, payments, billing, receipt generation</div>
+                    <span class="status in-progress">In Progress</span>
+                    <a href="http://localhost:3005/swagger/" class="swagger-btn" target="_blank">Open Swagger UI →</a>
+                </div>
+
+                <!-- Exam Service -->
+                <div class="service-card" onclick="window.open('http://localhost:3006/swagger/', '_blank')">
+                    <h3>📝 Exam Service</h3>
+                    <div class="port">Port: 3006</div>
+                    <div class="description">Exam scheduling, grade management, result processing</div>
+                    <span class="status in-progress">In Progress</span>
+                    <a href="http://localhost:3006/swagger/" class="swagger-btn" target="_blank">Open Swagger UI →</a>
+                </div>
+
+                <!-- Notification Service -->
+                <div class="service-card" onclick="window.open('http://localhost:3007/swagger/', '_blank')">
+                    <h3>🔔 Notification Service</h3>
+                    <div class="port">Port: 3007</div>
+                    <div class="description">Push notifications, alerts, announcements</div>
+                    <span class="status in-progress">In Progress</span>
+                    <a href="http://localhost:3007/swagger/" class="swagger-btn" target="_blank">Open Swagger UI →</a>
+                </div>
+
+                <!-- Realtime Service -->
+                <div class="service-card" onclick="window.open('http://localhost:3008/swagger/', '_blank')">
+                    <h3>⚡ Realtime Service</h3>
+                    <div class="port">Port: 3008</div>
+                    <div class="description">WebSocket connections, live updates, event streaming</div>
+                    <span class="status in-progress">In Progress</span>
+                    <a href="http://localhost:3008/swagger/" class="swagger-btn" target="_blank">Open Swagger UI →</a>
+                </div>
+
+                <!-- Transport Service -->
+                <div class="service-card" onclick="window.open('http://localhost:3009/swagger/', '_blank')">
+                    <h3>🚌 Transport Service</h3>
+                    <div class="port">Port: 3009</div>
+                    <div class="description">Vehicle tracking, GPS integration with Traccar, route management</div>
+                    <span class="status in-progress">In Progress</span>
+                    <a href="http://localhost:3009/swagger/" class="swagger-btn" target="_blank">Open Swagger UI →</a>
+                </div>
+
+                <!-- Expense Service -->
+                <div class="service-card" onclick="window.open('http://localhost:3010/swagger/', '_blank')">
+                    <h3>📊 Expense Service</h3>
+                    <div class="port">Port: 3010</div>
+                    <div class="description">Expense tracking, categories, receipt uploads, budget management</div>
+                    <span class="status in-progress">In Progress</span>
+                    <a href="http://localhost:3010/swagger/" class="swagger-btn" target="_blank">Open Swagger UI →</a>
+                </div>
+
+                <!-- Payroll Service -->
+                <div class="service-card" onclick="window.open('http://localhost:3012/swagger/', '_blank')">
+                    <h3>💼 Payroll Service</h3>
+                    <div class="port">Port: 3012</div>
+                    <div class="description">Employee salaries, payroll processing, salary reports</div>
+                    <span class="status in-progress">In Progress</span>
+                    <a href="http://localhost:3012/swagger/" class="swagger-btn" target="_blank">Open Swagger UI →</a>
+                </div>
+
+                <!-- Website Service -->
+                <div class="service-card" onclick="window.open('http://localhost:3013/swagger/', '_blank')">
+                    <h3>🌐 Website Service</h3>
+                    <div class="port">Port: 3013</div>
+                    <div class="description">AI-powered website generation, page management (OpenAI/Gemini)</div>
+                    <span class="status in-progress">In Progress</span>
+                    <a href="http://localhost:3013/swagger/" class="swagger-btn" target="_blank">Open Swagger UI →</a>
+                </div>
+
+                <!-- Communication Service -->
+                <div class="service-card" onclick="window.open('http://localhost:8005/swagger/', '_blank')">
+                    <h3>💬 Communication Service</h3>
+                    <div class="port">Port: 8005</div>
+                    <div class="description">Internal messaging, channels, direct messages</div>
+                    <span class="status in-progress">In Progress</span>
+                    <a href="http://localhost:8005/swagger/" class="swagger-btn" target="_blank">Open Swagger UI →</a>
+                </div>
+
+                <!-- Accounting Service -->
+                <div class="service-card" onclick="window.open('http://localhost:8009/swagger/', '_blank')">
+                    <h3>📈 Accounting Service</h3>
+                    <div class="port">Port: 8009</div>
+                    <div class="description">Double-entry bookkeeping, balance sheets, financial reports</div>
+                    <span class="status in-progress">In Progress</span>
+                    <a href="http://localhost:8009/swagger/" class="swagger-btn" target="_blank">Open Swagger UI →</a>
+                </div>
+            </div>
+
+            <div class="quick-start">
+                <h3>🚀 Quick Start</h3>
+                <p><strong>Step 1:</strong> Start all services</p>
+                <pre>docker-compose up -d</pre>
+
+                <p><strong>Step 2:</strong> Get authentication token</p>
+                <pre>curl -X POST http://localhost:3001/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@school.com","password":"yourpassword"}'</pre>
+
+                <p><strong>Step 3:</strong> Use the token in Swagger UI</p>
+                <p>Click "Authorize" button in any Swagger UI and enter: <code>Bearer {your-token}</code></p>
+
+                <p style="margin-top: 15px;"><strong>📖 Full Documentation:</strong> <a href="../API.md">API.md</a></p>
+            </div>
+        </div>
+
+        <footer>
+            <p><strong>LAMA School ERP</strong> - Version 1.0.0-beta</p>
+            <p>Powered by Swagger/OpenAPI 2.0 | Last Updated: December 2025</p>
+        </footer>
+    </div>
+</body>
+</html>

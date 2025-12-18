@@ -23,9 +23,9 @@ func RunMigrations(pool *pgxpool.Pool) error {
 
 const createWebSocketConnectionsTable = `
 CREATE TABLE IF NOT EXISTS ws_connections (
-	id BIGSERIAL PRIMARY KEY,
-	user_id BIGINT NOT NULL,
-	school_id BIGINT NOT NULL,
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	user_id UUID NOT NULL,
+	school_id UUID NOT NULL,
 	connection_id VARCHAR(255) UNIQUE,
 	status VARCHAR(50) DEFAULT 'active',
 	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

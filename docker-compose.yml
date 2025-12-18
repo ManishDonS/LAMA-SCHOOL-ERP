@@ -74,6 +74,7 @@ services:
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-your-super-secret-refresh-token-key-change-this-in-production}
       SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL}
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
     depends_on:
       postgres:
@@ -480,6 +481,38 @@ services:
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
       PORT: 8009
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      - school-erp-network
+    restart: on-failure
+
+  # Communication Service
+  communication-service:
+    build:
+      context: ./services/communication
+      dockerfile: Dockerfile
+      args:
+        - GOPROXY=https://proxy.golang.org,direct
+    container_name: school-erp-communication
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    ports:
+      - "8005:8005"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: school_erp
+      NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+      CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
+      PORT: 8005
     depends_on:
       postgres:
         condition: service_healthy

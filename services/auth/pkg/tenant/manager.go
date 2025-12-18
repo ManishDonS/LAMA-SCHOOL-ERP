@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"sync"
 	"time"
 
@@ -64,14 +65,30 @@ func (tm *TenantManager) GetConnection(ctx context.Context, schoolCode string, h
 		return nil, fmt.Errorf("failed to decrypt password: %w", err)
 	}
 
+	// Determine SSL mode based on environment
+	// Production: require SSL, Development: prefer SSL but allow without, Testing: disable
+	sslMode := os.Getenv("DB_SSL_MODE")
+	if sslMode == "" {
+		env := os.Getenv("ENVIRONMENT")
+		switch env {
+		case "production":
+			sslMode = "require" // Force SSL in production
+		case "test":
+			sslMode = "disable" // Allow disabled SSL in tests
+		default:
+			sslMode = "prefer" // Prefer SSL in development, but don't require
+		}
+	}
+
 	// Create new connection
 	dsn := fmt.Sprintf(
-		"postgres://%s:%s@%s:%d/%s?sslmode=disable",
+		"postgres://%s:%s@%s:%d/%s?sslmode=%s",
 		url.QueryEscape(user),
 		url.QueryEscape(password),
 		host,
 		port,
 		url.QueryEscape(dbName),
+		sslMode,
 	)
 
 	// Create connection pool

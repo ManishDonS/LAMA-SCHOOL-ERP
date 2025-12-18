@@ -27,9 +27,21 @@ import (
 
 // Helper function to check if an origin is in the allowed list
 func contains(allowedOrigins string, origin string) bool {
+	if origin == "" {
+		return false
+	}
+
+	// Trim and normalize origin (remove trailing slash)
+	origin = strings.TrimSpace(origin)
+	origin = strings.TrimSuffix(origin, "/")
+
 	origins := strings.Split(allowedOrigins, ",")
 	for _, allowed := range origins {
-		if strings.TrimSpace(allowed) == origin {
+		allowed = strings.TrimSpace(allowed)
+		allowed = strings.TrimSuffix(allowed, "/")
+
+		// Exact match (case-sensitive for security)
+		if allowed == origin {
 			return true
 		}
 	}
@@ -239,25 +251,38 @@ func setupMiddleware(app *fiber.App) {
 		return err
 	})
 
-	// CORS middleware
+	// CORS middleware with improved security
 	app.Use(func(c *fiber.Ctx) error {
 		origin := c.Get("Origin")
 		allowedOrigins := os.Getenv("CORS_ALLOW_ORIGINS")
 		if allowedOrigins == "" {
+			// Default to localhost only in development
+			if os.Getenv("ENVIRONMENT") == "production" {
+				// In production, CORS_ALLOW_ORIGINS must be explicitly set
+				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+					"error": "CORS not configured for production",
+				})
+			}
 			allowedOrigins = "http://localhost:3000,http://localhost:3001"
 		}
 
-		// Check if origin is allowed (simple string matching, can be improved)
+		// Only set CORS headers if origin is explicitly allowed
 		if origin != "" && contains(allowedOrigins, origin) {
-			c.Set("Access-Control-Allow-Origin", origin)
+			c.Set("Access-Control-Allow-Origin", origin) // Never use "*" with credentials
+			c.Set("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS,PATCH")
+			c.Set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With,x-tenant-code")
+			c.Set("Access-Control-Allow-Credentials", "true")
+			c.Set("Access-Control-Max-Age", "7200") // Cache preflight for 2 hours
+		} else if origin != "" {
+			// Origin present but not allowed - reject
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "Origin not allowed",
+			})
 		}
 
-		c.Set("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS,PATCH")
-		c.Set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With,x-tenant-code")
-		c.Set("Access-Control-Allow-Credentials", "true")
-
+		// Handle preflight requests
 		if c.Method() == "OPTIONS" {
-			return c.SendStatus(204)
+			return c.SendStatus(fiber.StatusNoContent)
 		}
 		return c.Next()
 	})

@@ -31,7 +31,11 @@ help:
 	@echo "  make format           - Format code with gofmt"
 	@echo "  make test             - Run tests for all services"
 	@echo "  make test-service     - Run tests for specific service (make test-service SERVICE=auth)"
+	@echo "  make test-verbose     - Run tests with verbose output"
+	@echo "  make test-short       - Run only short tests (skip long-running tests)"
+	@echo "  make test-bench       - Run benchmark tests"
 	@echo "  make coverage         - Generate test coverage report"
+	@echo "  make coverage-html    - Generate HTML coverage report and open in browser"
 	@echo ""
 	@echo "$(GREEN)Build & Deployment:$(NC)"
 	@echo "  make build            - Build all service binaries"
@@ -159,6 +163,42 @@ coverage:
 			cd - > /dev/null; \
 		fi \
 	done
+	@echo "$(GREEN)✓ Coverage reports generated$(NC)"
+
+test-verbose:
+	@echo "$(BLUE)Running tests with verbose output...$(NC)"
+	@for service in services/*/; do \
+		if [ -f "$$service/main.go" ]; then \
+			echo "$(GREEN)Testing $$(basename $$service)...$(NC)"; \
+			cd $$service && go test -v -cover ./... || true; \
+			cd - > /dev/null; \
+		fi \
+	done
+
+test-short:
+	@echo "$(BLUE)Running short tests only...$(NC)"
+	@for service in services/*/; do \
+		if [ -f "$$service/main.go" ]; then \
+			echo "$(GREEN)Testing $$(basename $$service)...$(NC)"; \
+			cd $$service && go test -short ./... || true; \
+			cd - > /dev/null; \
+		fi \
+	done
+
+test-bench:
+	@echo "$(BLUE)Running benchmark tests...$(NC)"
+	@for service in services/*/; do \
+		if [ -f "$$service/main.go" ]; then \
+			echo "$(GREEN)Benchmarking $$(basename $$service)...$(NC)"; \
+			cd $$service && go test -bench=. -benchmem ./... || true; \
+			cd - > /dev/null; \
+		fi \
+	done
+
+coverage-html:
+	@echo "$(BLUE)Generating HTML coverage reports...$(NC)"
+	@cd services/auth && go test -coverprofile=coverage.out ./... && go tool cover -html=coverage.out -o coverage.html && open coverage.html || true
+	@echo "$(GREEN)✓ Coverage HTML report opened$(NC)"
 
 # ==================== Build ====================
 
