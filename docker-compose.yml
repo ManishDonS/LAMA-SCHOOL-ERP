@@ -346,6 +346,7 @@ services:
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
       PORT: 3011
       JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
     volumes:
       - school_uploads:/app/uploads
     depends_on:
