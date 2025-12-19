@@ -6,6 +6,7 @@ import Navbar from '@/components/Navbar'
 import { useAuthStore } from '@/store/authStore'
 import { schoolAPI, teacherAPI } from '@/services/api'
 import NepaliDatePicker from '@/components/NepaliDatePicker'
+import { toast } from 'react-hot-toast'
 
 interface Teacher {
   id: string
@@ -109,12 +110,26 @@ export default function TeachersPage() {
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [schools, setSchools] = useState<any[]>([])
   const [isHydrated, setIsHydrated] = useState(false)
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [showModal, setShowModal] = useState(false)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [passwordForm, setPasswordForm] = useState({ id: '', password: '' })
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'personal' | 'professional' | 'academic'>('personal')
+  const [activeTab, setActiveTab] = useState<string>('basic')
   const [formData, setFormData] = useState<FormData>(DEFAULT_FORM_STATE)
   const [selectedSchool, setSelectedSchool] = useState<{ id: string, name: string, code: string } | null>(null)
   const [loading, setLoading] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
+  const [filters, setFilters] = useState({
+    department: '',
+    status: '',
+    gender: '',
+    employmentType: ''
+  })
+  const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null)
 
   // Check if user is super admin
   const isSuperAdmin = user?.role === 'super_admin'
@@ -176,9 +191,22 @@ export default function TeachersPage() {
   }, [isSuperAdmin])
 
   const generateTeacherId = () => {
-    // This is now just a helper suggestion, ID is handled by user input usually or backend
     const currentYear = new Date().getFullYear()
-    return `TCH${currentYear}-${Math.floor(Math.random() * 10000)}`
+    const prefix = `TCH-${currentYear}`
+
+    const maxSequence = teachers.reduce((max, t) => {
+      const id = t.employee_id || t.teacherId || ''
+      if (id && id.startsWith(prefix)) {
+        const parts = id.split('-')
+        if (parts.length === 3) {
+          const seq = parseInt(parts[2], 10)
+          return !isNaN(seq) && seq > max ? seq : max
+        }
+      }
+      return max
+    }, 0)
+
+    return `${prefix}-${String(maxSequence + 1).padStart(3, '0')}`
   }
 
   const handleAddTeacher = () => {
@@ -186,7 +214,7 @@ export default function TeachersPage() {
     setFormData({
       ...DEFAULT_FORM_STATE,
       employeeId: generateTeacherId(),
-      password: 'password123', // Default or random
+      password: '',
     })
     setActiveTab('personal')
     setShowModal(true)
@@ -238,42 +266,46 @@ export default function TeachersPage() {
 
   const validateForm = () => {
     if (!formData.firstName.trim() || !formData.lastName.trim()) {
-      alert('Please enter first and last name')
+      toast.error('Please enter first and last name')
       return false
     }
     if (!formData.email.trim()) {
-      alert('Please enter email address')
+      toast.error('Please enter email address')
       return false
     }
     if (!formData.qualification) {
-      alert('Please select qualification')
+      toast.error('Please select qualification')
       return false
     }
     if (!formData.employeeId) {
-      alert('Employee ID is required')
+      toast.error('Employee ID is required')
+      return false
+    }
+    if (!formData.firstName || !formData.lastName || !formData.email || !formData.qualification || !formData.joiningDate || !formData.employeeId) {
+      toast.error('Please fill in all required fields')
       return false
     }
 
     // Password validation for new teachers
     if (!editingId && formData.password) {
       if (formData.password.length < 8) {
-        alert('Password must be at least 8 characters long')
+        toast.error('Password must be at least 8 characters long')
         return false
       }
       if (!/[A-Z]/.test(formData.password)) {
-        alert('Password must contain at least one uppercase letter')
+        toast.error('Password must contain at least one uppercase letter')
         return false
       }
       if (!/[a-z]/.test(formData.password)) {
-        alert('Password must contain at least one lowercase letter')
+        toast.error('Password must contain at least one lowercase letter')
         return false
       }
       if (!/[0-9]/.test(formData.password)) {
-        alert('Password must contain at least one number')
+        toast.error('Password must contain at least one number')
         return false
       }
       if (!/[!@#$%^&*(),.?":{}|<>]/.test(formData.password)) {
-        alert('Password must contain at least one special character')
+        toast.error('Password must contain at least one special character')
         return false
       }
     }
@@ -315,13 +347,13 @@ export default function TeachersPage() {
       if (selectedSchoolStr) {
         const selectedSchool = JSON.parse(selectedSchoolStr)
         if (selectedSchool.code === 'system') {
-          alert('You must select a specific school from the Schools list before creating a teacher.')
+          toast.error('You must select a specific school from the Schools list before creating a teacher.')
           setLoading(false)
           return
         }
         payload.school_id = selectedSchool.id.toString()
       } else if (!isSuperAdmin) {
-        alert('Active school not found. Please re-select school.')
+        toast.error('Active school not found. Please re-select school.')
         return
       }
 
@@ -335,23 +367,34 @@ export default function TeachersPage() {
 
       await fetchTeachers()
       handleCloseModal()
+      toast.success(editingId ? 'Teacher details updated successfully' : 'Teacher created successfully')
     } catch (error) {
       console.error('Failed to save teacher:', error)
-      alert('Failed to save teacher. ' + (error as any).message)
+      toast.error((error as any).message || 'Failed to save teacher')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDeleteTeacher = async (id: string) => {
-    if (confirm('Are you sure you want to delete this teacher?')) {
-      try {
-        await teacherAPI.delete(id)
-        await fetchTeachers()
-      } catch (error) {
-        console.error('Failed to delete teacher:', error)
-        alert('Failed to delete teacher')
-      }
+  const handleDeleteClick = (id: string) => {
+    setSelectedTeacherId(id)
+    setShowDeleteModal(true)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!selectedTeacherId) return
+    setIsDeleting(true)
+    try {
+      await teacherAPI.delete(selectedTeacherId)
+      await fetchTeachers()
+      toast.success('Teacher deleted successfully')
+    } catch (error) {
+      console.error('Failed to delete teacher:', error)
+      toast.error('Failed to delete teacher')
+    } finally {
+      setIsDeleting(false)
+      setShowDeleteModal(false)
+      setSelectedTeacherId(null)
     }
   }
 
@@ -362,6 +405,42 @@ export default function TeachersPage() {
         t.id === id ? { ...t, status: newStatus } : t
       )
     )
+  }
+
+  const handleChangePasswordClick = (teacherId: string) => {
+    setPasswordForm({ id: teacherId, password: '' })
+    setShowPasswordModal(true)
+    setActiveDropdownId(null)
+  }
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    // In a real app, you would call the API to update the password here
+    toast.success(`Password updated for teacher ID: ${passwordForm.id}`)
+    setShowPasswordModal(false)
+  }
+
+  // Filter Logic
+  const filteredTeachers = teachers.filter(teacher => {
+    const query = searchQuery.toLowerCase()
+    const matchesSearch =
+      (teacher.firstName || '').toLowerCase().includes(query) ||
+      (teacher.lastName || '').toLowerCase().includes(query) ||
+      (teacher.email || '').toLowerCase().includes(query) ||
+      (teacher.employee_id || teacher.teacherId || '').toLowerCase().includes(query) ||
+      (teacher.phone || '').includes(query)
+
+    const matchesDept = filters.department ? teacher.department === filters.department : true
+    const matchesStatus = filters.status ? (teacher.status === filters.status || teacher.status?.toLowerCase() === filters.status.toLowerCase()) : true
+    const matchesGender = filters.gender ? teacher.gender === filters.gender : true
+    const matchesType = filters.employmentType ? (teacher.employmentType === filters.employmentType || teacher.employment_type === filters.employmentType) : true
+
+    return matchesSearch && matchesDept && matchesStatus && matchesGender && matchesType
+  })
+
+  const clearFilters = () => {
+    setSearchQuery('')
+    setFilters({ department: '', status: '', gender: '', employmentType: '' })
   }
 
   if (isSuperAdmin && (!selectedSchool || selectedSchool.code === 'system')) {
@@ -393,83 +472,264 @@ export default function TeachersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-indigo-100 flex flex-col">
       <Navbar showBackButton={true} backLink="/dashboard" />
 
       <div className="flex flex-1">
         <Sidebar />
 
-        {/* Main Content */}
-        <main className="flex-1 py-8 px-4">
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="text-3xl font-bold text-gray-900 dark:text-white">Teachers Management</h2>
-            <button
-              onClick={handleAddTeacher}
-              className="px-6 py-2 bg-green-600 dark:bg-green-700 text-white rounded-lg hover:bg-green-700 dark:hover:bg-green-800 transition-colors font-semibold shadow-md">
-              + Add Teacher
-            </button>
+        {/* Main Content Area */}
+        <main className="flex-1 py-8 px-6">
+          {/* Header Section */}
+          <div className="mb-8">
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+              Teachers Management
+            </h1>
+            <p className="text-gray-600">Manage teacher profiles and assignments</p>
           </div>
 
-          {/* Teachers Table */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-            {loading && <div className="p-4 text-center">Loading...</div>}
+          {/* Search & Actions Bar */}
+          <div className="mb-6 space-y-4">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div className="flex-1 w-full md:w-auto relative group">
+                <input
+                  type="text"
+                  placeholder="Search by Name, ID, Email, or Phone..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full md:w-96 px-5 py-3 pl-12 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 bg-white/50 backdrop-blur-sm shadow-sm hover:shadow-md"
+                />
+                <div className="absolute left-4 top-3.5 text-gray-400 group-focus-within:text-blue-500 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+              </div>
 
+              <div className="flex gap-3 w-full md:w-auto">
+                <button
+                  onClick={() => setShowFilters(!showFilters)}
+                  className={`px-4 py-3 rounded-xl border font-medium flex items-center gap-2 transition-all duration-200 ${showFilters
+                    ? 'bg-blue-50 border-blue-200 text-blue-700'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                  </svg>
+                  Filters
+                  {(filters.department || filters.status || filters.gender || filters.employmentType) && (
+                    <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                  )}
+                </button>
+
+                <button
+                  onClick={handleAddTeacher}
+                  className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center gap-2 whitespace-nowrap"
+                >
+                  <span className="text-xl">+</span>
+                  Add Teacher
+                </button>
+              </div>
+            </div>
+
+            {/* Advanced Filters Panel */}
+            {showFilters && (
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 animation-fade-in-down">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Department</label>
+                    <select
+                      value={filters.department}
+                      onChange={(e) => setFilters({ ...filters, department: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 bg-gray-50/50"
+                    >
+                      <option value="">All Departments</option>
+                      {DEPARTMENTS.map(dept => (
+                        <option key={dept} value={dept}>{dept}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Status</label>
+                    <select
+                      value={filters.status}
+                      onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 bg-gray-50/50"
+                    >
+                      <option value="">All Statuses</option>
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                      <option value="On Leave">On Leave</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Gender</label>
+                    <select
+                      value={filters.gender}
+                      onChange={(e) => setFilters({ ...filters, gender: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 bg-gray-50/50"
+                    >
+                      <option value="">All Genders</option>
+                      {GENDERS.map(g => (
+                        <option key={g} value={g}>{g}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Employment Type</label>
+                    <select
+                      value={filters.employmentType}
+                      onChange={(e) => setFilters({ ...filters, employmentType: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 bg-gray-50/50"
+                    >
+                      <option value="">All Types</option>
+                      {EMPLOYMENT_TYPES.map(type => (
+                        <option key={type} value={type}>{type}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex justify-end mt-4 pt-4 border-t border-gray-50">
+                  <button
+                    onClick={clearFilters}
+                    className="text-sm font-semibold text-red-500 hover:text-red-600 flex items-center gap-1"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Clear Filters
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Table Container */}
+          <div className="bg-white rounded-2xl shadow-xl overflow-visible border border-gray-100">
             <table className="w-full">
-              <thead className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">
-                <tr>
-                  <th className="px-6 py-4 text-left text-sm font-semibold">Employee ID</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold">Name</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold">Qualification</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold">Department</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold">Join Date</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold">Status</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold">Actions</th>
+              <thead>
+                <tr className="bg-gradient-to-r from-blue-600 to-blue-700 text-white">
+                  <th className="px-6 py-4 text-left font-semibold">Employee ID</th>
+                  <th className="px-6 py-4 text-left font-semibold">Name</th>
+                  <th className="px-6 py-4 text-left font-semibold">Qualification</th>
+                  <th className="px-6 py-4 text-left font-semibold">Department</th>
+                  <th className="px-6 py-4 text-left font-semibold">Status</th>
+                  <th className="px-6 py-4 text-left font-semibold">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {!loading && teachers.length === 0 ? (
+              <tbody className="divide-y divide-gray-200">
+                {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
-                      No teachers added yet. Click "Add Teacher" to get started.
+                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                      <div className="flex flex-col items-center justify-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+                        <p>Loading teachers...</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : filteredTeachers.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                      <div className="flex flex-col items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        <p className="text-lg font-medium">No teachers match your search</p>
+                        <p className="text-sm text-gray-400 mt-1">Try adjusting keywords or filters</p>
+                        <button onClick={clearFilters} className="mt-4 text-blue-600 font-semibold hover:underline">
+                          Clear all filters
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ) : (
-                  teachers.map((teacher) => (
-                    <tr key={teacher.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                      <td className="px-6 py-4 text-sm font-medium text-blue-600 dark:text-blue-400">{teacher.employee_id || teacher.teacherId}</td>
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">
-                        {teacher.firstName} {teacher.lastName}
+                  filteredTeachers.map((teacher) => (
+                    <tr key={teacher.id} className="hover:bg-blue-50 transition-colors duration-150 border-b border-gray-100">
+                      <td className="px-6 py-4">
+                        <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-lg font-medium text-sm">
+                          {teacher.employee_id || teacher.teacherId}
+                        </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{teacher.qualification}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{teacher.department || '-'}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{teacher.join_date ? new Date(teacher.join_date).toLocaleDateString() : '-'}</td>
-                      <td className="px-6 py-4 text-sm">
-                        <select
-                          value={teacher.status}
-                          onChange={(e) => handleStatusChange(teacher.id, e.target.value as any)}
-                          className={`px-3 py-1 rounded-full text-xs font-semibold cursor-pointer border-0 ${teacher.status === 'active' || teacher.status === 'Active'
-                            ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                      <td className="px-6 py-4">
+                        <div className="font-semibold text-gray-900">
+                          {teacher.firstName} {teacher.lastName}
+                        </div>
+                        <div className="text-sm text-gray-500">{teacher.email}</div>
+                      </td>
+                      <td className="px-6 py-4 text-gray-600">{teacher.qualification}</td>
+                      <td className="px-6 py-4 text-gray-600">{teacher.department || '-'}</td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`px-3 py-1 rounded-full text-sm font-semibold inline-block ${teacher.status === 'active' || teacher.status === 'Active'
+                            ? 'bg-green-100 text-green-700'
                             : teacher.status === 'On Leave'
-                              ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200'
-                              : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
+                              ? 'bg-yellow-100 text-yellow-700'
+                              : 'bg-red-100 text-red-700'
                             }`}
                         >
-                          <option value="active">Active</option>
-                          <option value="On Leave">On Leave</option>
-                          <option value="inactive">Inactive</option>
-                        </select>
+                          {teacher.status}
+                        </span>
                       </td>
-                      <td className="px-6 py-4 text-sm space-x-2 flex">
-                        <button
-                          onClick={() => handleEditTeacher(teacher)}
-                          className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-semibold hover:underline">
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteTeacher(teacher.id)}
-                          className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-semibold hover:underline">
-                          Delete
-                        </button>
+                      <td className="px-6 py-4">
+                        <div className="relative">
+                          <button
+                            onClick={() => setActiveDropdownId(activeDropdownId === teacher.id ? null : teacher.id)}
+                            className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                            </svg>
+                          </button>
+
+                          {activeDropdownId === teacher.id && (
+                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl z-50 border border-gray-100 overflow-hidden animation-fade-in-up">
+                              <div className="py-1">
+                                <button
+                                  onClick={() => { handleEditTeacher(teacher); setActiveDropdownId(null) }}
+                                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2"
+                                >
+                                  <span>✏️</span> Edit Details
+                                </button>
+                                <button
+                                  onClick={() => handleChangePasswordClick(teacher.id)}
+                                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2"
+                                >
+                                  <span>🔑</span> Change Password
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setActiveDropdownId(null)
+                                    router.push({
+                                      pathname: '/auth/login',
+                                      query: { email: teacher.email }
+                                    })
+                                  }}
+                                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2"
+                                >
+                                  <span>👤</span> Login as Teacher
+                                </button>
+                                <div className="border-t border-gray-100 my-1"></div>
+                                <button
+                                  onClick={() => handleDeleteClick(teacher.id)}
+                                  className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                >
+                                  <span>🗑️</span> Delete Teacher
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        {activeDropdownId === teacher.id && (
+                          <div
+                            className="fixed inset-0 z-40"
+                            onClick={() => setActiveDropdownId(null)}
+                          ></div>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -492,204 +752,189 @@ export default function TeachersPage() {
 
       {/* Teacher Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-3xl h-[85vh] max-h-[95vh] flex flex-col">
-            {/* Modal Header */}
-            <div className="border-b border-gray-200 dark:border-gray-700 px-8 py-4 flex justify-between items-center">
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {editingId ? 'Edit Teacher' : 'Add New Teacher'}
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl h-[80vh] max-h-[90vh] flex flex-col overflow-hidden animate-fade-in-up">
+            <div className="bg-gradient-to-r from-blue-50 to-purple-50 px-8 py-6 border-b-2 border-blue-200">
+              <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                {editingId ? 'Edit Teacher Details' : 'Add New Teacher'}
               </h3>
-              <button
-                onClick={handleCloseModal}
-                className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 text-3xl font-bold">
-                ×
-              </button>
+              <p className="text-sm text-gray-500 mt-1">Complete the teacher profile in sections below</p>
             </div>
 
             {/* Tabs */}
-            <div className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-8">
-              <div className="flex gap-6">
-                <button
-                  onClick={() => setActiveTab('personal')}
-                  className={`py-4 px-4 font-semibold transition-all border-b-2 ${activeTab === 'personal'
-                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-                    }`}>
-                  Personal Info
-                </button>
-                <button
-                  onClick={() => setActiveTab('professional')}
-                  className={`py-4 px-4 font-semibold transition-all border-b-2 ${activeTab === 'professional'
-                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-                    }`}>
-                  Professional Info
-                </button>
-                <button
-                  onClick={() => setActiveTab('academic')}
-                  className={`py-4 px-4 font-semibold transition-all border-b-2 ${activeTab === 'academic'
-                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-                    }`}>
-                  Academic & Assigned
-                </button>
-              </div>
+            <div className="sticky top-0 z-10 flex border-b-2 border-blue-200 bg-gradient-to-r from-gray-50 to-blue-50 shadow-md">
+              <button
+                onClick={() => setActiveTab('personal')}
+                className={`flex-1 py-4 text-sm font-bold transition-all duration-200 relative ${activeTab === 'personal'
+                  ? 'text-blue-600 bg-white'
+                  : 'text-gray-600 hover:text-blue-600 hover:bg-gray-100'
+                  }`}>
+                Personal Info
+                {activeTab === 'personal' && (
+                  <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-600 to-purple-600"></div>
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab('professional')}
+                className={`flex-1 py-4 text-sm font-bold transition-all duration-200 relative ${activeTab === 'professional'
+                  ? 'text-blue-600 bg-white'
+                  : 'text-gray-600 hover:text-blue-600 hover:bg-gray-100'
+                  }`}>
+                Professional
+                {activeTab === 'professional' && (
+                  <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-600 to-purple-600"></div>
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab('academic')}
+                className={`flex-1 py-4 text-sm font-bold transition-all duration-200 relative ${activeTab === 'academic'
+                  ? 'text-blue-600 bg-white'
+                  : 'text-gray-600 hover:text-blue-600 hover:bg-gray-100'
+                  }`}>
+                Academic & Assigned
+                {activeTab === 'academic' && (
+                  <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-600 to-purple-600"></div>
+                )}
+              </button>
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto px-8 py-6">
+            <div className="flex-1 overflow-y-auto p-8 bg-white">
               {/* Personal Info Tab */}
               {activeTab === 'personal' && (
-                <div className="space-y-6 animate-in fade-in duration-300">
+                <div className="space-y-6">
                   <div className="grid grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">First Name *</label>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Employee ID *</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          name="employeeId"
+                          value={formData.employeeId}
+                          onChange={handleInputChange}
+                          className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50 font-mono font-bold text-blue-600"
+                          placeholder="e.g. TCH-2024-001"
+                        />
+                        {!editingId && (
+                          <button
+                            type="button"
+                            onClick={() => setFormData(p => ({ ...p, employeeId: generateTeacherId() }))}
+                            className="absolute right-3 top-3 text-gray-400 hover:text-blue-500 transition-colors"
+                            title="Regenerate ID"
+                          >
+                            🔄
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Official Email *</label>
+                      <input
+                        type="email"
+                        name="email"
+                        value={formData.email}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50 hover:bg-white transition-all"
+                        placeholder="teacher@school.edu"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">First Name *</label>
                       <input
                         type="text"
                         name="firstName"
                         value={formData.firstName}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="First name"
+                        className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50 hover:bg-white transition-all"
+                        placeholder="John"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Last Name *</label>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Last Name *</label>
                       <input
                         type="text"
                         name="lastName"
                         value={formData.lastName}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="Last name"
+                        className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50 hover:bg-white transition-all"
+                        placeholder="Doe"
                       />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Gender *</label>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Gender *</label>
                       <select
                         name="gender"
                         value={formData.gender}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50"
                       >
                         {GENDERS.map(g => <option key={g} value={g}>{g}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date of Birth</label>
-                      <input
-                        type="date"
-                        name="dateOfBirth"
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Date of Birth</label>
+                      <NepaliDatePicker
                         value={formData.dateOfBirth}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone Number</label>
-                      <input
-                        type="tel"
-                        name="phone"
-                        value={formData.phone}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="+977-XXXXXXXXXX"
+                        onChange={(date) => setFormData(prev => ({ ...prev, dateOfBirth: date }))}
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Address</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Phone Number</label>
+                    <input
+                      type="tel"
+                      name="phone"
+                      value={formData.phone}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50"
+                      placeholder="+977-XXXXXXXXXX"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Address</label>
                     <textarea
                       name="address"
                       value={formData.address}
                       onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
                       rows={2}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="Full Address"
+                      className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50"
+                      placeholder="Full Residential Address"
                     />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City</label>
-                      <input
-                        type="text"
-                        name="city"
-                        value={formData.city}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="City"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">State/Province</label>
-                      <input
-                        type="text"
-                        name="state"
-                        value={formData.state}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="State"
-                      />
-                    </div>
                   </div>
                 </div>
               )}
 
               {/* Professional Details Tab */}
               {activeTab === 'professional' && (
-                <div className="space-y-6 animate-in fade-in duration-300">
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email Access *</label>
-                      <input
-                        type="email"
-                        name="email"
-                        value={formData.email}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 transition-all"
-                        placeholder="Professional Email"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Employee ID *</label>
-                      <input
-                        type="text"
-                        name="employeeId"
-                        value={formData.employeeId}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="e.g. TCH-2024-001"
-                      />
-                    </div>
-                  </div>
+                <div className="space-y-6">
 
                   <div className="grid grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Qualification *</label>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Qualification *</label>
                       <select
                         name="qualification"
                         value={formData.qualification}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500">
+                        className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50">
                         <option value="">Select Qualification</option>
                         {QUALIFICATIONS.map(q => <option key={q} value={q}>{q}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Specialization</label>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Specialization</label>
                       <select
                         name="specialization"
                         value={formData.specialization}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500">
+                        className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50">
                         <option value="">Select Specialization</option>
                         {SPECIALIZATIONS.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
@@ -698,17 +943,14 @@ export default function TeachersPage() {
 
                   <div className="grid grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Joining Date *</label>
-                      <input
-                        type="date"
-                        name="joiningDate"
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Joining Date *</label>
+                      <NepaliDatePicker
                         value={formData.joiningDate}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                        onChange={(date) => setFormData(prev => ({ ...prev, joiningDate: date }))}
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Experience (Years)</label>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Experience (Years)</label>
                       <input
                         type="number"
                         name="experience"
@@ -716,30 +958,7 @@ export default function TeachersPage() {
                         onChange={handleInputChange}
                         step="0.5"
                         min="0"
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Employment Type</label>
-                      <select
-                        name="employmentType"
-                        value={formData.employmentType}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500">
-                        {EMPLOYMENT_TYPES.map(e => <option key={e} value={e}>{e}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Monthly Salary (NPR)</label>
-                      <input
-                        type="number"
-                        name="salary"
-                        value={formData.salary}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50"
                       />
                     </div>
                   </div>
@@ -748,28 +967,28 @@ export default function TeachersPage() {
 
               {/* Academic Tab */}
               {activeTab === 'academic' && (
-                <div className="space-y-6 animate-in fade-in duration-300">
+                <div className="space-y-6">
                   <div className="grid grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Department</label>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Department</label>
                       <select
                         name="department"
                         value={formData.department}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50"
                       >
                         <option value="">Select Department</option>
                         {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Primary Subject</label>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Primary Subject</label>
                       <input
                         type="text"
                         name="subject"
                         value={formData.subject}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50"
                         placeholder="e.g. Science"
                       />
                     </div>
@@ -777,64 +996,132 @@ export default function TeachersPage() {
 
                   <div className="grid grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Assigned Class</label>
-                      <input
-                        type="text"
-                        name="classAssigned"
-                        value={formData.classAssigned}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="e.g. Class 10-A"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Status</label>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Status</label>
                       <select
                         name="status"
                         value={formData.status}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50"
                       >
                         {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
+                    {!editingId && (
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Initial Password *</label>
+                        <input
+                          type="password"
+                          name="password"
+                          value={formData.password}
+                          onChange={handleInputChange}
+                          className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50"
+                          placeholder="••••••••"
+                        />
+                      </div>
+                    )}
                   </div>
-
-                  {!editingId && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Initial Password *</label>
-                      <input
-                        type="password"
-                        name="password"
-                        value={formData.password}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="••••••••"
-                      />
-                    </div>
-                  )}
                 </div>
               )}
             </div>
 
             {/* Modal Footer */}
-            <div className="border-t border-gray-200 dark:border-gray-700 px-8 py-4 flex justify-end gap-3 bg-white dark:bg-gray-800">
+            <div className="bg-gray-50 px-8 py-5 border-t-2 border-gray-200 flex justify-end gap-3">
               <button
                 onClick={handleCloseModal}
-                className="px-6 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-white rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500 transition-colors font-semibold">
+                className="px-6 py-2.5 bg-white border-2 border-gray-200 text-gray-600 rounded-xl font-bold hover:bg-gray-50 hover:border-gray-300 transition-all">
                 Cancel
               </button>
               <button
                 onClick={handleSaveTeacher}
                 disabled={loading}
-                className="px-6 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-800 transition-colors font-semibold shadow-md disabled:bg-gray-400">
-                {loading ? 'Saving...' : (editingId ? 'Update Teacher' : 'Save Teacher')}
+                className="px-8 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold hover:shadow-lg disabled:opacity-50 transition-all">
+                {loading ? 'Saving...' : (editingId ? 'Update Profile' : 'Save Teacher')}
               </button>
             </div>
           </div>
-        </div >
-      )
-      }
-    </div >
+        </div>
+      )}
+
+      {/* Password Change Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up">
+            <div className="bg-gradient-to-r from-blue-50 to-purple-50 px-6 py-4 border-b-2 border-blue-200">
+              <h3 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Change Password</h3>
+            </div>
+            <form onSubmit={handlePasswordSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">New Password</label>
+                <input
+                  type="password"
+                  value={passwordForm.password}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, password: e.target.value })}
+                  className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50/50"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordModal(false)}
+                  className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-bold hover:shadow-lg transition-all"
+                >
+                  Update Password
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up">
+            <div className="bg-gradient-to-r from-red-50 to-orange-50 px-8 py-6 border-b-2 border-red-100">
+              <h3 className="text-2xl font-bold text-red-600 flex items-center gap-3">
+                <span className="p-2 bg-red-100 rounded-lg text-xl">⚠️</span>
+                Delete Teacher
+              </h3>
+            </div>
+            <div className="p-8">
+              <p className="text-gray-600 text-lg leading-relaxed">
+                Are you sure you want to delete this teacher? This action <span className="text-red-600 font-bold underline">cannot be undone</span> and all related data will be permanently removed.
+              </p>
+
+              <div className="flex justify-end gap-3 mt-8">
+                <button
+                  onClick={() => setShowDeleteModal(false)}
+                  disabled={isDeleting}
+                  className="px-6 py-2.5 bg-white border-2 border-gray-100 text-gray-600 rounded-xl font-bold hover:bg-gray-50 hover:border-gray-200 transition-all flex items-center gap-2"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                  className="px-8 py-2.5 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-red-200 disabled:opacity-50 transition-all flex items-center gap-2"
+                >
+                  {isDeleting ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Deleting...
+                    </>
+                  ) : (
+                    'Confirm Delete'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

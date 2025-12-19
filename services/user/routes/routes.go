@@ -39,6 +39,7 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config, tm *tenan
 	teachersProtected.Use(middleware.AuthMiddleware)
 	teachersProtected.Post("/", h.CreateTeacher)
 	teachersProtected.Put("/:id", h.UpdateTeacher)
+	teachersProtected.Delete("/:id", h.DeleteTeacher)
 
 	// Parent routes
 	parents := api.Group("/parents")

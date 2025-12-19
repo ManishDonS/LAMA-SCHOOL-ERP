@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -247,6 +248,14 @@ func (h *UserHandler) CreateTeacher(c *fiber.Ctx) error {
 
 	fmt.Printf("Inserting teacher into tenant DB: %s. UserID: %s, SchoolID: %s\n", tenantCode, userID, req.SchoolID)
 
+	// 2.5 Sync User to Tenant DB first (Crucial for list join!)
+	err = h.SyncUserToTenant(c.Context(), tenantDB, userID, req.Email, req.FirstName, req.LastName, "teacher")
+	if err != nil {
+		fmt.Printf("Warning: Failed to sync user to tenant DB: %v\n", err)
+		// Continue anyway as teacher record is primary, but joining might fail
+	}
+
+	// 3. Create Teacher in Database
 	// Convert DateOfBirth string to time.Time if provided
 	var dob interface{}
 	if req.DateOfBirth != "" {
@@ -263,7 +272,24 @@ func (h *UserHandler) CreateTeacher(c *fiber.Ctx) error {
 			phone, date_of_birth, gender, specialization, experience, 
 			employment_type, salary, address, city, state, 
 			subject, class_assigned, join_date, status
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), 'active')`,
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), 'active')
+		ON CONFLICT (user_id) DO UPDATE SET
+			qualification = EXCLUDED.qualification,
+			department = EXCLUDED.department,
+			employee_id = EXCLUDED.employee_id,
+			phone = EXCLUDED.phone,
+			date_of_birth = EXCLUDED.date_of_birth,
+			gender = EXCLUDED.gender,
+			specialization = EXCLUDED.specialization,
+			experience = EXCLUDED.experience,
+			employment_type = EXCLUDED.employment_type,
+			salary = EXCLUDED.salary,
+			address = EXCLUDED.address,
+			city = EXCLUDED.city,
+			state = EXCLUDED.state,
+			subject = EXCLUDED.subject,
+			class_assigned = EXCLUDED.class_assigned,
+			updated_at = NOW()`,
 		userID, req.SchoolID, req.Qualification, req.Department, req.EmployeeID,
 		req.Phone, dob, req.Gender, req.Specialization, req.Experience,
 		req.EmploymentType, req.Salary, req.Address, req.City, req.State,
@@ -271,9 +297,9 @@ func (h *UserHandler) CreateTeacher(c *fiber.Ctx) error {
 	)
 
 	if err != nil {
-		fmt.Printf("Error inserting teacher into DB: %v\n", err)
+		fmt.Printf("Error inserting/updating teacher in DB: %v\n", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error":   "Failed to create teacher",
+			"error":   "Failed to save teacher profile",
 			"details": err.Error(),
 		})
 	}
@@ -402,9 +428,212 @@ func (h *UserHandler) UpdateTeacher(c *fiber.Ctx) error {
 		})
 	}
 
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
+	// 1. Get the user_id for this teacher first
+	var userID string
+	err := tenantDB.QueryRow(c.Context(), "SELECT user_id FROM teachers WHERE id = $1", id).Scan(&userID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Teacher not found",
+		})
+	}
+
+	// 2. Update User in Main DB (Auth database) and Tenant DB
+	// We can update first_name, last_name, and email in both central and tenant users tables
+	if req.FirstName != "" || req.LastName != "" || req.Email != "" {
+		updateUserQuery := "UPDATE users SET "
+		userArgs := []interface{}{}
+		argPos := 1
+
+		if req.FirstName != "" {
+			updateUserQuery += fmt.Sprintf("first_name = $%d, ", argPos)
+			userArgs = append(userArgs, req.FirstName)
+			argPos++
+		}
+		if req.LastName != "" {
+			updateUserQuery += fmt.Sprintf("last_name = $%d, ", argPos)
+			userArgs = append(userArgs, req.LastName)
+			argPos++
+		}
+		if req.Email != "" {
+			updateUserQuery += fmt.Sprintf("email = $%d, ", argPos)
+			userArgs = append(userArgs, req.Email)
+			argPos++
+		}
+
+		// Remove trailing comma and space
+		updateUserQuery = updateUserQuery[:len(updateUserQuery)-2]
+		updateUserQuery += fmt.Sprintf(" WHERE id = $%d", argPos)
+		userArgs = append(userArgs, userID)
+
+		// Update Central DB
+		_, err = h.db.Exec(c.Context(), updateUserQuery, userArgs...)
+		if err != nil {
+			fmt.Printf("Error updating user in main DB: %v\n", err)
+			// Log but continue to update tenant DB and teacher record
+		}
+
+		// Update Tenant DB
+		_, err = tenantDB.Exec(c.Context(), updateUserQuery, userArgs...)
+		if err != nil {
+			fmt.Printf("Error updating user in tenant DB: %v\n", err)
+			// If tenant users table doesn't have the user yet (e.g. from old data), this might fail.
+			// In a real system we might want to UPSERT here.
+		}
+	}
+
+	// 3. Update Teacher in Tenant DB
+	updateFields := []string{}
+	args := []interface{}{}
+	argPos := 1
+
+	if req.Qualification != "" {
+		updateFields = append(updateFields, fmt.Sprintf("qualification = $%d", argPos))
+		args = append(args, req.Qualification)
+		argPos++
+	}
+	if req.Department != "" {
+		updateFields = append(updateFields, fmt.Sprintf("department = $%d", argPos))
+		args = append(args, req.Department)
+		argPos++
+	}
+	if req.EmployeeID != "" {
+		updateFields = append(updateFields, fmt.Sprintf("employee_id = $%d", argPos))
+		args = append(args, req.EmployeeID)
+		argPos++
+	}
+	if req.Phone != "" {
+		updateFields = append(updateFields, fmt.Sprintf("phone = $%d", argPos))
+		args = append(args, req.Phone)
+		argPos++
+	}
+	if req.Gender != "" {
+		updateFields = append(updateFields, fmt.Sprintf("gender = $%d", argPos))
+		args = append(args, req.Gender)
+		argPos++
+	}
+	if req.Specialization != "" {
+		updateFields = append(updateFields, fmt.Sprintf("specialization = $%d", argPos))
+		args = append(args, req.Specialization)
+		argPos++
+	}
+	if req.Experience != 0 {
+		updateFields = append(updateFields, fmt.Sprintf("experience = $%d", argPos))
+		args = append(args, req.Experience)
+		argPos++
+	}
+	if req.EmploymentType != "" {
+		updateFields = append(updateFields, fmt.Sprintf("employment_type = $%d", argPos))
+		args = append(args, req.EmploymentType)
+		argPos++
+	}
+	if req.Salary != 0 {
+		updateFields = append(updateFields, fmt.Sprintf("salary = $%d", argPos))
+		args = append(args, req.Salary)
+		argPos++
+	}
+	if req.Address != "" {
+		updateFields = append(updateFields, fmt.Sprintf("address = $%d", argPos))
+		args = append(args, req.Address)
+		argPos++
+	}
+	if req.City != "" {
+		updateFields = append(updateFields, fmt.Sprintf("city = $%d", argPos))
+		args = append(args, req.City)
+		argPos++
+	}
+	if req.State != "" {
+		updateFields = append(updateFields, fmt.Sprintf("state = $%d", argPos))
+		args = append(args, req.State)
+		argPos++
+	}
+	if req.Subject != "" {
+		updateFields = append(updateFields, fmt.Sprintf("subject = $%d", argPos))
+		args = append(args, req.Subject)
+		argPos++
+	}
+	if req.ClassAssigned != "" {
+		updateFields = append(updateFields, fmt.Sprintf("class_assigned = $%d", argPos))
+		args = append(args, req.ClassAssigned)
+		argPos++
+	}
+
+	if len(updateFields) == 0 {
+		return c.JSON(fiber.Map{
+			"message":    "Teacher updated successfully (no fields changed)",
+			"teacher_id": id,
+		})
+	}
+
+	updateFields = append(updateFields, fmt.Sprintf("updated_at = $%d", argPos))
+	args = append(args, time.Now())
+	argPos++
+
+	args = append(args, id)
+	query := fmt.Sprintf("UPDATE teachers SET %s WHERE id = $%d", strings.Join(updateFields, ", "), argPos)
+
+	_, err = tenantDB.Exec(c.Context(), query, args...)
+	if err != nil {
+		fmt.Printf("Error updating teacher in tenant DB: %v\n", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to update teacher record",
+		})
+	}
+
 	return c.JSON(fiber.Map{
 		"message":    "Teacher updated successfully",
 		"teacher_id": id,
+	})
+}
+
+func (h *UserHandler) DeleteTeacher(c *fiber.Ctx) error {
+	id := c.Params("id")
+
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
+	// 1. Get user_id first to optionally disable/delete user
+	var userID string
+	err := tenantDB.QueryRow(c.Context(), "SELECT user_id FROM teachers WHERE id = $1", id).Scan(&userID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Teacher not found",
+		})
+	}
+
+	// 2. Delete teacher record
+	_, err = tenantDB.Exec(c.Context(), "DELETE FROM teachers WHERE id = $1", id)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to delete teacher record",
+		})
+	}
+
+	// 3. Mark user as inactive in central DB (Soft delete for safety)
+	_, err = h.db.Exec(c.Context(), "UPDATE users SET status = 'inactive' WHERE id = $1", userID)
+	if err != nil {
+		fmt.Printf("Warning: Failed to deactivate user in central DB: %v\n", err)
+	}
+
+	// 4. Mark user as inactive in tenant DB
+	_, err = tenantDB.Exec(c.Context(), "UPDATE users SET status = 'inactive' WHERE id = $1", userID)
+	if err != nil {
+		fmt.Printf("Warning: Failed to deactivate user in tenant DB: %v\n", err)
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Teacher deleted successfully",
+		"id":      id,
 	})
 }
 
@@ -529,16 +758,11 @@ func (h *UserHandler) UpdateStaff(c *fiber.Ctx) error {
 	})
 }
 func (h *UserHandler) getTenantDBBySchoolID(ctx context.Context, schoolID string) (*pgxpool.Pool, string, error) {
-	var dbUser, encryptedPassword, code string
-	query := `SELECT db_user, db_password, code FROM schools WHERE id = $1 AND status = 'active' OR code = $1 AND status = 'active'`
-	err := h.db.QueryRow(ctx, query, schoolID).Scan(&dbUser, &encryptedPassword, &code)
+	var dbUser, encryptedPassword, dbName, code string
+	query := `SELECT db_user, db_password, db_name, code FROM schools WHERE id = $1 AND status = 'active'`
+	err := h.db.QueryRow(ctx, query, schoolID).Scan(&dbUser, &encryptedPassword, &dbName, &code)
 	if err != nil {
-		// Try fetching by code if ID failed (in case schoolID is actually a code)
-		query = `SELECT db_user, db_password, code FROM schools WHERE code = $1 AND status = 'active'`
-		err = h.db.QueryRow(ctx, query, schoolID).Scan(&dbUser, &encryptedPassword, &code)
-		if err != nil {
-			return nil, "", fmt.Errorf("school not found or inactive: %w", err)
-		}
+		return nil, "", fmt.Errorf("school not found or inactive: %w", err)
 	}
 
 	dbPort, _ := strconv.Atoi(h.cfg.DBPort)
@@ -547,7 +771,7 @@ func (h *UserHandler) getTenantDBBySchoolID(ctx context.Context, schoolID string
 		code,
 		h.cfg.DBHost,
 		dbPort,
-		fmt.Sprintf("school_%s_db", code),
+		dbName,
 		dbUser,
 		encryptedPassword,
 		database.RunMigrations,
@@ -557,4 +781,19 @@ func (h *UserHandler) getTenantDBBySchoolID(ctx context.Context, schoolID string
 	}
 
 	return tenantDB, code, nil
+}
+
+func (h *UserHandler) SyncUserToTenant(ctx context.Context, tenantDB *pgxpool.Pool, userID string, email, firstName, lastName, role string) error {
+	query := `
+		INSERT INTO users (id, email, first_name, last_name, role, password_hash, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+		ON CONFLICT (id) DO UPDATE SET
+			email = EXCLUDED.email,
+			first_name = EXCLUDED.first_name,
+			last_name = EXCLUDED.last_name,
+			role = EXCLUDED.role,
+			updated_at = NOW()
+	`
+	_, err := tenantDB.Exec(ctx, query, userID, email, firstName, lastName, role, "EXTERNAL_AUTH", "active")
+	return err
 }

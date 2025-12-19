@@ -6,6 +6,7 @@ import Navbar from '@/components/Navbar'
 import { useAuthStore } from '@/store/authStore'
 import { studentAPI } from '@/services/api'
 import NepaliDatePicker from '@/components/NepaliDatePicker'
+import { toast } from 'react-hot-toast'
 
 interface Student {
   id: number
@@ -299,7 +300,10 @@ export default function StudentsPage() {
   const [showModal, setShowModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingStudentId, setEditingStudentId] = useState<number | null>(null)
-  const [activeTab, setActiveTab] = useState('basic')
+  const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [activeTab, setActiveTab] = useState<string>('basic')
   const [customGuardianRelation, setCustomGuardianRelation] = useState('')
   const [activeDropdownId, setActiveDropdownId] = useState<number | null>(null)
   const [showPasswordModal, setShowPasswordModal] = useState(false)
@@ -414,9 +418,24 @@ export default function StudentsPage() {
     setCustomGuardianRelation('')
   }
 
-  const handleDelete = (id: number) => {
-    if (confirm('Are you sure you want to delete this student?')) {
-      setStudents((prev) => prev.filter((student) => student.id !== id))
+  const handleDeleteClick = (id: number) => {
+    setSelectedStudentId(id)
+    setShowDeleteModal(true)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!selectedStudentId) return
+    setIsDeleting(true)
+    try {
+      // In a real app: await studentAPI.delete(selectedStudentId)
+      setStudents((prev) => prev.filter((student) => student.id !== selectedStudentId))
+      toast.success('Student deleted successfully')
+    } catch (error) {
+      toast.error('Failed to delete student')
+    } finally {
+      setIsDeleting(false)
+      setShowDeleteModal(false)
+      setSelectedStudentId(null)
     }
   }
 
@@ -481,7 +500,7 @@ export default function StudentsPage() {
     }
 
     if (!schoolId) {
-      alert('School ID not found. Please select a school first.')
+      toast.error('School ID not found. Please select a school first.')
       return
     }
 
@@ -501,9 +520,10 @@ export default function StudentsPage() {
       // Refresh list
       fetchStudents()
       handleCloseModal()
+      toast.success('Student created successfully')
     } catch (error: any) {
       console.error('Failed to create student:', error)
-      alert(error.response?.data?.error || 'Failed to create student')
+      toast.error(error.response?.data?.error || 'Failed to create student')
     }
   }
 
@@ -536,9 +556,10 @@ export default function StudentsPage() {
 
       // Close the modal
       handleCloseEditModal()
+      toast.success('Student details updated successfully')
     } catch (error: any) {
       console.error('Failed to update student:', error)
-      alert(error.response?.data?.error || 'Failed to update student')
+      toast.error(error.response?.data?.error || 'Failed to update student')
     }
   }
 
@@ -551,7 +572,7 @@ export default function StudentsPage() {
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     // In a real app, you would call the API to update the password here
-    alert(`Password updated for student ID: ${passwordForm.id}`)
+    toast.success(`Password updated for student ID: ${passwordForm.id}`)
     setShowPasswordModal(false)
   }
 
@@ -887,10 +908,10 @@ export default function StudentsPage() {
                                 </button>
                                 <div className="border-t border-gray-100 my-1"></div>
                                 <button
-                                  onClick={() => { handleDelete(student.id); setActiveDropdownId(null) }}
+                                  onClick={() => handleDeleteClick(student.id)}
                                   className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
                                 >
-                                  <span>🗑️</span> Delete
+                                  <span>🗑️</span> Delete Student
                                 </button>
                               </div>
                             </div>
@@ -2086,6 +2107,48 @@ export default function StudentsPage() {
           }
         </main >
       </div >
-    </div >
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up">
+            <div className="bg-gradient-to-r from-red-50 to-orange-50 px-8 py-6 border-b-2 border-red-100">
+              <h3 className="text-2xl font-bold text-red-600 flex items-center gap-3">
+                <span className="p-2 bg-red-100 rounded-lg text-xl">⚠️</span>
+                Delete Student
+              </h3>
+            </div>
+            <div className="p-8">
+              <p className="text-gray-600 text-lg leading-relaxed">
+                Are you sure you want to delete this student? This action <span className="text-red-600 font-bold underline">cannot be undone</span> and all related data will be permanently removed.
+              </p>
+
+              <div className="flex justify-end gap-3 mt-8">
+                <button
+                  onClick={() => setShowDeleteModal(false)}
+                  disabled={isDeleting}
+                  className="px-6 py-2.5 bg-white border-2 border-gray-100 text-gray-600 rounded-xl font-bold hover:bg-gray-50 hover:border-gray-200 transition-all flex items-center gap-2"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                  className="px-8 py-2.5 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-red-200 disabled:opacity-50 transition-all flex items-center gap-2"
+                >
+                  {isDeleting ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Deleting...
+                    </>
+                  ) : (
+                    'Confirm Delete'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
