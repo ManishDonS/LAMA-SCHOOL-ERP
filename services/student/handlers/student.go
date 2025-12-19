@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -15,11 +17,13 @@ import (
 	"school-erp/student/config"
 	"school-erp/student/database"
 	"school-erp/student/middleware"
+	"school-erp/student/pkg/tenant"
 )
 
 type StudentHandler struct {
 	db  *pgxpool.Pool
 	cfg *config.Config
+	tm  *tenant.TenantManager
 }
 
 type CreateStudentRequest struct {
@@ -32,14 +36,30 @@ type CreateStudentRequest struct {
 	SchoolID    string `json:"school_id"`
 }
 
+type UpdateStudentRequest struct {
+	FirstName   string `json:"first_name"`
+	LastName    string `json:"last_name"`
+	Email       string `json:"email"`
+	DateOfBirth string `json:"date_of_birth"`
+	Gender      string `json:"gender"`
+	Nationality string `json:"nationality"`
+	Class       string `json:"class"`
+	Section     string `json:"section"`
+	RollNumber  string `json:"roll_number"`
+	BloodGroup  string `json:"blood_group"`
+	Phone       string `json:"phone"`
+	Address     string `json:"address"`
+	PhotoURL    string `json:"photo_url"`
+}
+
 type EnrollmentRequest struct {
 	StudentID    string `json:"student_id"`
 	ClassID      string `json:"class_id"`
 	AcademicYear string `json:"academic_year"`
 }
 
-func NewStudentHandler(db *pgxpool.Pool, cfg *config.Config) *StudentHandler {
-	return &StudentHandler{db: db, cfg: cfg}
+func NewStudentHandler(db *pgxpool.Pool, cfg *config.Config, tm *tenant.TenantManager) *StudentHandler {
+	return &StudentHandler{db: db, cfg: cfg, tm: tm}
 }
 
 // ListStudents godoc
@@ -52,7 +72,8 @@ func NewStudentHandler(db *pgxpool.Pool, cfg *config.Config) *StudentHandler {
 // @Router /students [get]
 func (h *StudentHandler) ListStudents(c *fiber.Ctx) error {
 	ctx := context.Background()
-	tenantDB := middleware.GetTenantDB(c)
+	tenantDB, tenantCode := h.getTenantDB(c)
+	log.Printf("[Student-Service] ListStudents: tenantCode=%s", tenantCode)
 	if tenantDB == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to connect to tenant database",
@@ -137,6 +158,71 @@ func (h *StudentHandler) ListStudents(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Router /students [post]
+func (h *StudentHandler) getTenantDB(c *fiber.Ctx) (*pgxpool.Pool, string) {
+	tenantDB := middleware.GetTenantDB(c)
+	tenantCode := middleware.GetTenantCode(c)
+
+	if tenantDB != nil {
+		return tenantDB, tenantCode
+	}
+
+	// Super admin fallback
+	if c.Locals("role") == "super_admin" {
+		schoolID := c.Query("school_id")
+		if schoolID == "" {
+			// Try to get from body if it's a POST/PUT request
+			// Note: This requires body to be parsed already, which might not be the case for all handlers
+			// For now we'll rely on query param or specific handler logic like CreateStudent
+		}
+
+		if schoolID != "" {
+			resolvedDB, resolvedCode, err := h.getTenantDBBySchoolID(context.Background(), schoolID)
+			if err == nil {
+				return resolvedDB, resolvedCode
+			}
+		}
+	}
+
+	return nil, ""
+}
+
+func (h *StudentHandler) getTenantDBBySchoolID(ctx context.Context, schoolID string) (*pgxpool.Pool, string, error) {
+	var dbUser, encryptedPassword, dbName, code string
+	query := `SELECT db_user, db_password, db_name, code FROM schools WHERE id = $1 AND status = 'active'`
+	err := h.db.QueryRow(ctx, query, schoolID).Scan(&dbUser, &encryptedPassword, &dbName, &code)
+	if err != nil {
+		return nil, "", fmt.Errorf("school not found or inactive: %w", err)
+	}
+
+	dbPort, _ := strconv.Atoi(h.cfg.DBPort)
+	tenantDB, err := h.tm.GetConnection(
+		ctx,
+		code,
+		h.cfg.DBHost,
+		dbPort,
+		dbName,
+		dbUser,
+		encryptedPassword,
+		database.RunMigrations,
+	)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to connect to tenant database: %w", err)
+	}
+
+	return tenantDB, code, nil
+}
+
+// CreateStudent godoc
+// @Summary Create a new student
+// @Description Register a new student in the system and create a user account
+// @Tags students
+// @Accept json
+// @Produce json
+// @Param student body CreateStudentRequest true "Student Data"
+// @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /students [post]
 func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
 	var req CreateStudentRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -151,6 +237,33 @@ func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
 	if req.Email == "" || req.Password == "" || req.FirstName == "" || req.LastName == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Missing required fields (email, password, first_name, last_name)",
+		})
+	}
+
+	// Resolve Tenant DB
+	ctx := context.Background()
+	tenantDB, tenantCode := h.getTenantDB(c)
+	log.Printf("[Student-Service] Resolve attempt: tenantCode=%s, role=%v, req.SchoolID=%s", tenantCode, c.Locals("role"), req.SchoolID)
+
+	// Special case for CreateStudent: if still nil, try resolving by req.SchoolID
+	if tenantDB == nil && c.Locals("role") == "super_admin" && req.SchoolID != "" {
+		log.Printf("[Student-Service] Super admin: resolving DB for SchoolID=%s", req.SchoolID)
+		var err error
+		tenantDB, tenantCode, err = h.getTenantDBBySchoolID(ctx, req.SchoolID)
+		if err != nil {
+			log.Printf("[Student-Service] DB resolution failed: %v", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error":   "Failed to resolve tenant database for super admin",
+				"details": err.Error(),
+			})
+		}
+		log.Printf("[Student-Service] Successfully resolved tenantCode=%s", tenantCode)
+	}
+
+	if tenantDB == nil {
+		log.Printf("[Student-Service] No tenant database connected")
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
 		})
 	}
 
@@ -179,7 +292,6 @@ func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
 	proxyReq.Header.Set("Content-Type", "application/json")
 
 	// Forward Tenant Code
-	tenantCode := middleware.GetTenantCode(c)
 	if tenantCode != "" {
 		proxyReq.Header.Set("X-Tenant-Code", tenantCode)
 	}
@@ -209,14 +321,6 @@ func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
 	userID := authResp.Data.UserID
 
 	// 2. Create Student in Database
-	ctx := context.Background()
-	tenantDB := middleware.GetTenantDB(c)
-	if tenantDB == nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to connect to tenant database",
-		})
-	}
-
 	query := `
 		INSERT INTO students (
 			school_id, user_id, first_name, last_name, email, 
@@ -284,7 +388,8 @@ func (h *StudentHandler) GetStudent(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
-	tenantDB := middleware.GetTenantDB(c)
+	tenantDB, tenantCode := h.getTenantDB(c)
+	log.Printf("[Student-Service] GetStudent: id=%s, tenantCode=%s", studentID, tenantCode)
 	if tenantDB == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to connect to tenant database",
@@ -309,8 +414,10 @@ func (h *StudentHandler) GetStudent(c *fiber.Ctx) error {
 		&student.CreatedAt, &student.UpdatedAt,
 	)
 	if err != nil {
+		log.Printf("[Student-Service] GetStudent failed for id %s: %v", studentID, err)
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "Student not found",
+			"error":      "Student not found",
+			"debug_info": fmt.Sprintf("ID: %s, Tenant: %s, Error: %v", studentID, tenantCode, err),
 		})
 	}
 
@@ -358,7 +465,7 @@ func (h *StudentHandler) GetStudentStatistics(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
-	tenantDB := middleware.GetTenantDB(c)
+	tenantDB, _ := h.getTenantDB(c)
 	if tenantDB == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to connect to tenant database",
@@ -437,7 +544,7 @@ func (h *StudentHandler) GetStudentAcademics(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
-	tenantDB := middleware.GetTenantDB(c)
+	tenantDB, _ := h.getTenantDB(c)
 	if tenantDB == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to connect to tenant database",
@@ -509,7 +616,7 @@ func (h *StudentHandler) GetStudentAttendance(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
-	tenantDB := middleware.GetTenantDB(c)
+	tenantDB, _ := h.getTenantDB(c)
 	if tenantDB == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to connect to tenant database",
@@ -583,7 +690,7 @@ func (h *StudentHandler) GetStudentFees(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
-	tenantDB := middleware.GetTenantDB(c)
+	tenantDB, _ := h.getTenantDB(c)
 	if tenantDB == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to connect to tenant database",
@@ -656,7 +763,7 @@ func (h *StudentHandler) GetStudentHealth(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
-	tenantDB := middleware.GetTenantDB(c)
+	tenantDB, _ := h.getTenantDB(c)
 	if tenantDB == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to connect to tenant database",
@@ -702,7 +809,7 @@ func (h *StudentHandler) GetStudentBehavioral(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
-	tenantDB := middleware.GetTenantDB(c)
+	tenantDB, _ := h.getTenantDB(c)
 	if tenantDB == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to connect to tenant database",
@@ -748,7 +855,7 @@ func (h *StudentHandler) GetStudentDocuments(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
-	tenantDB := middleware.GetTenantDB(c)
+	tenantDB, _ := h.getTenantDB(c)
 	if tenantDB == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to connect to tenant database",
@@ -794,7 +901,7 @@ func (h *StudentHandler) GetStudentCommunications(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 	ctx := context.Background()
 
-	tenantDB := middleware.GetTenantDB(c)
+	tenantDB, _ := h.getTenantDB(c)
 	if tenantDB == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to connect to tenant database",
@@ -982,8 +1089,137 @@ func (h *StudentHandler) getRecentActivities(ctx context.Context, studentID stri
 // @Failure 404 {object} map[string]interface{}
 // @Router /students/{id} [put]
 func (h *StudentHandler) UpdateStudent(c *fiber.Ctx) error {
-	id := c.Params("id")
-	return c.JSON(fiber.Map{"message": "Student updated", "student_id": id})
+	studentID := c.Params("id")
+	ctx := context.Background()
+
+	// Get tenant database connection
+	tenantDB, _ := h.getTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to connect to tenant database",
+		})
+	}
+
+	// Parse request body
+	var req UpdateStudentRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Invalid request body",
+			"details": err.Error(),
+		})
+	}
+
+	// Build dynamic UPDATE query based on provided fields
+	updateFields := []string{}
+	args := []interface{}{}
+	argPos := 1
+
+	if req.FirstName != "" {
+		updateFields = append(updateFields, fmt.Sprintf("first_name = $%d", argPos))
+		args = append(args, req.FirstName)
+		argPos++
+	}
+	if req.LastName != "" {
+		updateFields = append(updateFields, fmt.Sprintf("last_name = $%d", argPos))
+		args = append(args, req.LastName)
+		argPos++
+	}
+	if req.Email != "" {
+		updateFields = append(updateFields, fmt.Sprintf("email = $%d", argPos))
+		args = append(args, req.Email)
+		argPos++
+	}
+	if req.DateOfBirth != "" {
+		updateFields = append(updateFields, fmt.Sprintf("date_of_birth = $%d", argPos))
+		args = append(args, req.DateOfBirth)
+		argPos++
+	}
+	if req.Gender != "" {
+		updateFields = append(updateFields, fmt.Sprintf("gender = $%d", argPos))
+		args = append(args, req.Gender)
+		argPos++
+	}
+	if req.Nationality != "" {
+		updateFields = append(updateFields, fmt.Sprintf("nationality = $%d", argPos))
+		args = append(args, req.Nationality)
+		argPos++
+	}
+	if req.Class != "" {
+		updateFields = append(updateFields, fmt.Sprintf("class = $%d", argPos))
+		args = append(args, req.Class)
+		argPos++
+	}
+	if req.Section != "" {
+		updateFields = append(updateFields, fmt.Sprintf("section = $%d", argPos))
+		args = append(args, req.Section)
+		argPos++
+	}
+	if req.RollNumber != "" {
+		updateFields = append(updateFields, fmt.Sprintf("roll_number = $%d", argPos))
+		args = append(args, req.RollNumber)
+		argPos++
+	}
+	if req.BloodGroup != "" {
+		updateFields = append(updateFields, fmt.Sprintf("blood_group = $%d", argPos))
+		args = append(args, req.BloodGroup)
+		argPos++
+	}
+	if req.Phone != "" {
+		updateFields = append(updateFields, fmt.Sprintf("phone = $%d", argPos))
+		args = append(args, req.Phone)
+		argPos++
+	}
+	if req.Address != "" {
+		updateFields = append(updateFields, fmt.Sprintf("address = $%d", argPos))
+		args = append(args, req.Address)
+		argPos++
+	}
+	if req.PhotoURL != "" {
+		updateFields = append(updateFields, fmt.Sprintf("photo_url = $%d", argPos))
+		args = append(args, req.PhotoURL)
+		argPos++
+	}
+
+	// Always update updated_at timestamp
+	updateFields = append(updateFields, fmt.Sprintf("updated_at = $%d", argPos))
+	args = append(args, time.Now())
+	argPos++
+
+	// Add student ID as the last parameter
+	args = append(args, studentID)
+
+	if len(updateFields) == 1 { // Only updated_at was added
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "No fields to update",
+		})
+	}
+
+	// Build and execute UPDATE query
+	query := fmt.Sprintf(
+		"UPDATE students SET %s WHERE id = $%d RETURNING id",
+		strings.Join(updateFields, ", "),
+		argPos,
+	)
+
+	var updatedID int64
+	err := tenantDB.QueryRow(ctx, query, args...).Scan(&updatedID)
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "Student not found",
+			})
+		}
+		log.Printf("Failed to update student: %v", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   "Failed to update student",
+			"details": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"message":    "Student updated successfully",
+		"student_id": updatedID,
+	})
 }
 
 // DeleteStudent godoc

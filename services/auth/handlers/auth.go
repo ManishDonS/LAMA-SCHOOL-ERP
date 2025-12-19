@@ -130,13 +130,15 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	}
 
 	if err != nil {
+		logger.ErrorLog("handlers", err, "Failed to register user to database")
 		if err.Error() == "duplicate key value violates unique constraint \"users_school_id_email_key\"" {
 			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 				"error": "Email already registered",
 			})
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to register user",
+			"error":   "Failed to register user",
+			"details": err.Error(),
 		})
 	}
 

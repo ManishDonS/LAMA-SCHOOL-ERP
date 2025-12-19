@@ -44,7 +44,7 @@ interface FormData {
   firstName: string
   lastName: string
   email: string
-  password?: string // Added for creation
+  password?: string
   phone: string
   dateOfBirth: string
   gender: 'Male' | 'Female' | 'Other'
@@ -60,38 +60,24 @@ interface FormData {
   address: string
   city: string
   state: string
-  schoolId?: string // Optional for super admin
+  schoolId?: string
   department: string
   employeeId: string
 }
 
 const QUALIFICATIONS = [
-  'B.A.',
-  'B.Sc.',
-  'B.Com.',
-  'B.Ed.',
-  'M.A.',
-  'M.Sc.',
-  'M.Com.',
-  'M.Ed.',
-  'Ph.D.',
-  'Diploma',
+  'B.A.', 'B.Sc.', 'B.Com.', 'B.Ed.', 'M.A.', 'M.Sc.', 'M.Com.', 'M.Ed.', 'Ph.D.', 'Diploma',
 ]
 
 const SPECIALIZATIONS = [
-  'Mathematics',
-  'Science',
-  'English',
-  'History',
-  'Geography',
-  'Computer Science',
-  'Physical Education',
-  'Art & Design',
-  'Music',
-  'Languages',
-  'Business Studies',
-  'Economics',
+  'Mathematics', 'Science', 'English', 'History', 'Geography', 'Computer Science',
+  'Physical Education', 'Art & Design', 'Music', 'Languages', 'Business Studies', 'Economics',
 ]
+
+const EMPLOYMENT_TYPES = ['Full-time', 'Part-time', 'Contract']
+const DEPARTMENTS = ['Science', 'Mathematics', 'English', 'Social Studies', 'Computer', 'Physical Education', 'Arts', 'Primary']
+const GENDERS = ['Male', 'Female', 'Other']
+const STATUS_OPTIONS = ['Active', 'On Leave', 'Inactive']
 
 const DEFAULT_FORM_STATE: FormData = {
   firstName: '',
@@ -125,8 +111,9 @@ export default function TeachersPage() {
   const [isHydrated, setIsHydrated] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState('personal')
+  const [activeTab, setActiveTab] = useState<'personal' | 'professional' | 'academic'>('personal')
   const [formData, setFormData] = useState<FormData>(DEFAULT_FORM_STATE)
+  const [selectedSchool, setSelectedSchool] = useState<{ id: string, name: string, code: string } | null>(null)
   const [loading, setLoading] = useState(false)
 
   // Check if user is super admin
@@ -176,6 +163,16 @@ export default function TeachersPage() {
       }
     }
     fetchSchools()
+
+    // Check for selected school in localStorage
+    const schoolData = localStorage.getItem('selected_school')
+    if (schoolData) {
+      try {
+        setSelectedSchool(JSON.parse(schoolData))
+      } catch (e) {
+        console.error('Failed to parse selected school', e)
+      }
+    }
   }, [isSuperAdmin])
 
   const generateTeacherId = () => {
@@ -207,18 +204,18 @@ export default function TeachersPage() {
       qualification: teacher.qualification || '',
       specialization: teacher.specialization || '',
       experience: teacher.experience || 0,
-      joiningDate: teacher.join_date || teacher.joiningDate || '',
-      employmentType: teacher.employmentType || 'Full-time',
+      joiningDate: (teacher.join_date || teacher.joiningDate || '').split('T')[0],
+      employmentType: teacher.employmentType || teacher.employment_type || 'Full-time',
       salary: teacher.salary || 0,
       status: teacher.status || 'Active',
-      classAssigned: teacher.classAssigned || '',
+      classAssigned: teacher.classAssigned || teacher.class_assigned || '',
       subject: teacher.subject || '',
       address: teacher.address || '',
       city: teacher.city || '',
       state: teacher.state || '',
       department: teacher.department || '',
       employeeId: teacher.employee_id || teacher.teacherId || '',
-      password: '', // Don't fill password on edit
+      password: '',
     })
     setActiveTab('personal')
     setShowModal(true)
@@ -256,6 +253,30 @@ export default function TeachersPage() {
       alert('Employee ID is required')
       return false
     }
+
+    // Password validation for new teachers
+    if (!editingId && formData.password) {
+      if (formData.password.length < 8) {
+        alert('Password must be at least 8 characters long')
+        return false
+      }
+      if (!/[A-Z]/.test(formData.password)) {
+        alert('Password must contain at least one uppercase letter')
+        return false
+      }
+      if (!/[a-z]/.test(formData.password)) {
+        alert('Password must contain at least one lowercase letter')
+        return false
+      }
+      if (!/[0-9]/.test(formData.password)) {
+        alert('Password must contain at least one number')
+        return false
+      }
+      if (!/[!@#$%^&*(),.?":{}|<>]/.test(formData.password)) {
+        alert('Password must contain at least one special character')
+        return false
+      }
+    }
     return true
   }
 
@@ -271,20 +292,37 @@ export default function TeachersPage() {
         last_name: formData.lastName,
         email: formData.email,
         password: formData.password || 'Welcome@123',
-        school_id: formData.schoolId || '1', // Default or from context? Assuming 1 if not SuperAdmin
+        school_id: formData.schoolId || '1',
         qualification: formData.qualification,
-        department: formData.department || 'General',
+        phone: formData.phone,
+        date_of_birth: formData.dateOfBirth,
+        gender: formData.gender,
+        specialization: formData.specialization,
+        experience: formData.experience,
+        employment_type: formData.employmentType,
+        salary: formData.salary,
+        address: formData.address,
+        city: formData.city,
+        state: formData.state,
+        subject: formData.subject,
+        class_assigned: formData.classAssigned,
+        department: formData.department,
         employee_id: formData.employeeId,
-        // Add other fields if backend supports them later
       }
 
-      // Use School Code from local storage if not super admin
-      if (!isSuperAdmin) {
-        const selectedSchoolStr = localStorage.getItem('selected_school')
-        if (selectedSchoolStr) {
-          const selectedSchool = JSON.parse(selectedSchoolStr)
-          payload.school_id = selectedSchool.id.toString()
+      // Use School Code from local storage
+      const selectedSchoolStr = localStorage.getItem('selected_school')
+      if (selectedSchoolStr) {
+        const selectedSchool = JSON.parse(selectedSchoolStr)
+        if (selectedSchool.code === 'system') {
+          alert('You must select a specific school from the Schools list before creating a teacher.')
+          setLoading(false)
+          return
         }
+        payload.school_id = selectedSchool.id.toString()
+      } else if (!isSuperAdmin) {
+        alert('Active school not found. Please re-select school.')
+        return
       }
 
       if (editingId) {
@@ -323,6 +361,34 @@ export default function TeachersPage() {
       prev.map((t) =>
         t.id === id ? { ...t, status: newStatus } : t
       )
+    )
+  }
+
+  if (isSuperAdmin && (!selectedSchool || selectedSchool.code === 'system')) {
+    return (
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col">
+        <Navbar showBackButton={true} backLink="/dashboard" />
+        <div className="flex flex-1">
+          <Sidebar />
+          <main className="flex-1 p-8">
+            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <span className="text-yellow-400 text-2xl">⚠️</span>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-yellow-700 font-medium">
+                    Super Admin Context Required
+                  </p>
+                  <p className="text-sm text-yellow-600 mt-1">
+                    Please select a school from the <Link href="/dashboard/schools" className="font-bold underline">Schools list</Link> to manage teachers.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
     )
   }
 
@@ -457,7 +523,15 @@ export default function TeachersPage() {
                     ? 'border-blue-600 text-blue-600 dark:text-blue-400'
                     : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
                     }`}>
-                  Professional & Dept
+                  Professional Info
+                </button>
+                <button
+                  onClick={() => setActiveTab('academic')}
+                  className={`py-4 px-4 font-semibold transition-all border-b-2 ${activeTab === 'academic'
+                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
+                    }`}>
+                  Academic & Assigned
                 </button>
               </div>
             </div>
@@ -466,29 +540,7 @@ export default function TeachersPage() {
             <div className="flex-1 overflow-y-auto px-8 py-6">
               {/* Personal Info Tab */}
               {activeTab === 'personal' && (
-                <div className="space-y-6">
-                  {/* School Selector for Super Admin */}
-                  {isSuperAdmin && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Select School *
-                      </label>
-                      <select
-                        name="schoolId"
-                        value={formData.schoolId || ''}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="">-- Select a School --</option>
-                        {schools.map((school) => (
-                          <option key={school.id} value={school.id}>
-                            {school.name} ({school.code})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
+                <div className="space-y-6 animate-in fade-in duration-300">
                   <div className="grid grid-cols-2 gap-6">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">First Name *</label>
@@ -497,8 +549,8 @@ export default function TeachersPage() {
                         name="firstName"
                         value={formData.firstName}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter first name"
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="First name"
                       />
                     </div>
                     <div>
@@ -508,86 +560,259 @@ export default function TeachersPage() {
                         name="lastName"
                         value={formData.lastName}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter last name"
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="Last name"
                       />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
-                      <input
-                        type="email"
-                        name="email"
-                        value={formData.email}
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Gender *</label>
+                      <select
+                        name="gender"
+                        value={formData.gender}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter email address"
-                      />
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                      >
+                        {GENDERS.map(g => <option key={g} value={g}>{g}</option>)}
+                      </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Password *</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date of Birth</label>
                       <input
-                        type="password"
-                        name="password"
-                        value={formData.password}
+                        type="date"
+                        name="dateOfBirth"
+                        value={formData.dateOfBirth}
                         onChange={handleInputChange}
-                        disabled={!!editingId}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
-                        placeholder={editingId ? 'Unchanged' : 'Enter password'}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Employee ID *</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone Number</label>
+                      <input
+                        type="tel"
+                        name="phone"
+                        value={formData.phone}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="+977-XXXXXXXXXX"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Address</label>
+                    <textarea
+                      name="address"
+                      value={formData.address}
+                      onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
+                      rows={2}
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="Full Address"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City</label>
                       <input
                         type="text"
-                        name="employeeId"
-                        value={formData.employeeId}
+                        name="city"
+                        value={formData.city}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="TCH-XXXX"
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="City"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">State/Province</label>
+                      <input
+                        type="text"
+                        name="state"
+                        value={formData.state}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="State"
                       />
                     </div>
                   </div>
-
                 </div>
               )}
 
               {/* Professional Details Tab */}
               {activeTab === 'professional' && (
-                <div className="space-y-6">
+                <div className="space-y-6 animate-in fade-in duration-300">
                   <div className="grid grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Qualification *</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email Access *</label>
+                      <input
+                        type="email"
+                        name="email"
+                        value={formData.email}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 transition-all"
+                        placeholder="Professional Email"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Employee ID *</label>
+                      <input
+                        type="text"
+                        name="employeeId"
+                        value={formData.employeeId}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="e.g. TCH-2024-001"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Qualification *</label>
                       <select
                         name="qualification"
                         value={formData.qualification}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                        <option value="">Select qualification</option>
-                        {QUALIFICATIONS.map((qual) => (
-                          <option key={qual} value={qual}>
-                            {qual}
-                          </option>
-                        ))}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="">Select Qualification</option>
+                        {QUALIFICATIONS.map(q => <option key={q} value={q}>{q}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Specialization</label>
+                      <select
+                        name="specialization"
+                        value={formData.specialization}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="">Select Specialization</option>
+                        {SPECIALIZATIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Joining Date *</label>
                       <input
-                        type="text"
+                        type="date"
+                        name="joiningDate"
+                        value={formData.joiningDate}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Experience (Years)</label>
+                      <input
+                        type="number"
+                        name="experience"
+                        value={formData.experience}
+                        onChange={handleInputChange}
+                        step="0.5"
+                        min="0"
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Employment Type</label>
+                      <select
+                        name="employmentType"
+                        value={formData.employmentType}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500">
+                        {EMPLOYMENT_TYPES.map(e => <option key={e} value={e}>{e}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Monthly Salary (NPR)</label>
+                      <input
+                        type="number"
+                        name="salary"
+                        value={formData.salary}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Academic Tab */}
+              {activeTab === 'academic' && (
+                <div className="space-y-6 animate-in fade-in duration-300">
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Department</label>
+                      <select
                         name="department"
                         value={formData.department}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Select Department</option>
+                        {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Primary Subject</label>
+                      <input
+                        type="text"
+                        name="subject"
+                        value={formData.subject}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
                         placeholder="e.g. Science"
                       />
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Assigned Class</label>
+                      <input
+                        type="text"
+                        name="classAssigned"
+                        value={formData.classAssigned}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="e.g. Class 10-A"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Status</label>
+                      <select
+                        name="status"
+                        value={formData.status}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                      >
+                        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  {!editingId && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Initial Password *</label>
+                      <input
+                        type="password"
+                        name="password"
+                        value={formData.password}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="••••••••"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>

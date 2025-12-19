@@ -95,7 +95,7 @@ func main() {
 	})
 
 	// Setup routes
-	routes.SetupRoutes(app, db, cfg)
+	routes.SetupRoutes(app, db, cfg, tenantManager)
 
 	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {

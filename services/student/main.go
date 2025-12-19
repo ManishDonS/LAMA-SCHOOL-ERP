@@ -105,7 +105,7 @@ func main() {
 		DBPort:        dbPort,
 	}))
 
-	routes.SetupRoutes(app, db, cfg)
+	routes.SetupRoutes(app, db, cfg, tenantManager)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "healthy", "service": "student"})

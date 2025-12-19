@@ -50,6 +50,13 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 			})
 		}
 
+		// Skip DB resolution for "system" tenant (Super Admin context)
+		// This allows handlers to handle cross-tenant operations using school_id from body
+		if tenantCode == "system" {
+			c.Locals(TenantCodeContextKey, tenantCode)
+			return c.Next()
+		}
+
 		ctx := context.Background()
 
 		// Fetch school credentials from main database

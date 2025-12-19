@@ -507,15 +507,39 @@ export default function StudentsPage() {
     }
   }
 
-  const handleEditSubmit = (e: React.FormEvent) => {
+  const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (editingStudentId === null) return
-    setStudents((prev) =>
-      prev.map((student) =>
-        student.id === editingStudentId ? formData : student
-      )
-    )
-    handleCloseEditModal()
+
+    try {
+      // Prepare update payload
+      const updatePayload = {
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        email: formData.email,
+        date_of_birth: formData.dateOfBirth,
+        gender: formData.gender,
+        nationality: formData.nationality,
+        class: formData.currentClass,
+        section: formData.section,
+        roll_number: formData.rollNumber,
+        blood_group: formData.bloodGroup,
+        phone: formData.primaryPhone,
+        address: formData.homeAddress,
+      }
+
+      // Call API to update student
+      await studentAPI.update(editingStudentId, updatePayload)
+
+      // Refresh the student list to get updated data
+      await fetchStudents()
+
+      // Close the modal
+      handleCloseEditModal()
+    } catch (error: any) {
+      console.error('Failed to update student:', error)
+      alert(error.response?.data?.error || 'Failed to update student')
+    }
   }
 
   const handleChangePasswordClick = (studentId: number) => {

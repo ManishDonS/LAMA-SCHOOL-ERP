@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/gofiber/fiber/v2"
@@ -43,7 +42,17 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 
 		// Extract tenant code from request
 		tenantCode := extractTenantCode(c)
+
+		// Check if user is super admin
+		role := c.Locals("role")
+		isSuperAdmin := role == "super_admin"
+
 		if tenantCode == "" {
+			if isSuperAdmin {
+				// Super admin might not provide tenant code in header/query
+				// We allow them to proceed, and handlers will deal with SchoolID from body
+				return c.Next()
+			}
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"error":   "Tenant code is required",
 				"details": "Provide tenant code via header (X-Tenant-Code), query parameter (tenant_code), or subdomain",
@@ -53,9 +62,9 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 		ctx := context.Background()
 
 		// Fetch school credentials from main database
-		var dbUser, encryptedPassword string
-		query := `SELECT db_user, db_password FROM schools WHERE code = $1 AND status = 'active'`
-		err := cfg.MainDB.QueryRow(ctx, query, tenantCode).Scan(&dbUser, &encryptedPassword)
+		var dbUser, encryptedPassword, dbName string
+		query := `SELECT db_user, db_password, db_name FROM schools WHERE code = $1 AND status = 'active'`
+		err := cfg.MainDB.QueryRow(ctx, query, tenantCode).Scan(&dbUser, &encryptedPassword, &dbName)
 		if err != nil {
 			log.Printf("School not found or inactive for tenant %s: %v\n", tenantCode, err)
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -70,7 +79,7 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 			tenantCode,
 			cfg.DBHost,
 			cfg.DBPort,
-			fmt.Sprintf("school_%s_db", tenantCode),
+			dbName,
 			dbUser,
 			encryptedPassword,
 			database.RunMigrations, // Run migrations on new connection

@@ -129,7 +129,7 @@ export default function LoginPage() {
       } else {
         // If no school was selected, but login was successful (e.g., system admin),
         // store a placeholder for the system tenant.
-        localStorage.setItem('selected_school', JSON.stringify({ id: 'system', name: 'System Admin', code: 'system' }))
+        localStorage.setItem('selected_school', JSON.stringify({ id: '00000000-0000-0000-0000-000000000000', name: 'System Admin', code: 'system' }))
       }
 
       toast.success('Login successful!')

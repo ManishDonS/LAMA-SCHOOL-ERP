@@ -6,22 +6,22 @@ type Student struct {
 	ID              int64      `json:"id"`
 	SchoolID        string     `json:"school_id"`
 	UserID          string     `json:"user_id"`
-	FirstName       string     `json:"first_name"`
-	LastName        string     `json:"last_name"`
+	FirstName       *string    `json:"first_name"`
+	LastName        *string    `json:"last_name"`
 	DateOfBirth     *time.Time `json:"date_of_birth"`
-	Gender          string     `json:"gender"`
-	Nationality     string     `json:"nationality"`
-	StudentIDNumber string     `json:"student_id_number"`
+	Gender          *string    `json:"gender"`
+	Nationality     *string    `json:"nationality"`
+	StudentIDNumber *string    `json:"student_id_number"`
 	RollNumber      string     `json:"roll_number"`
-	Class           string     `json:"class"`
-	Section         string     `json:"section"`
+	Class           *string    `json:"class"`
+	Section         *string    `json:"section"`
 	EnrollmentDate  *time.Time `json:"enrollment_date"`
 	AdmissionDate   time.Time  `json:"admission_date"`
-	BloodGroup      string     `json:"blood_group"`
-	PhotoURL        string     `json:"photo_url"`
-	Email           string     `json:"email"`
-	Phone           string     `json:"phone"`
-	Address         string     `json:"address"`
+	BloodGroup      *string    `json:"blood_group"`
+	PhotoURL        *string    `json:"photo_url"`
+	Email           *string    `json:"email"`
+	Phone           *string    `json:"phone"`
+	Address         *string    `json:"address"`
 	Status          string     `json:"status"` // active, inactive, graduated
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`

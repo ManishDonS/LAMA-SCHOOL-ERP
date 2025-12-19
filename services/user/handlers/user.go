@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,11 +15,13 @@ import (
 	"school-erp/user/config"
 	"school-erp/user/database"
 	"school-erp/user/middleware"
+	"school-erp/user/pkg/tenant"
 )
 
 type UserHandler struct {
 	db  *pgxpool.Pool
 	cfg *config.Config
+	tm  *tenant.TenantManager
 }
 
 type CreateUserRequest struct {
@@ -35,14 +39,26 @@ type UpdateUserRequest struct {
 }
 
 type CreateTeacherRequest struct {
-	FirstName     string `json:"first_name" validate:"required"`
-	LastName      string `json:"last_name" validate:"required"`
-	Email         string `json:"email" validate:"required,email"`
-	Password      string `json:"password" validate:"required"`
-	SchoolID      string `json:"school_id" validate:"required"`
-	Qualification string `json:"qualification" validate:"required"`
-	Department    string `json:"department"`
-	EmployeeID    string `json:"employee_id" validate:"required"`
+	FirstName      string  `json:"first_name" validate:"required"`
+	LastName       string  `json:"last_name" validate:"required"`
+	Email          string  `json:"email" validate:"required,email"`
+	Password       string  `json:"password" validate:"required"`
+	SchoolID       string  `json:"school_id" validate:"required"`
+	Qualification  string  `json:"qualification" validate:"required"`
+	Phone          string  `json:"phone"`
+	DateOfBirth    string  `json:"date_of_birth"`
+	Gender         string  `json:"gender"`
+	Specialization string  `json:"specialization"`
+	Experience     float64 `json:"experience"`
+	EmploymentType string  `json:"employment_type"`
+	Salary         float64 `json:"salary"`
+	Address        string  `json:"address"`
+	City           string  `json:"city"`
+	State          string  `json:"state"`
+	Subject        string  `json:"subject"`
+	ClassAssigned  string  `json:"class_assigned"`
+	Department     string  `json:"department"`
+	EmployeeID     string  `json:"employee_id" validate:"required"`
 }
 
 type CreateParentRequest struct {
@@ -59,8 +75,8 @@ type CreateStaffRequest struct {
 	EmployeeID string `json:"employee_id" validate:"required"`
 }
 
-func NewUserHandler(db *pgxpool.Pool, cfg *config.Config) *UserHandler {
-	return &UserHandler{db: db, cfg: cfg}
+func NewUserHandler(db *pgxpool.Pool, cfg *config.Config, tm *tenant.TenantManager) *UserHandler {
+	return &UserHandler{db: db, cfg: cfg, tm: tm}
 }
 
 // User endpoints
@@ -207,6 +223,21 @@ func (h *UserHandler) CreateTeacher(c *fiber.Ctx) error {
 
 	// 2. Create Teacher in Tenant Database
 	tenantDB := middleware.GetTenantDB(c)
+	tenantCode = middleware.GetTenantCode(c)
+
+	if tenantDB == nil && req.SchoolID != "" {
+		fmt.Printf("Tenant DB not resolved from context, attempting resolution via SchoolID: %s\n", req.SchoolID)
+		var err error
+		tenantDB, tenantCode, err = h.getTenantDBBySchoolID(c.Context(), req.SchoolID)
+		if err != nil {
+			fmt.Printf("Failed to resolve tenant DB via SchoolID: %v\n", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error":   "Failed to resolve school database",
+				"details": err.Error(),
+			})
+		}
+	}
+
 	if tenantDB == nil {
 		fmt.Println("Failed to connect to tenant database (tenantDB is nil)")
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -214,13 +245,29 @@ func (h *UserHandler) CreateTeacher(c *fiber.Ctx) error {
 		})
 	}
 
-	fmt.Printf("Inserting teacher into tenant DB. UserID: %s, SchoolID: %s\n", userID, req.SchoolID)
+	fmt.Printf("Inserting teacher into tenant DB: %s. UserID: %s, SchoolID: %s\n", tenantCode, userID, req.SchoolID)
+
+	// Convert DateOfBirth string to time.Time if provided
+	var dob interface{}
+	if req.DateOfBirth != "" {
+		t, err := time.Parse("2006-01-02", req.DateOfBirth)
+		if err == nil {
+			dob = t
+		}
+	}
 
 	_, err = tenantDB.Exec(
 		c.Context(),
-		`INSERT INTO teachers (user_id, school_id, qualification, department, employee_id, join_date, status)
-		 VALUES ($1, $2, $3, $4, $5, NOW(), 'active')`,
+		`INSERT INTO teachers (
+			user_id, school_id, qualification, department, employee_id, 
+			phone, date_of_birth, gender, specialization, experience, 
+			employment_type, salary, address, city, state, 
+			subject, class_assigned, join_date, status
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), 'active')`,
 		userID, req.SchoolID, req.Qualification, req.Department, req.EmployeeID,
+		req.Phone, dob, req.Gender, req.Specialization, req.Experience,
+		req.EmploymentType, req.Salary, req.Address, req.City, req.State,
+		req.Subject, req.ClassAssigned,
 	)
 
 	if err != nil {
@@ -266,13 +313,18 @@ func (h *UserHandler) GetTeacher(c *fiber.Ctx) error {
 	// Given standard REST patterns, ID usually means resource ID.
 
 	query := `
-		SELECT id, user_id, qualification, department, employee_id, join_date, status
+		SELECT id, user_id, qualification, department, employee_id, 
+		       phone, date_of_birth, gender, specialization, experience, 
+		       employment_type, salary, address, city, state, 
+		       subject, class_assigned, join_date, status
 		FROM teachers WHERE id = $1
 	`
 
 	err := tenantDB.QueryRow(c.Context(), query, id).Scan(
-		&teacher.ID, &teacher.UserID, &teacher.Qualification,
-		&teacher.Department, &teacher.EmployeeID, &teacher.JoinDate, &teacher.Status,
+		&teacher.ID, &teacher.UserID, &teacher.Qualification, &teacher.Department, &teacher.EmployeeID,
+		&teacher.Phone, &teacher.DateOfBirth, &teacher.Gender, &teacher.Specialization, &teacher.Experience,
+		&teacher.EmploymentType, &teacher.Salary, &teacher.Address, &teacher.City, &teacher.State,
+		&teacher.Subject, &teacher.ClassAssigned, &teacher.JoinDate, &teacher.Status,
 	)
 
 	if err != nil {
@@ -296,7 +348,10 @@ func (h *UserHandler) GetTeachers(c *fiber.Ctx) error {
 	}
 
 	query := `
-		SELECT t.id, t.user_id, t.qualification, t.department, t.employee_id, t.join_date, t.status,
+		SELECT t.id, t.user_id, t.qualification, t.department, t.employee_id, 
+		       t.phone, t.date_of_birth, t.gender, t.specialization, t.experience, 
+		       t.employment_type, t.salary, t.address, t.city, t.state, 
+		       t.subject, t.class_assigned, t.join_date, t.status,
 		       u.first_name, u.last_name, u.email
 		FROM teachers t
 		JOIN users u ON t.user_id::uuid = u.id
@@ -316,7 +371,10 @@ func (h *UserHandler) GetTeachers(c *fiber.Ctx) error {
 	for rows.Next() {
 		var t database.Teacher
 		if err := rows.Scan(
-			&t.ID, &t.UserID, &t.Qualification, &t.Department, &t.EmployeeID, &t.JoinDate, &t.Status,
+			&t.ID, &t.UserID, &t.Qualification, &t.Department, &t.EmployeeID,
+			&t.Phone, &t.DateOfBirth, &t.Gender, &t.Specialization, &t.Experience,
+			&t.EmploymentType, &t.Salary, &t.Address, &t.City, &t.State,
+			&t.Subject, &t.ClassAssigned, &t.JoinDate, &t.Status,
 			&t.FirstName, &t.LastName, &t.Email,
 		); err != nil {
 			fmt.Printf("Error scanning teacher row: %v\n", err)
@@ -469,4 +527,34 @@ func (h *UserHandler) UpdateStaff(c *fiber.Ctx) error {
 		"message":  "Staff member updated successfully",
 		"staff_id": id,
 	})
+}
+func (h *UserHandler) getTenantDBBySchoolID(ctx context.Context, schoolID string) (*pgxpool.Pool, string, error) {
+	var dbUser, encryptedPassword, code string
+	query := `SELECT db_user, db_password, code FROM schools WHERE id = $1 AND status = 'active' OR code = $1 AND status = 'active'`
+	err := h.db.QueryRow(ctx, query, schoolID).Scan(&dbUser, &encryptedPassword, &code)
+	if err != nil {
+		// Try fetching by code if ID failed (in case schoolID is actually a code)
+		query = `SELECT db_user, db_password, code FROM schools WHERE code = $1 AND status = 'active'`
+		err = h.db.QueryRow(ctx, query, schoolID).Scan(&dbUser, &encryptedPassword, &code)
+		if err != nil {
+			return nil, "", fmt.Errorf("school not found or inactive: %w", err)
+		}
+	}
+
+	dbPort, _ := strconv.Atoi(h.cfg.DBPort)
+	tenantDB, err := h.tm.GetConnection(
+		ctx,
+		code,
+		h.cfg.DBHost,
+		dbPort,
+		fmt.Sprintf("school_%s_db", code),
+		dbUser,
+		encryptedPassword,
+		database.RunMigrations,
+	)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to connect to tenant database: %w", err)
+	}
+
+	return tenantDB, code, nil
 }

@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/gofiber/fiber/v2"
@@ -63,10 +62,10 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 			return c.Next()
 		}
 
-		var dbHost, dbUser, encryptedPassword string
+		var dbHost, dbUser, encryptedPassword, dbName string
 		var dbPort int
-		query := `SELECT db_host, db_port, db_user, db_password FROM schools WHERE code = $1 AND status = 'active'`
-		err := cfg.MainDB.QueryRow(ctx, query, tenantCode).Scan(&dbHost, &dbPort, &dbUser, &encryptedPassword)
+		query := `SELECT db_host, db_port, db_user, db_password, db_name FROM schools WHERE code = $1 AND status = 'active'`
+		err := cfg.MainDB.QueryRow(ctx, query, tenantCode).Scan(&dbHost, &dbPort, &dbUser, &encryptedPassword, &dbName)
 		if err != nil {
 			log.Printf("School not found or inactive for tenant %s: %v\n", tenantCode, err)
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -81,7 +80,7 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 			tenantCode,
 			dbHost,
 			dbPort,
-			fmt.Sprintf("school_%s_db", tenantCode),
+			dbName,
 			dbUser,
 			encryptedPassword,
 			database.RunMigrations, // Run migrations on new connection

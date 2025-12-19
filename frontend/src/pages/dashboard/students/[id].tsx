@@ -5,6 +5,8 @@ import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import Navbar from '@/components/Navbar'
 import { useAuthStore } from '@/store/authStore'
+import { studentAPI } from '@/services/api'
+import { toast } from 'react-hot-toast'
 
 interface Student {
     id: number
@@ -41,6 +43,18 @@ interface Student {
     pickupAddress: string
     dropoffAddress: string
     driverInfo: string
+}
+
+const COUNTRIES = [
+    "Nepal", "India", "United States", "United Kingdom", "Canada", "Australia", "Germany", "France", "Japan", "China", "United Arab Emirates", "Saudi Arabia", "Qatar", "Others"
+]
+
+const formatDate = (dateStr: string | null | undefined) => {
+    if (!dateStr) return '-'
+    if (typeof dateStr === 'string' && dateStr.includes('T')) {
+        return dateStr.split('T')[0]
+    }
+    return dateStr
 }
 
 interface Guardian {
@@ -222,19 +236,29 @@ export default function StudentDetailsPage() {
     const [showViewPhotoModal, setShowViewPhotoModal] = useState(false)
 
     // Handlers
-    const handlePhotoUpload = (photoDataUrl: string) => {
+    const handlePhotoUpload = async (photoDataUrl: string) => {
         if (student) {
-            const updatedStudent = { ...student, photoUrl: photoDataUrl }
-            setStudent(updatedStudent)
+            try {
+                // Persist to backend
+                await studentAPI.update(Number(id), { photo_url: photoDataUrl })
 
-            // Save to LocalStorage
-            const savedStudents = localStorage.getItem('students')
-            if (savedStudents) {
-                const parsedStudents = JSON.parse(savedStudents)
-                const updatedStudents = parsedStudents.map((s: any) =>
-                    s.id === student.id ? { ...s, photoUrl: photoDataUrl } : s
-                )
-                localStorage.setItem('students', JSON.stringify(updatedStudents))
+                const updatedStudent = { ...student, photoUrl: photoDataUrl }
+                setStudent(updatedStudent)
+
+                // Save to LocalStorage (Legacy fallback)
+                const savedStudents = localStorage.getItem('students')
+                if (savedStudents) {
+                    const parsedStudents = JSON.parse(savedStudents)
+                    const updatedStudents = parsedStudents.map((s: any) =>
+                        s.id === student.id ? { ...s, photoUrl: photoDataUrl } : s
+                    )
+                    localStorage.setItem('students', JSON.stringify(updatedStudents))
+                }
+
+                toast.success('Profile photo updated successfully')
+            } catch (error) {
+                console.error('Failed to update photo:', error)
+                toast.error('Failed to update profile photo')
             }
         }
     }
@@ -254,128 +278,161 @@ export default function StudentDetailsPage() {
     const [communications, setCommunications] = useState<ParentCommunication[]>([])
     const [activities, setActivities] = useState<StudentActivity[]>([])
 
+    // Edit Mode State
+    const [isEditing, setIsEditing] = useState(false)
+    const [editForm, setEditForm] = useState<Partial<Student>>({})
+
+    const handleSaveEdit = async () => {
+        if (!student) return
+        try {
+            setLoading(true)
+            await studentAPI.update(Number(id), {
+                first_name: editForm.firstName,
+                last_name: editForm.lastName,
+                date_of_birth: editForm.dateOfBirth,
+                gender: editForm.gender,
+                nationality: editForm.nationality,
+                blood_group: editForm.bloodGroup,
+                email: editForm.email,
+                phone: editForm.phone,
+                address: editForm.address,
+                class: editForm.class,
+                section: editForm.section,
+                roll_number: editForm.rollNumber,
+            })
+
+            setStudent({ ...student, ...editForm })
+            setIsEditing(false)
+            toast.success('Profile updated successfully')
+        } catch (error) {
+            console.error('Failed to update student:', error)
+            toast.error('Failed to update profile')
+        } finally {
+            setLoading(false)
+        }
+    }
+
     useEffect(() => {
         if (!id) return
 
-        if (typeof window !== 'undefined') {
-            const savedStudents = localStorage.getItem('students')
-            if (savedStudents) {
-                try {
-                    const parsedStudents = JSON.parse(savedStudents)
-                    const foundStudent = parsedStudents.find((s: any) => s.id === Number(id))
+        const fetchStudentDetails = async () => {
+            setLoading(true)
+            try {
+                // Fetch student data from API
+                const response = await studentAPI.get(Number(id))
+                const studentData = response.data
 
-                    if (foundStudent) {
-                        // Map the stored student data to the component's expected format
-                        // Note: The stored data might have slightly different field names or missing fields
-                        // compared to the full mock data, so we ensure defaults here.
-
-                        const mappedStudent: Student = {
-                            id: foundStudent.id,
-                            firstName: foundStudent.firstName || '',
-                            lastName: foundStudent.lastName || '',
-                            dateOfBirth: foundStudent.dateOfBirth || '',
-                            gender: foundStudent.gender || '',
-                            nationality: foundStudent.nationality || '',
-                            studentIdNumber: foundStudent.studentId || foundStudent.studentIdNumber || '', // Handle both naming conventions
-                            enrollmentDate: foundStudent.enrollmentDate || '',
-                            class: foundStudent.currentClass || foundStudent.class || '',
-                            section: foundStudent.section || '',
-                            rollNumber: foundStudent.rollNumber || '',
-                            bloodGroup: foundStudent.bloodGroup || '',
-                            photoUrl: foundStudent.photoUrl || '',
-                            email: '', // Email from form belongs to guardian
-                            phone: foundStudent.primaryPhone || foundStudent.phone || '', // Map primaryPhone from list to phone
-                            address: foundStudent.homeAddress || foundStudent.address || '',
-                            status: foundStudent.status || 'Active',
-                            username: foundStudent.username || '',
-                            // Health & Safety
-                            medicalConditions: foundStudent.medicalConditions || '',
-                            allergies: foundStudent.allergies || '',
-                            medications: foundStudent.medications || '',
-                            specialNeeds: foundStudent.specialNeeds || '',
-                            // Academics
-                            previousSchool: foundStudent.previousSchool || '',
-                            subjects: foundStudent.subjects || '',
-                            house: foundStudent.house || '',
-                            // Transport
-                            rfidNumber: foundStudent.rfidNumber || '',
-                            busRoute: foundStudent.busRoute || '',
-                            uniformSize: foundStudent.uniformSize || '',
-                            pickupAddress: foundStudent.pickupAddress || '',
-                            dropoffAddress: foundStudent.dropoffAddress || '',
-                            driverInfo: foundStudent.driverInfo || '',
-                        }
-
-                        // Map guardian info
-                        const mappedGuardians: Guardian[] = []
-                        if (foundStudent.fatherName) {
-                            mappedGuardians.push({
-                                id: 1,
-                                guardianType: 'father',
-                                name: foundStudent.fatherName,
-                                relationship: 'Father',
-                                phone: foundStudent.primaryPhone || '', // Using primary phone as fallback
-                                email: foundStudent.email || '', // Assign shared email to father
-                                occupation: '',
-                                address: foundStudent.homeAddress || '',
-                                isPrimary: true,
-                            })
-                        }
-                        if (foundStudent.motherName) {
-                            mappedGuardians.push({
-                                id: 2,
-                                guardianType: 'mother',
-                                name: foundStudent.motherName,
-                                relationship: 'Mother',
-                                phone: '',
-                                email: '',
-                                occupation: '',
-                                address: foundStudent.homeAddress || '',
-                                isPrimary: false,
-                            })
-                        }
-                        // If we have a specific guardian set
-                        if (foundStudent.guardianName) {
-                            mappedGuardians.push({
-                                id: 3,
-                                guardianType: 'guardian',
-                                name: foundStudent.guardianName,
-                                relationship: foundStudent.guardianRelation || 'Guardian',
-                                phone: '',
-                                email: !foundStudent.fatherName ? (foundStudent.email || '') : '', // Fallback if no father
-                                occupation: '',
-                                address: foundStudent.homeAddress || '',
-                                isPrimary: false,
-                            })
-                        }
-
-                        // Mock statistics based on real data where possible, or defaults
-                        const derivedStatistics: Statistics = {
-                            overallAttendance: 0, // Default to 0 as we don't have this in basic profile
-                            currentGpa: 0,
-                            currentPercentage: 0,
-                            totalFeesPaid: 0,
-                            outstandingFees: 0,
-                            behaviorPoints: 100, // Start with full points
-                            totalAbsences: 0,
-                            totalLateDays: 0,
-                            documentsCount: 0,
-                            healthRecordsCount: 0,
-                        }
-
-                        setStudent(mappedStudent)
-                        setGuardians(mappedGuardians)
-                        setStatistics(derivedStatistics)
-                    } else {
-                        setStudent(null)
-                    }
-                } catch (error) {
-                    console.error('Failed to load student details:', error)
-                    setStudent(null)
+                // Map the API response to the component's expected format
+                const s = studentData.student || {}
+                const mappedStudent: Student = {
+                    id: s.id,
+                    firstName: s.firstName || s.first_name || '',
+                    lastName: s.lastName || s.last_name || '',
+                    dateOfBirth: s.dateOfBirth || s.date_of_birth || '',
+                    gender: s.gender || '',
+                    nationality: s.nationality || '',
+                    studentIdNumber: s.studentIdNumber || s.student_id_number || '',
+                    enrollmentDate: s.enrollmentDate || s.enrollment_date || '',
+                    class: s.currentClass || s.current_class || s.class || '',
+                    section: s.section || '',
+                    rollNumber: s.rollNumber || s.roll_number || '',
+                    bloodGroup: s.bloodGroup || s.blood_group || '',
+                    photoUrl: s.photoUrl || s.photo_url || '',
+                    email: s.email || '',
+                    phone: s.phone || s.primary_phone || '',
+                    address: s.address || s.home_address || '',
+                    status: s.status || 'Active',
+                    username: s.username || '',
+                    // Health & Safety
+                    medicalConditions: s.medicalConditions || s.medical_conditions || '',
+                    allergies: s.allergies || '',
+                    medications: s.medications || '',
+                    specialNeeds: s.specialNeeds || s.special_needs || '',
+                    // Academics
+                    previousSchool: s.previousSchool || s.previous_school || '',
+                    subjects: s.subjects || '',
+                    house: s.house || '',
+                    // Transport
+                    rfidNumber: s.rfidNumber || s.rfid_number || '',
+                    busRoute: s.busRoute || s.bus_route || '',
+                    uniformSize: s.uniformSize || s.uniform_size || '',
+                    pickupAddress: s.pickupAddress || s.pickup_address || '',
+                    dropoffAddress: s.dropoffAddress || s.dropoff_address || '',
+                    driverInfo: s.driverInfo || s.driver_info || '',
                 }
+
+                // Map guardian info from API response
+                const mappedGuardians: Guardian[] = []
+                if (studentData.guardians && Array.isArray(studentData.guardians)) {
+                    studentData.guardians.forEach((guardian: any, index: number) => {
+                        mappedGuardians.push({
+                            id: guardian.id || index + 1,
+                            guardianType: guardian.guardianType || guardian.guardian_type || 'guardian',
+                            name: guardian.name || '',
+                            relationship: guardian.relationship || '',
+                            phone: guardian.phone || '',
+                            email: guardian.email || '',
+                            occupation: guardian.occupation || '',
+                            address: guardian.address || '',
+                            isPrimary: guardian.isPrimary || guardian.is_primary || false,
+                        })
+                    })
+                } else {
+                    // Fallback to legacy fields if guardians array not present
+                    if (studentData.fatherName || studentData.father_name) {
+                        mappedGuardians.push({
+                            id: 1,
+                            guardianType: 'father',
+                            name: studentData.fatherName || studentData.father_name,
+                            relationship: 'Father',
+                            phone: studentData.primaryPhone || studentData.primary_phone || '',
+                            email: studentData.email || '',
+                            occupation: '',
+                            address: studentData.homeAddress || studentData.home_address || '',
+                            isPrimary: true,
+                        })
+                    }
+                    if (studentData.motherName || studentData.mother_name) {
+                        mappedGuardians.push({
+                            id: 2,
+                            guardianType: 'mother',
+                            name: studentData.motherName || studentData.mother_name,
+                            relationship: 'Mother',
+                            phone: '',
+                            email: '',
+                            occupation: '',
+                            address: studentData.homeAddress || studentData.home_address || '',
+                            isPrimary: false,
+                        })
+                    }
+                }
+
+                // Mock statistics based on real data where possible, or defaults
+                const derivedStatistics: Statistics = {
+                    overallAttendance: studentData.overallAttendance || studentData.overall_attendance || 0,
+                    currentGpa: studentData.currentGpa || studentData.current_gpa || 0,
+                    currentPercentage: studentData.currentPercentage || studentData.current_percentage || 0,
+                    totalFeesPaid: studentData.totalFeesPaid || studentData.total_fees_paid || 0,
+                    outstandingFees: studentData.outstandingFees || studentData.outstanding_fees || 0,
+                    behaviorPoints: studentData.behaviorPoints || studentData.behavior_points || 100,
+                    totalAbsences: studentData.totalAbsences || studentData.total_absences || 0,
+                    totalLateDays: studentData.totalLateDays || studentData.total_late_days || 0,
+                    documentsCount: studentData.documentsCount || studentData.documents_count || 0,
+                    healthRecordsCount: studentData.healthRecordsCount || studentData.health_records_count || 0,
+                }
+
+                setStudent(mappedStudent)
+                setGuardians(mappedGuardians)
+                setStatistics(derivedStatistics)
+            } catch (error) {
+                console.error('Failed to fetch student details:', error)
+                setStudent(null)
+            } finally {
+                setLoading(false)
             }
-            setLoading(false)
         }
+
+        fetchStudentDetails()
     }, [id])
 
     if (loading) {
@@ -447,15 +504,68 @@ export default function StudentDetailsPage() {
 
                                 {/* Student Info */}
                                 <div>
-                                    <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-1">
-                                        {student.firstName} {student.lastName}
-                                    </h1>
+                                    {isEditing ? (
+                                        <div className="flex gap-2 mb-1">
+                                            <input
+                                                type="text"
+                                                className="text-2xl font-bold border rounded px-2 py-1 w-40"
+                                                value={editForm.firstName}
+                                                onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })}
+                                                placeholder="First Name"
+                                            />
+                                            <input
+                                                type="text"
+                                                className="text-2xl font-bold border rounded px-2 py-1 w-40"
+                                                value={editForm.lastName}
+                                                onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })}
+                                                placeholder="Last Name"
+                                            />
+                                        </div>
+                                    ) : (
+                                        <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-1">
+                                            {student.firstName} {student.lastName}
+                                        </h1>
+                                    )}
                                     <div className="flex items-center gap-4 text-sm text-gray-600 mb-2">
-                                        <span className="font-semibold">ID: {student.studentIdNumber}</span>
-                                        <span>•</span>
-                                        <span>Class: {student.class}</span>
-                                        <span>•</span>
-                                        <span>Roll No: {student.rollNumber}</span>
+                                        {isEditing ? (
+                                            <>
+                                                <div className="flex items-center gap-1">
+                                                    <label className="font-semibold text-xs">Class:</label>
+                                                    <input
+                                                        type="text"
+                                                        className="border rounded px-1 w-16 text-xs"
+                                                        value={editForm.class}
+                                                        onChange={(e) => setEditForm({ ...editForm, class: e.target.value })}
+                                                    />
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <label className="font-semibold text-xs">Section:</label>
+                                                    <input
+                                                        type="text"
+                                                        className="border rounded px-1 w-12 text-xs"
+                                                        value={editForm.section}
+                                                        onChange={(e) => setEditForm({ ...editForm, section: e.target.value })}
+                                                    />
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <label className="font-semibold text-xs">Roll:</label>
+                                                    <input
+                                                        type="text"
+                                                        className="border rounded px-1 w-16 text-xs"
+                                                        value={editForm.rollNumber}
+                                                        onChange={(e) => setEditForm({ ...editForm, rollNumber: e.target.value })}
+                                                    />
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span className="font-semibold">ID: {student.studentIdNumber}</span>
+                                                <span>•</span>
+                                                <span>Class: {student.class}</span>
+                                                <span>•</span>
+                                                <span>Roll No: {student.rollNumber}</span>
+                                            </>
+                                        )}
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <span className={`px-3 py-1 rounded-full text-sm font-semibold ${student.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
@@ -468,12 +578,32 @@ export default function StudentDetailsPage() {
 
                             {/* Quick Actions */}
                             <div className="flex gap-2 print:hidden">
-                                <button
-                                    onClick={() => router.push(`/dashboard/students?action=edit&id=${student.id}`)}
-                                    className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-semibold transition-colors"
-                                >
-                                    ✏️ Edit
-                                </button>
+                                {isEditing ? (
+                                    <>
+                                        <button
+                                            onClick={handleSaveEdit}
+                                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition-colors"
+                                        >
+                                            💾 Save Changes
+                                        </button>
+                                        <button
+                                            onClick={() => setIsEditing(false)}
+                                            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </>
+                                ) : (
+                                    <button
+                                        onClick={() => {
+                                            setEditForm({ ...student })
+                                            setIsEditing(true)
+                                        }}
+                                        className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-semibold transition-colors"
+                                    >
+                                        ✏️ Edit
+                                    </button>
+                                )}
                                 <button
                                     onClick={() => alert('Opening message dialog...')}
                                     className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 font-semibold transition-colors"
@@ -556,23 +686,73 @@ export default function StudentDetailsPage() {
                                         <div className="grid grid-cols-3 gap-4">
                                             <div>
                                                 <label className="text-sm font-semibold text-gray-600">Date of Birth</label>
-                                                <p className="text-gray-800">{student.dateOfBirth}</p>
+                                                {isEditing ? (
+                                                    <input
+                                                        type="date"
+                                                        className="w-full border rounded px-2 py-1 text-sm mt-1"
+                                                        value={formatDate(editForm.dateOfBirth)}
+                                                        onChange={(e) => setEditForm({ ...editForm, dateOfBirth: e.target.value })}
+                                                    />
+                                                ) : (
+                                                    <p className="text-gray-800">{formatDate(student.dateOfBirth)}</p>
+                                                )}
                                             </div>
                                             <div>
                                                 <label className="text-sm font-semibold text-gray-600">Gender</label>
-                                                <p className="text-gray-800">{student.gender}</p>
+                                                {isEditing ? (
+                                                    <select
+                                                        className="w-full border rounded px-2 py-1 text-sm mt-1"
+                                                        value={editForm.gender}
+                                                        onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
+                                                    >
+                                                        <option value="Male">Male</option>
+                                                        <option value="Female">Female</option>
+                                                        <option value="Other">Other</option>
+                                                    </select>
+                                                ) : (
+                                                    <p className="text-gray-800">{student.gender}</p>
+                                                )}
                                             </div>
                                             <div>
                                                 <label className="text-sm font-semibold text-gray-600">Nationality</label>
-                                                <p className="text-gray-800">{student.nationality}</p>
+                                                {isEditing ? (
+                                                    <select
+                                                        className="w-full border rounded px-2 py-1 text-sm mt-1"
+                                                        value={editForm.nationality}
+                                                        onChange={(e) => setEditForm({ ...editForm, nationality: e.target.value })}
+                                                    >
+                                                        <option value="">Select Country</option>
+                                                        {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                                    </select>
+                                                ) : (
+                                                    <p className="text-gray-800">{student.nationality}</p>
+                                                )}
                                             </div>
                                             <div>
                                                 <label className="text-sm font-semibold text-gray-600">Blood Group</label>
-                                                <p className="text-gray-800">{student.bloodGroup}</p>
+                                                {isEditing ? (
+                                                    <input
+                                                        type="text"
+                                                        className="w-full border rounded px-2 py-1 text-sm mt-1"
+                                                        value={editForm.bloodGroup}
+                                                        onChange={(e) => setEditForm({ ...editForm, bloodGroup: e.target.value })}
+                                                    />
+                                                ) : (
+                                                    <p className="text-gray-800">{student.bloodGroup}</p>
+                                                )}
                                             </div>
                                             <div>
                                                 <label className="text-sm font-semibold text-gray-600">Email</label>
-                                                <p className="text-gray-800">{student.email || '-'}</p>
+                                                {isEditing ? (
+                                                    <input
+                                                        type="email"
+                                                        className="w-full border rounded px-2 py-1 text-sm mt-1"
+                                                        value={editForm.email}
+                                                        onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                                                    />
+                                                ) : (
+                                                    <p className="text-gray-800">{student.email || '-'}</p>
+                                                )}
                                             </div>
                                             <div>
                                                 <label className="text-sm font-semibold text-gray-600">Username</label>
@@ -580,11 +760,29 @@ export default function StudentDetailsPage() {
                                             </div>
                                             <div>
                                                 <label className="text-sm font-semibold text-gray-600">Phone</label>
-                                                <p className="text-gray-800">{student.phone}</p>
+                                                {isEditing ? (
+                                                    <input
+                                                        type="text"
+                                                        className="w-full border rounded px-2 py-1 text-sm mt-1"
+                                                        value={editForm.phone}
+                                                        onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                                                    />
+                                                ) : (
+                                                    <p className="text-gray-800">{student.phone}</p>
+                                                )}
                                             </div>
                                             <div className="col-span-3">
                                                 <label className="text-sm font-semibold text-gray-600">Address</label>
-                                                <p className="text-gray-800">{student.address}</p>
+                                                {isEditing ? (
+                                                    <textarea
+                                                        className="w-full border rounded px-2 py-1 text-sm mt-1"
+                                                        rows={2}
+                                                        value={editForm.address}
+                                                        onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                                                    />
+                                                ) : (
+                                                    <p className="text-gray-800">{student.address}</p>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -595,7 +793,7 @@ export default function StudentDetailsPage() {
                                             <span>👨‍👩‍👧</span> Guardian Information
                                         </h3>
                                         <div className="space-y-4">
-                                            {guardians.map((guardian) => (
+                                            {guardians.length > 0 ? guardians.map((guardian) => (
                                                 <div key={guardian.id} className="bg-white rounded-lg p-4 border border-gray-200">
                                                     <div className="flex items-center justify-between mb-2">
                                                         <h4 className="font-bold text-gray-800">{guardian.name}</h4>
@@ -628,16 +826,14 @@ export default function StudentDetailsPage() {
                                                         </div>
                                                     </div>
                                                 </div>
-                                            ))}
+                                            )) : (
+                                                <p className="text-gray-500 italic">No guardian information available.</p>
+                                            )}
                                         </div>
                                     </div>
 
-                                    {/* Academic Summary */}
-
-
-
                                     {/* Transport Details */}
-                                    <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl p-6 border border-indigo-100 mt-6">
+                                    <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl p-6 border border-indigo-100">
                                         <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
                                             <span>🚌</span> Transport Details
                                         </h3>
@@ -688,19 +884,46 @@ export default function StudentDetailsPage() {
                                             <div className="space-y-3">
                                                 <div className="flex justify-between border-b pb-2">
                                                     <span className="text-gray-600">Class</span>
-                                                    <span className="font-semibold">{student.class}</span>
+                                                    {isEditing ? (
+                                                        <input
+                                                            type="text"
+                                                            className="border rounded px-2 w-24 text-sm"
+                                                            value={editForm.class}
+                                                            onChange={(e) => setEditForm({ ...editForm, class: e.target.value })}
+                                                        />
+                                                    ) : (
+                                                        <span className="font-semibold">{student.class}</span>
+                                                    )}
                                                 </div>
                                                 <div className="flex justify-between border-b pb-2">
                                                     <span className="text-gray-600">Section</span>
-                                                    <span className="font-semibold">{student.section}</span>
+                                                    {isEditing ? (
+                                                        <input
+                                                            type="text"
+                                                            className="border rounded px-2 w-24 text-sm"
+                                                            value={editForm.section}
+                                                            onChange={(e) => setEditForm({ ...editForm, section: e.target.value })}
+                                                        />
+                                                    ) : (
+                                                        <span className="font-semibold">{student.section}</span>
+                                                    )}
                                                 </div>
                                                 <div className="flex justify-between border-b pb-2">
                                                     <span className="text-gray-600">Roll Number</span>
-                                                    <span className="font-semibold">{student.rollNumber}</span>
+                                                    {isEditing ? (
+                                                        <input
+                                                            type="text"
+                                                            className="border rounded px-2 w-24 text-sm"
+                                                            value={editForm.rollNumber}
+                                                            onChange={(e) => setEditForm({ ...editForm, rollNumber: e.target.value })}
+                                                        />
+                                                    ) : (
+                                                        <span className="font-semibold">{student.rollNumber}</span>
+                                                    )}
                                                 </div>
                                                 <div className="flex justify-between">
                                                     <span className="text-gray-600">Enrollment Date</span>
-                                                    <span className="font-semibold">{student.enrollmentDate}</span>
+                                                    <span className="font-semibold">{formatDate(student.enrollmentDate)}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -899,45 +1122,49 @@ export default function StudentDetailsPage() {
                             )}
                         </div>
                     </div>
-                </main>
+                </main >
             </div >
             {/* Photo Upload Modal */}
-            {student && (
-                <PhotoUploadModal
-                    isOpen={showPhotoModal}
-                    onClose={() => setShowPhotoModal(false)}
-                    onUpload={handlePhotoUpload}
-                    studentId={student.id}
-                    studentName={`${student.firstName} ${student.lastName}`}
-                />
-            )}
+            {
+                student && (
+                    <PhotoUploadModal
+                        isOpen={showPhotoModal}
+                        onClose={() => setShowPhotoModal(false)}
+                        onUpload={handlePhotoUpload}
+                        studentId={student.id}
+                        studentName={`${student.firstName} ${student.lastName}`}
+                    />
+                )
+            }
 
             {/* View Photo Modal */}
-            {showViewPhotoModal && student && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm" onClick={() => setShowViewPhotoModal(false)}>
-                    <div className="relative max-w-4xl max-h-[90vh] w-full flex items-center justify-center">
-                        <button
-                            onClick={() => setShowViewPhotoModal(false)}
-                            className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors"
-                        >
-                            <span className="text-4xl">×</span>
-                        </button>
-                        {student.photoUrl ? (
-                            <img
-                                src={student.photoUrl}
-                                alt={`${student.firstName} ${student.lastName}`}
-                                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl border-4 border-white/10"
-                                onClick={(e) => e.stopPropagation()}
-                            />
-                        ) : (
-                            <div className="w-64 h-64 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-6xl font-bold shadow-lg border-4 border-white">
-                                {student.firstName[0]}{student.lastName[0]}
-                            </div>
-                        )}
+            {
+                showViewPhotoModal && student && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm" onClick={() => setShowViewPhotoModal(false)}>
+                        <div className="relative max-w-4xl max-h-[90vh] w-full flex items-center justify-center">
+                            <button
+                                onClick={() => setShowViewPhotoModal(false)}
+                                className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors"
+                            >
+                                <span className="text-4xl">×</span>
+                            </button>
+                            {student.photoUrl ? (
+                                <img
+                                    src={student.photoUrl}
+                                    alt={`${student.firstName} ${student.lastName}`}
+                                    className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl border-4 border-white/10"
+                                    onClick={(e) => e.stopPropagation()}
+                                />
+                            ) : (
+                                <div className="w-64 h-64 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-6xl font-bold shadow-lg border-4 border-white">
+                                    {student.firstName[0]}{student.lastName[0]}
+                                </div>
+                            )}
+                        </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     )
 }
 

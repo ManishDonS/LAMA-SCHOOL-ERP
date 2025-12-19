@@ -4,16 +4,28 @@ import "time"
 
 // Teacher represents a teacher user
 type Teacher struct {
-	ID            int64     `json:"id"`
-	SchoolID      string    `json:"school_id"`
-	UserID        string    `json:"user_id"`
-	Qualification string    `json:"qualification"`
-	Department    string    `json:"department"`
-	EmployeeID    string    `json:"employee_id"`
-	JoinDate      time.Time `json:"join_date"`
-	Status        string    `json:"status"` // active, inactive, on_leave
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID             int64      `json:"id"`
+	SchoolID       string     `json:"school_id"`
+	UserID         string     `json:"user_id"`
+	Qualification  string     `json:"qualification"`
+	Department     string     `json:"department"`
+	EmployeeID     string     `json:"employee_id"`
+	Phone          string     `json:"phone"`
+	DateOfBirth    *time.Time `json:"date_of_birth"`
+	Gender         string     `json:"gender"`
+	Specialization string     `json:"specialization"`
+	Experience     float64    `json:"experience"`
+	EmploymentType string     `json:"employment_type"`
+	Salary         float64    `json:"salary"`
+	Address        string     `json:"address"`
+	City           string     `json:"city"`
+	State          string     `json:"state"`
+	Subject        string     `json:"subject"`
+	ClassAssigned  string     `json:"class_assigned"`
+	JoinDate       time.Time  `json:"join_date"`
+	Status         string     `json:"status"` // active, inactive, on_leave
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 
 	// Joined fields from users table
 	FirstName string `json:"first_name"`

@@ -33,11 +33,37 @@ CREATE TABLE IF NOT EXISTS teachers (
 	qualification VARCHAR(255) NOT NULL,
 	department VARCHAR(255),
 	employee_id VARCHAR(50) UNIQUE NOT NULL,
+	phone VARCHAR(20),
+	date_of_birth DATE,
+	gender VARCHAR(20),
+	specialization VARCHAR(255),
+	experience DECIMAL(5,2),
+	employment_type VARCHAR(50),
+	salary DECIMAL(12,2),
+	address TEXT,
+	city VARCHAR(100),
+	state VARCHAR(100),
+	subject VARCHAR(255),
+	class_assigned VARCHAR(100),
 	join_date TIMESTAMP NOT NULL,
 	status VARCHAR(50) DEFAULT 'active',
 	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 	updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Ensure all columns exist for existing tables
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS date_of_birth DATE;
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS gender VARCHAR(20);
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS specialization VARCHAR(255);
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS experience DECIMAL(5,2);
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS employment_type VARCHAR(50);
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS salary DECIMAL(12,2);
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS city VARCHAR(100);
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS state VARCHAR(100);
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS subject VARCHAR(255);
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS class_assigned VARCHAR(100);
 
 CREATE INDEX IF NOT EXISTS idx_teachers_school_id ON teachers(school_id);
 CREATE INDEX IF NOT EXISTS idx_teachers_user_id ON teachers(user_id);

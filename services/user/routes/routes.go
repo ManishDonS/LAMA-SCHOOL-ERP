@@ -7,10 +7,11 @@ import (
 	"school-erp/user/config"
 	"school-erp/user/handlers"
 	"school-erp/user/middleware"
+	"school-erp/user/pkg/tenant"
 )
 
-func SetupRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config) {
-	h := handlers.NewUserHandler(db, cfg)
+func SetupRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config, tm *tenant.TenantManager) {
+	h := handlers.NewUserHandler(db, cfg, tm)
 
 	// Setup event subscriptions
 	h.SetupEventSubscriptions()

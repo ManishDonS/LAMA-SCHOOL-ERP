@@ -66,6 +66,18 @@ export const MENU_ITEMS: MenuItem[] = [
     roles: ['super_admin', 'admin', 'staff'],
   },
   {
+    href: '/dashboard/fees',
+    label: 'Fees',
+    icon: '💸',
+    roles: ['super_admin', 'admin', 'staff'],
+  },
+  {
+    href: '/dashboard/expenses',
+    label: 'Expenses',
+    icon: '📉',
+    roles: ['super_admin', 'admin', 'staff'],
+  },
+  {
     href: '/dashboard/library',
     label: 'Library',
     icon: '📚',
@@ -82,6 +94,12 @@ export const MENU_ITEMS: MenuItem[] = [
     label: 'Exams',
     icon: '📝',
     roles: ['super_admin', 'admin', 'teacher', 'student'],
+  },
+  {
+    href: '/dashboard/exam-settings',
+    label: 'Exam Settings',
+    icon: '⚙️',
+    roles: ['super_admin', 'admin'],
   },
   {
     href: '/dashboard/notifications',
@@ -181,6 +199,7 @@ const MODULE_PERMISSION_MAP: Record<string, string> = {
   '/dashboard/classes': 'classes',
   '/dashboard/attendance': 'attendance',
   '/dashboard/exams': 'exams',
+  '/dashboard/exam-settings': 'exams',
   '/dashboard/library': 'library',
   '/dashboard/school-buses': 'transport',
   '/dashboard/accounting': 'accounting',
@@ -190,6 +209,7 @@ const MODULE_PERMISSION_MAP: Record<string, string> = {
   '/dashboard/settings': 'settings',
   '/dashboard/fees': 'fees',
   '/dashboard/expenses': 'expenses',
+  '/dashboard/payroll': 'payroll',
   '/dashboard/communication': 'notifications', // Using notifications permission for communication module
 }
 
