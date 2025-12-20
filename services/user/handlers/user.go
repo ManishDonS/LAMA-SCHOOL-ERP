@@ -63,10 +63,32 @@ type CreateTeacherRequest struct {
 }
 
 type CreateParentRequest struct {
-	UserID      string `json:"user_id" validate:"required"`
-	PhoneNumber string `json:"phone_number"`
-	Occupation  string `json:"occupation"`
-	Address     string `json:"address"`
+	FirstName               string   `json:"first_name" validate:"required"`
+	LastName                string   `json:"last_name" validate:"required"`
+	Email                   string   `json:"email" validate:"required,email"`
+	Password                string   `json:"password" validate:"required"`
+	SchoolID                string   `json:"school_id" validate:"required"`
+	PhoneNumber             string   `json:"phone_number"`
+	AlternatePhone          string   `json:"alternate_phone"`
+	Relationship            string   `json:"relationship"`
+	DateOfBirth             string   `json:"date_of_birth"`
+	Gender                  string   `json:"gender"`
+	MaritalStatus           string   `json:"marital_status"`
+	Occupation              string   `json:"occupation"`
+	Company                 string   `json:"company"`
+	Income                  float64  `json:"income"`
+	Address                 string   `json:"address"`
+	City                    string   `json:"city"`
+	State                   string   `json:"state"`
+	ZipCode                 string   `json:"zip_code"`
+	CommunicationPreference string   `json:"communication_preference"`
+	EmergencyContactName    string   `json:"emergency_contact_name"`
+	EmergencyContactPhone   string   `json:"emergency_contact_phone"`
+	EmergencyRelationship   string   `json:"emergency_relationship"`
+	Notes                   string   `json:"notes"`
+	LinkedStudents          []string `json:"linked_students"`
+	GuardianID              string   `json:"guardian_id" validate:"required"`
+	Status                  string   `json:"status"`
 }
 
 type CreateStaffRequest struct {
@@ -249,7 +271,7 @@ func (h *UserHandler) CreateTeacher(c *fiber.Ctx) error {
 	fmt.Printf("Inserting teacher into tenant DB: %s. UserID: %s, SchoolID: %s\n", tenantCode, userID, req.SchoolID)
 
 	// 2.5 Sync User to Tenant DB first (Crucial for list join!)
-	err = h.SyncUserToTenant(c.Context(), tenantDB, userID, req.Email, req.FirstName, req.LastName, "teacher")
+	err = h.SyncUserToTenant(c.Context(), tenantDB, userID, req.Email, req.FirstName, req.LastName, "teacher", req.SchoolID)
 	if err != nil {
 		fmt.Printf("Warning: Failed to sync user to tenant DB: %v\n", err)
 		// Continue anyway as teacher record is primary, but joining might fail
@@ -339,11 +361,15 @@ func (h *UserHandler) GetTeacher(c *fiber.Ctx) error {
 	// Given standard REST patterns, ID usually means resource ID.
 
 	query := `
-		SELECT id, user_id, qualification, department, employee_id, 
-		       phone, date_of_birth, gender, specialization, experience, 
-		       employment_type, salary, address, city, state, 
-		       subject, class_assigned, join_date, status
-		FROM teachers WHERE id = $1
+		SELECT t.id, t.user_id, COALESCE(t.qualification, ''), COALESCE(t.department, ''), t.employee_id, 
+		       COALESCE(t.phone, ''), t.date_of_birth, COALESCE(t.gender, ''), COALESCE(t.specialization, ''), 
+		       COALESCE(t.experience, 0), COALESCE(t.employment_type, ''), COALESCE(t.salary, 0), 
+		       COALESCE(t.address, ''), COALESCE(t.city, ''), COALESCE(t.state, ''), 
+		       COALESCE(t.subject, ''), COALESCE(t.class_assigned, ''), t.join_date, COALESCE(t.status, 'active'),
+		       u.first_name, u.last_name, u.email
+		FROM teachers t
+		JOIN users u ON t.user_id::uuid = u.id
+		WHERE t.id = $1
 	`
 
 	err := tenantDB.QueryRow(c.Context(), query, id).Scan(
@@ -374,10 +400,11 @@ func (h *UserHandler) GetTeachers(c *fiber.Ctx) error {
 	}
 
 	query := `
-		SELECT t.id, t.user_id, t.qualification, t.department, t.employee_id, 
-		       t.phone, t.date_of_birth, t.gender, t.specialization, t.experience, 
-		       t.employment_type, t.salary, t.address, t.city, t.state, 
-		       t.subject, t.class_assigned, t.join_date, t.status,
+		SELECT t.id, t.user_id, COALESCE(t.qualification, ''), COALESCE(t.department, ''), t.employee_id, 
+		       COALESCE(t.phone, ''), t.date_of_birth, COALESCE(t.gender, ''), COALESCE(t.specialization, ''), 
+		       COALESCE(t.experience, 0), COALESCE(t.employment_type, ''), COALESCE(t.salary, 0), 
+		       COALESCE(t.address, ''), COALESCE(t.city, ''), COALESCE(t.state, ''), 
+		       COALESCE(t.subject, ''), COALESCE(t.class_assigned, ''), t.join_date, COALESCE(t.status, 'active'),
 		       u.first_name, u.last_name, u.email
 		FROM teachers t
 		JOIN users u ON t.user_id::uuid = u.id
@@ -642,45 +669,259 @@ func (h *UserHandler) DeleteTeacher(c *fiber.Ctx) error {
 func (h *UserHandler) CreateParent(c *fiber.Ctx) error {
 	var req CreateParentRequest
 	if err := c.BodyParser(&req); err != nil {
+		fmt.Printf("Error parsing create parent request: %v\n", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Invalid request body",
 		})
 	}
 
-	if err := h.CreateParentInternal(c.Context(), req.UserID, req.PhoneNumber, req.Occupation, req.Address); err != nil {
+	// 1. Create User in Auth Service
+	authPayload := map[string]interface{}{
+		"email":      req.Email,
+		"password":   req.Password,
+		"first_name": req.FirstName,
+		"last_name":  req.LastName,
+		"role":       "parent",
+		"school_id":  req.SchoolID,
+	}
+
+	authBody, err := json.Marshal(authPayload)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to prepare auth request"})
+	}
+
+	authURL := fmt.Sprintf("%s/api/v1/auth/register", h.cfg.AuthServiceURL)
+	proxyReq, err := http.NewRequest("POST", authURL, bytes.NewBuffer(authBody))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create auth request"})
+	}
+	proxyReq.Header.Set("Content-Type", "application/json")
+
+	tenantCode := middleware.GetTenantCode(c)
+	if tenantCode != "" {
+		proxyReq.Header.Set("X-Tenant-Code", tenantCode)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(proxyReq)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to connect to Auth Service"})
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		var authErr map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&authErr)
+		return c.Status(resp.StatusCode).JSON(authErr)
+	}
+
+	var authResp struct {
+		Data struct {
+			UserID string `json:"user_id"`
+			ID     string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to parse auth response"})
+	}
+
+	userID := authResp.Data.UserID
+	if userID == "" {
+		userID = authResp.Data.ID
+	}
+
+	// 2. Resolve Tenant DB
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil && req.SchoolID != "" {
+		var err error
+		tenantDB, _, err = h.getTenantDBBySchoolID(c.Context(), req.SchoolID)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve school database"})
+		}
+	}
+
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to connect to tenant database"})
+	}
+
+	// 3. Sync User to Tenant DB
+	err = h.SyncUserToTenant(c.Context(), tenantDB, userID, req.Email, req.FirstName, req.LastName, "parent", req.SchoolID)
+	if err != nil {
+		fmt.Printf("Warning: Failed to sync parent user to tenant DB: %v\n", err)
+	}
+
+	// 4. Create Parent Profile
+	var dob interface{}
+	if req.DateOfBirth != "" {
+		t, err := time.Parse("2006-01-02", req.DateOfBirth)
+		if err == nil {
+			dob = t
+		}
+	}
+
+	status := req.Status
+	if status == "" {
+		status = "active"
+	}
+
+	_, err = tenantDB.Exec(
+		c.Context(),
+		`INSERT INTO parents (
+			user_id, school_id, guardian_id, phone_number, alternate_phone,
+			relationship, date_of_birth, gender, marital_status, occupation,
+			company, income, address, city, state, zip_code,
+			communication_preference, emergency_contact_name, emergency_contact_phone,
+			emergency_relationship, status, notes, linked_students
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+		ON CONFLICT (user_id) DO UPDATE SET
+			guardian_id = EXCLUDED.guardian_id,
+			phone_number = EXCLUDED.phone_number,
+			alternate_phone = EXCLUDED.alternate_phone,
+			relationship = EXCLUDED.relationship,
+			date_of_birth = EXCLUDED.date_of_birth,
+			gender = EXCLUDED.gender,
+			marital_status = EXCLUDED.marital_status,
+			occupation = EXCLUDED.occupation,
+			company = EXCLUDED.company,
+			income = EXCLUDED.income,
+			address = EXCLUDED.address,
+			city = EXCLUDED.city,
+			state = EXCLUDED.state,
+			zip_code = EXCLUDED.zip_code,
+			communication_preference = EXCLUDED.communication_preference,
+			emergency_contact_name = EXCLUDED.emergency_contact_name,
+			emergency_contact_phone = EXCLUDED.emergency_contact_phone,
+			emergency_relationship = EXCLUDED.emergency_relationship,
+			status = EXCLUDED.status,
+			notes = EXCLUDED.notes,
+			linked_students = EXCLUDED.linked_students,
+			updated_at = NOW()`,
+		userID, req.SchoolID, req.GuardianID, req.PhoneNumber, req.AlternatePhone,
+		req.Relationship, dob, req.Gender, req.MaritalStatus, req.Occupation,
+		req.Company, req.Income, req.Address, req.City, req.State, req.ZipCode,
+		req.CommunicationPreference, req.EmergencyContactName, req.EmergencyContactPhone,
+		req.EmergencyRelationship, status, req.Notes, req.LinkedStudents,
+	)
+
+	if err != nil {
+		fmt.Printf("Error inserting parent in DB: %v\n", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to create parent",
+			"error":   "Failed to save parent profile",
+			"details": err.Error(),
 		})
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"message": "Parent created successfully",
+		"user_id": userID,
 	})
-}
-
-func (h *UserHandler) CreateParentInternal(ctx context.Context, userID string, phoneNumber, occupation, address string) error {
-	_, err := h.db.Exec(
-		ctx,
-		`INSERT INTO parents (user_id, phone_number, occupation, address)
-		 VALUES ($1, $2, $3, $4)`,
-		userID, phoneNumber, occupation, address,
-	)
-	return err
 }
 
 func (h *UserHandler) GetParent(c *fiber.Ctx) error {
 	id := c.Params("id")
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to connect to tenant database"})
+	}
+
+	var p database.Parent
+	var dob *time.Time
+	var linkedStudentsJSON []byte
+
+	query := `
+		SELECT p.id, p.school_id, p.user_id, COALESCE(p.guardian_id, ''), COALESCE(p.phone_number, ''), COALESCE(p.alternate_phone, ''),
+		       COALESCE(p.relationship, ''), p.date_of_birth, COALESCE(p.gender, ''), COALESCE(p.marital_status, ''), COALESCE(p.occupation, ''),
+		       COALESCE(p.company, ''), COALESCE(p.income, 0), COALESCE(p.address, ''), COALESCE(p.city, ''), COALESCE(p.state, ''), COALESCE(p.zip_code, ''),
+		       COALESCE(p.communication_preference, ''), COALESCE(p.emergency_contact_name, ''), COALESCE(p.emergency_contact_phone, ''),
+		       COALESCE(p.emergency_relationship, ''), COALESCE(p.status, 'active'), COALESCE(p.notes, ''), p.linked_students, p.created_at, p.updated_at,
+		       u.first_name, u.last_name, u.email
+		FROM parents p
+		JOIN users u ON p.user_id::uuid = u.id
+		WHERE p.id = $1
+	`
+
+	err := tenantDB.QueryRow(c.Context(), query, id).Scan(
+		&p.ID, &p.SchoolID, &p.UserID, &p.GuardianID, &p.PhoneNumber, &p.AlternatePhone,
+		&p.Relationship, &dob, &p.Gender, &p.MaritalStatus, &p.Occupation,
+		&p.Company, &p.Income, &p.Address, &p.City, &p.State, &p.ZipCode,
+		&p.CommunicationPreference, &p.EmergencyContactName, &p.EmergencyContactPhone,
+		&p.EmergencyRelationship, &p.Status, &p.Notes, &linkedStudentsJSON, &p.CreatedAt, &p.UpdatedAt,
+		&p.FirstName, &p.LastName, &p.Email,
+	)
+
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Parent not found"})
+	}
+
+	p.DateOfBirth = dob
+	if linkedStudentsJSON != nil {
+		json.Unmarshal(linkedStudentsJSON, &p.LinkedStudents)
+	}
 
 	return c.JSON(fiber.Map{
-		"message":   "Parent retrieved successfully",
-		"parent_id": id,
+		"message": "Parent retrieved successfully",
+		"parent":  p,
 	})
 }
 
 func (h *UserHandler) GetParents(c *fiber.Ctx) error {
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to connect to tenant database"})
+	}
+
+	query := `
+		SELECT p.id, p.school_id, p.user_id, COALESCE(p.guardian_id, ''), COALESCE(p.phone_number, ''), COALESCE(p.alternate_phone, ''),
+		       COALESCE(p.relationship, ''), p.date_of_birth, COALESCE(p.gender, ''), COALESCE(p.marital_status, ''), COALESCE(p.occupation, ''),
+		       COALESCE(p.company, ''), COALESCE(p.income, 0), COALESCE(p.address, ''), COALESCE(p.city, ''), COALESCE(p.state, ''), COALESCE(p.zip_code, ''),
+		       COALESCE(p.communication_preference, ''), COALESCE(p.emergency_contact_name, ''), COALESCE(p.emergency_contact_phone, ''),
+		       COALESCE(p.emergency_relationship, ''), COALESCE(p.status, 'active'), COALESCE(p.notes, ''), p.linked_students, p.created_at, p.updated_at,
+		       u.first_name, u.last_name, u.email
+		FROM parents p
+		JOIN users u ON p.user_id::uuid = u.id
+		ORDER BY p.created_at DESC
+	`
+
+	rows, err := tenantDB.Query(c.Context(), query)
+	if err != nil {
+		fmt.Printf("Error fetching parents: %v\n", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch parents"})
+	}
+	defer rows.Close()
+
+	var parents []database.Parent
+	for rows.Next() {
+		var p database.Parent
+		var dob *time.Time
+		var linkedStudentsJSON []byte
+		if err := rows.Scan(
+			&p.ID, &p.SchoolID, &p.UserID, &p.GuardianID, &p.PhoneNumber, &p.AlternatePhone,
+			&p.Relationship, &dob, &p.Gender, &p.MaritalStatus, &p.Occupation,
+			&p.Company, &p.Income, &p.Address, &p.City, &p.State, &p.ZipCode,
+			&p.CommunicationPreference, &p.EmergencyContactName, &p.EmergencyContactPhone,
+			&p.EmergencyRelationship, &p.Status, &p.Notes, &linkedStudentsJSON, &p.CreatedAt, &p.UpdatedAt,
+			&p.FirstName, &p.LastName, &p.Email,
+		); err != nil {
+			fmt.Printf("Error scanning parent row: %v\n", err)
+			continue
+		}
+		p.DateOfBirth = dob
+		if linkedStudentsJSON != nil {
+			json.Unmarshal(linkedStudentsJSON, &p.LinkedStudents)
+		}
+		if p.LinkedStudents == nil {
+			p.LinkedStudents = []string{}
+		}
+		parents = append(parents, p)
+	}
+
+	if parents == nil {
+		parents = []database.Parent{}
+	}
+
 	return c.JSON(fiber.Map{
 		"message": "Parents retrieved successfully",
-		"parents": []fiber.Map{},
+		"parents": parents,
 	})
 }
 
@@ -688,15 +929,153 @@ func (h *UserHandler) UpdateParent(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var req CreateParentRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid request body",
-		})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	return c.JSON(fiber.Map{
-		"message":   "Parent updated successfully",
-		"parent_id": id,
-	})
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to connect to tenant database"})
+	}
+
+	var userID string
+	err := tenantDB.QueryRow(c.Context(), "SELECT user_id FROM parents WHERE id = $1", id).Scan(&userID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Parent not found"})
+	}
+
+	// Update User info if changed
+	if req.FirstName != "" || req.LastName != "" || req.Email != "" {
+		updateUserQuery := "UPDATE users SET "
+		userArgs := []interface{}{}
+		argPos := 1
+		if req.FirstName != "" {
+			updateUserQuery += fmt.Sprintf("first_name = $%d, ", argPos)
+			userArgs = append(userArgs, req.FirstName)
+			argPos++
+		}
+		if req.LastName != "" {
+			updateUserQuery += fmt.Sprintf("last_name = $%d, ", argPos)
+			userArgs = append(userArgs, req.LastName)
+			argPos++
+		}
+		if req.Email != "" {
+			updateUserQuery += fmt.Sprintf("email = $%d, ", argPos)
+			userArgs = append(userArgs, req.Email)
+			argPos++
+		}
+		updateUserQuery = updateUserQuery[:len(updateUserQuery)-2] + fmt.Sprintf(" WHERE id = $%d", argPos)
+		userArgs = append(userArgs, userID)
+
+		h.db.Exec(c.Context(), updateUserQuery, userArgs...)
+		tenantDB.Exec(c.Context(), updateUserQuery, userArgs...)
+	}
+
+	// Update Parent profile
+	updateFields := []string{}
+	args := []interface{}{}
+	argPos := 1
+
+	addField := func(name string, val interface{}) {
+		updateFields = append(updateFields, fmt.Sprintf("%s = $%d", name, argPos))
+		args = append(args, val)
+		argPos++
+	}
+
+	if req.PhoneNumber != "" {
+		addField("phone_number", req.PhoneNumber)
+	}
+	if req.AlternatePhone != "" {
+		addField("alternate_phone", req.AlternatePhone)
+	}
+	if req.Relationship != "" {
+		addField("relationship", req.Relationship)
+	}
+	if req.Gender != "" {
+		addField("gender", req.Gender)
+	}
+	if req.MaritalStatus != "" {
+		addField("marital_status", req.MaritalStatus)
+	}
+	if req.Occupation != "" {
+		addField("occupation", req.Occupation)
+	}
+	if req.Company != "" {
+		addField("company", req.Company)
+	}
+	if req.Income != 0 {
+		addField("income", req.Income)
+	}
+	if req.Address != "" {
+		addField("address", req.Address)
+	}
+	if req.City != "" {
+		addField("city", req.City)
+	}
+	if req.State != "" {
+		addField("state", req.State)
+	}
+	if req.ZipCode != "" {
+		addField("zip_code", req.ZipCode)
+	}
+	if req.CommunicationPreference != "" {
+		addField("communication_preference", req.CommunicationPreference)
+	}
+	if req.EmergencyContactName != "" {
+		addField("emergency_contact_name", req.EmergencyContactName)
+	}
+	if req.EmergencyContactPhone != "" {
+		addField("emergency_contact_phone", req.EmergencyContactPhone)
+	}
+	if req.EmergencyRelationship != "" {
+		addField("emergency_relationship", req.EmergencyRelationship)
+	}
+	if req.Notes != "" {
+		addField("notes", req.Notes)
+	}
+	if req.LinkedStudents != nil {
+		lsJSON, _ := json.Marshal(req.LinkedStudents)
+		addField("linked_students", lsJSON)
+	}
+	if req.Status != "" {
+		addField("status", req.Status)
+	}
+
+	if len(updateFields) == 0 {
+		return c.JSON(fiber.Map{"message": "Parent updated (no fields changed)", "parent_id": id})
+	}
+
+	updateFields = append(updateFields, fmt.Sprintf("updated_at = $%d", argPos))
+	args = append(args, time.Now())
+	argPos++
+	args = append(args, id)
+
+	query := fmt.Sprintf("UPDATE parents SET %s WHERE id = $%d", strings.Join(updateFields, ", "), argPos)
+	_, err = tenantDB.Exec(c.Context(), query, args...)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update parent record"})
+	}
+
+	return c.JSON(fiber.Map{"message": "Parent updated successfully", "parent_id": id})
+}
+
+func (h *UserHandler) DeleteParent(c *fiber.Ctx) error {
+	id := c.Params("id")
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to connect to tenant database"})
+	}
+
+	var userID string
+	err := tenantDB.QueryRow(c.Context(), "SELECT user_id FROM parents WHERE id = $1", id).Scan(&userID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Parent not found"})
+	}
+
+	tenantDB.Exec(c.Context(), "DELETE FROM parents WHERE id = $1", id)
+	h.db.Exec(c.Context(), "UPDATE users SET status = 'inactive' WHERE id = $1", userID)
+	tenantDB.Exec(c.Context(), "UPDATE users SET status = 'inactive' WHERE id = $1", userID)
+
+	return c.JSON(fiber.Map{"message": "Parent deleted successfully", "id": id})
 }
 
 // Staff endpoints
@@ -783,17 +1162,18 @@ func (h *UserHandler) getTenantDBBySchoolID(ctx context.Context, schoolID string
 	return tenantDB, code, nil
 }
 
-func (h *UserHandler) SyncUserToTenant(ctx context.Context, tenantDB *pgxpool.Pool, userID string, email, firstName, lastName, role string) error {
+func (h *UserHandler) SyncUserToTenant(ctx context.Context, tenantDB *pgxpool.Pool, userID string, email, firstName, lastName, role, schoolID string) error {
 	query := `
-		INSERT INTO users (id, email, first_name, last_name, role, password_hash, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+		INSERT INTO users (id, email, first_name, last_name, role, password_hash, status, school_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
 		ON CONFLICT (id) DO UPDATE SET
 			email = EXCLUDED.email,
 			first_name = EXCLUDED.first_name,
 			last_name = EXCLUDED.last_name,
 			role = EXCLUDED.role,
+			school_id = EXCLUDED.school_id,
 			updated_at = NOW()
 	`
-	_, err := tenantDB.Exec(ctx, query, userID, email, firstName, lastName, role, "EXTERNAL_AUTH", "active")
+	_, err := tenantDB.Exec(ctx, query, userID, email, firstName, lastName, role, "EXTERNAL_AUTH", "active", schoolID)
 	return err
 }

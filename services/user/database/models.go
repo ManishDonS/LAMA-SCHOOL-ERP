@@ -35,21 +35,44 @@ type Teacher struct {
 
 // Parent represents a parent/guardian user
 type Parent struct {
-	ID          int64     `json:"id"`
-	SchoolID    int64     `json:"school_id"`
-	UserID      int64     `json:"user_id"`
-	PhoneNumber string    `json:"phone_number"`
-	Occupation  string    `json:"occupation"`
-	Address     string    `json:"address"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID                      int64      `json:"id"`
+	SchoolID                string     `json:"school_id"`
+	UserID                  string     `json:"user_id"`
+	GuardianID              string     `json:"guardian_id"`
+	PhoneNumber             string     `json:"phone_number"`
+	AlternatePhone          string     `json:"alternate_phone"`
+	Relationship            string     `json:"relationship"`
+	DateOfBirth             *time.Time `json:"date_of_birth"`
+	Gender                  string     `json:"gender"`
+	MaritalStatus           string     `json:"marital_status"`
+	Occupation              string     `json:"occupation"`
+	Company                 string     `json:"company"`
+	Income                  float64    `json:"income"`
+	Address                 string     `json:"address"`
+	City                    string     `json:"city"`
+	State                   string     `json:"state"`
+	ZipCode                 string     `json:"zip_code"`
+	CommunicationPreference string     `json:"communication_preference"`
+	EmergencyContactName    string     `json:"emergency_contact_name"`
+	EmergencyContactPhone   string     `json:"emergency_contact_phone"`
+	EmergencyRelationship   string     `json:"emergency_relationship"`
+	Status                  string     `json:"status"`
+	Notes                   string     `json:"notes"`
+	LinkedStudents          []string   `json:"linked_students"`
+	CreatedAt               time.Time  `json:"created_at"`
+	UpdatedAt               time.Time  `json:"updated_at"`
+
+	// Joined fields from users table
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Email     string `json:"email"`
 }
 
 // Staff represents a staff user
 type Staff struct {
 	ID         int64     `json:"id"`
-	SchoolID   int64     `json:"school_id"`
-	UserID     int64     `json:"user_id"`
+	SchoolID   string    `json:"school_id"`
+	UserID     string    `json:"user_id"`
 	Department string    `json:"department"`
 	Position   string    `json:"position"`
 	EmployeeID string    `json:"employee_id"`
@@ -57,4 +80,9 @@ type Staff struct {
 	Status     string    `json:"status"` // active, inactive
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+
+	// Joined fields from users table
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Email     string `json:"email"`
 }

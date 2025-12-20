@@ -49,6 +49,7 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config, tm *tenan
 	parentsProtected.Use(middleware.AuthMiddleware)
 	parentsProtected.Post("/", h.CreateParent)
 	parentsProtected.Put("/:id", h.UpdateParent)
+	parentsProtected.Delete("/:id", h.DeleteParent)
 
 	// Staff routes
 	staff := api.Group("/staff")

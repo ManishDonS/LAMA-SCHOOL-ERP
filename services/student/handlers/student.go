@@ -368,9 +368,10 @@ func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"message":    "Student created successfully",
-		"student_id": studentID,
-		"user_id":    userID,
+		"message":           "Student created successfully",
+		"student_id":        studentID,
+		"user_id":           userID,
+		"student_id_number": studentIDNumber,
 	})
 }
 

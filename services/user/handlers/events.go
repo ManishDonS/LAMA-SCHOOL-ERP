@@ -45,7 +45,7 @@ func (h *UserHandler) SetupEventSubscriptions() {
 		}
 
 		// 2. Sync User to Tenant DB
-		if err := h.SyncUserToTenant(context.Background(), tenantDB, event.UserID, event.Email, event.FirstName, event.LastName, event.Role); err != nil {
+		if err := h.SyncUserToTenant(context.Background(), tenantDB, event.UserID, event.Email, event.FirstName, event.LastName, event.Role, event.SchoolID); err != nil {
 			log.Printf("Failed to sync user %s to tenant DB: %v", event.UserID, err)
 			// Continue to profile creation, it might still work if user exists from elsewhere
 		}
@@ -76,38 +76,15 @@ func (h *UserHandler) SetupEventSubscriptions() {
 			}
 
 		case "parent":
-			// Create default parent profile
-			// Note: CreateParentInternal probably needs update to accept string UserID
-			// Temporarily commenting out or assuming it might work if updated?
-			// I should check Handler.CreateParentInternal signature.
-			// Earlier viewing of handlers/user.go line 367 showed: func (h *UserHandler) CreateParentInternal(..., userID int64, ...)
-			// So this will also fail compilation if I don't fix it.
-			// I need to fix CreateParentInternal signature too!
-
-			// For now, I will NOT call CreateParentInternal to avoid build error,
-			// OR I will trust I can fix it in a separate step?
-			// No, I should fix it now.
-
-			// Actually, let's fix CreateTeacher first.
-			// The user is asking about Teachers.
-			// I will leave Parent broken? No, build will fail.
-
-			// I'll update signature in next step.
-			// Here I pass string.
-
-			// Wait, I can't multi-file edit easily here safely in one go.
-			// But I MUST fix handlers/user.go signature for CreateParentInternal if I change passing type here.
-
-			// I'll comment out the Parent case or fix it blindly assuming next step fixes handler.
-			// Or I check/fix handler first?
-			// I already viewed handler. It takes int64.
-
-			// I will update this file to use string IDs and pass string.
-			// AND I will queue a fix for handlers/user.go immediately.
-
-			// Note: CreateParentInternal(ctx, userID string, ...)
-
-			if err := h.CreateParentInternal(context.Background(), event.UserID, "", "", ""); err != nil {
+			// Create default parent profile in tenant DB
+			_, err = tenantDB.Exec(
+				context.Background(),
+				`INSERT INTO parents (user_id, school_id, status, created_at, updated_at)
+				 VALUES ($1, $2, 'active', NOW(), NOW())
+				 ON CONFLICT (user_id) DO NOTHING`,
+				event.UserID, event.SchoolID,
+			)
+			if err != nil {
 				log.Printf("Failed to create parent profile for user %s: %v", event.UserID, err)
 			} else {
 				log.Printf("Created parent profile for user %s", event.UserID)

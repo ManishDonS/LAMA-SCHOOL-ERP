@@ -4,7 +4,7 @@ import { useRouter } from 'next/router'
 import Sidebar from '@/components/Sidebar'
 import Navbar from '@/components/Navbar'
 import { useAuthStore } from '@/store/authStore'
-import { studentAPI } from '@/services/api'
+import { studentAPI, guardianAPI } from '@/services/api'
 import NepaliDatePicker from '@/components/NepaliDatePicker'
 import { toast } from 'react-hot-toast'
 
@@ -21,18 +21,8 @@ interface Student {
   currentClass: string
   section: string
   rollNumber: string
-  // Parent/Guardian
-  fatherName: string
-  motherName: string
-  guardianName: string
-  guardianRelation: string
-  primaryPhone: string
-  secondaryPhone: string
-  email: string
-  homeAddress: string
-  emergencyContactName: string
-  emergencyContactPhone: string
-  emergencyContactRelation: string
+  // Linked Guardians
+  selectedGuardians: string[] // Array of guardian IDs
   // Academic
   previousSchool: string
   subjects: string
@@ -63,7 +53,7 @@ const DEFAULT_STUDENTS: Student[] = []
 
 const TABS = [
   { id: 'basic', label: 'Basic Profile' },
-  { id: 'guardian', label: 'Guardian Details' },
+  { id: 'guardian', label: 'Guardians' },
   { id: 'academic', label: 'Academic' },
   { id: 'health', label: 'Health & Safety' },
   { id: 'attendance', label: 'ID & Transport' },
@@ -308,6 +298,7 @@ export default function StudentsPage() {
   const [activeDropdownId, setActiveDropdownId] = useState<number | null>(null)
   const [showPasswordModal, setShowPasswordModal] = useState(false)
   const [passwordForm, setPasswordForm] = useState({ id: 0, password: '' })
+  const [availableGuardians, setAvailableGuardians] = useState<any[]>([])
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('')
@@ -317,6 +308,15 @@ export default function StudentsPage() {
     section: '',
     status: '',
     gender: ''
+  })
+  const [isAddingInlineGuardian, setIsAddingInlineGuardian] = useState(false)
+  const [newGuardianFormData, setNewGuardianFormData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone_number: '',
+    relationship: 'Father',
+    password: 'ChangeMe@123'
   })
 
   const menuItems = [
@@ -348,17 +348,7 @@ export default function StudentsPage() {
     currentClass: '',
     section: '',
     rollNumber: '',
-    fatherName: '',
-    motherName: '',
-    guardianName: '',
-    guardianRelation: '',
-    primaryPhone: '',
-    secondaryPhone: '',
-    email: '',
-    homeAddress: '',
-    emergencyContactName: '',
-    emergencyContactPhone: '',
-    emergencyContactRelation: '',
+    selectedGuardians: [],
     previousSchool: '',
     subjects: '',
     feeCategory: 'Regular',
@@ -412,10 +402,80 @@ export default function StudentsPage() {
     setShowModal(true)
   }
 
+  const handleSaveInlineGuardian = async () => {
+    if (!newGuardianFormData.firstName || !newGuardianFormData.lastName || !newGuardianFormData.email || !newGuardianFormData.phone_number) {
+      toast.error('Please fill all required guardian fields')
+      return
+    }
+
+    // Get schoolId from localStorage just like in handleSubmit
+    let schoolId = ''
+    if (typeof window !== 'undefined') {
+      const selectedSchoolStr = localStorage.getItem('selected_school')
+      if (selectedSchoolStr) {
+        try {
+          const selectedSchool = JSON.parse(selectedSchoolStr)
+          schoolId = selectedSchool.id || ''
+        } catch (e) {
+          console.error('Failed to parse selected_school', e)
+        }
+      }
+    }
+
+    if (!schoolId) {
+      toast.error('School ID not found. Please select a school first.')
+      return
+    }
+
+    const payload = {
+      first_name: newGuardianFormData.firstName,
+      last_name: newGuardianFormData.lastName,
+      email: newGuardianFormData.email,
+      phone_number: newGuardianFormData.phone_number,
+      relationship: newGuardianFormData.relationship,
+      password: newGuardianFormData.password,
+      school_id: schoolId,
+      status: 'active',
+      guardian_id: `GRD${new Date().getFullYear()}${Math.floor(1000 + Math.random() * 9000)}` // Temporary ID, backend should handle it ideally but for selection we need it
+    }
+
+    try {
+      const response = await guardianAPI.create(payload)
+      const createdGuardian = response.data.parent || response.data // Handle different response formats
+
+      toast.success('Guardian created successfully')
+
+      // Refresh the available guardians list
+      await fetchGuardians()
+
+      // Auto-select the newly created guardian
+      const guardianIdToSelect = createdGuardian.guardian_id || payload.guardian_id
+      setFormData(prev => ({
+        ...prev,
+        selectedGuardians: [...prev.selectedGuardians, guardianIdToSelect]
+      }))
+
+      // Reset and close inline form
+      setIsAddingInlineGuardian(false)
+      setNewGuardianFormData({
+        firstName: '',
+        lastName: '',
+        email: '',
+        phone_number: '',
+        relationship: 'Father',
+        password: 'ChangeMe@123'
+      })
+    } catch (error: any) {
+      console.error('Failed to create guardian:', error)
+      toast.error(error.response?.data?.error || 'Failed to create guardian')
+    }
+  }
+
   const handleCloseModal = () => {
     setShowModal(false)
     setFormData(emptyStudent)
     setCustomGuardianRelation('')
+    setIsAddingInlineGuardian(false)
   }
 
   const handleDeleteClick = (id: number) => {
@@ -444,11 +504,6 @@ export default function StudentsPage() {
     setFormData(student)
     setActiveTab('basic')
     setShowEditModal(true)
-    // If the guardian relation is not in the predefined list, set it as custom
-    if (student.guardianRelation && !GUARDIAN_RELATIONS.slice(0, -1).includes(student.guardianRelation)) {
-      setCustomGuardianRelation(student.guardianRelation)
-      setFormData((prev) => ({ ...prev, guardianRelation: 'Other (specify)' }))
-    }
   }
 
   const handleCloseEditModal = () => {
@@ -456,26 +511,9 @@ export default function StudentsPage() {
     setEditingStudentId(null)
     setFormData(emptyStudent)
     setCustomGuardianRelation('')
+    setIsAddingInlineGuardian(false)
   }
 
-  const handleGuardianRelationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value
-    setFormData((prev) => ({ ...prev, guardianRelation: value }))
-    if (value === 'Other (specify)') {
-      // Keep the custom value if switching to Other
-      if (customGuardianRelation === '') {
-        setFormData((prev) => ({ ...prev, guardianRelation: '' }))
-      }
-    } else {
-      setCustomGuardianRelation('')
-    }
-  }
-
-  const handleCustomGuardianRelationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
-    setCustomGuardianRelation(value)
-    setFormData((prev) => ({ ...prev, guardianRelation: value }))
-  }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -507,7 +545,7 @@ export default function StudentsPage() {
     const newStudentPayload = {
       first_name: formData.firstName,
       last_name: formData.lastName,
-      email: formData.email,
+      email: formData.username,
       password: 'ChangeMe@123', // Default password
       date_of_birth: formData.dateOfBirth,
       class_id: formData.currentClass, // Using currentClass as class_id for now
@@ -516,7 +554,30 @@ export default function StudentsPage() {
     }
 
     try {
-      await studentAPI.create(newStudentPayload)
+      const response = await studentAPI.create(newStudentPayload)
+      const studentIdNumber = response.data.student_id_number
+
+      // Link guardians
+      if (formData.selectedGuardians.length > 0) {
+        for (const guardianId of formData.selectedGuardians) {
+          // Find the guardian object to get its current linked_students
+          const guardian = availableGuardians.find(g => g.guardian_id === guardianId)
+          if (guardian) {
+            const currentLinked = Array.isArray(guardian.linked_students) ? guardian.linked_students : []
+            if (!currentLinked.includes(studentIdNumber)) {
+              try {
+                // Use guardian.id (database ID) as required by user-service API
+                await guardianAPI.update(guardian.id, {
+                  linked_students: [...currentLinked, studentIdNumber]
+                })
+              } catch (linkError) {
+                console.error(`Failed to link guardian ${guardianId}:`, linkError)
+              }
+            }
+          }
+        }
+      }
+
       // Refresh list
       fetchStudents()
       handleCloseModal()
@@ -536,7 +597,6 @@ export default function StudentsPage() {
       const updatePayload = {
         first_name: formData.firstName,
         last_name: formData.lastName,
-        email: formData.email,
         date_of_birth: formData.dateOfBirth,
         gender: formData.gender,
         nationality: formData.nationality,
@@ -544,12 +604,34 @@ export default function StudentsPage() {
         section: formData.section,
         roll_number: formData.rollNumber,
         blood_group: formData.bloodGroup,
-        phone: formData.primaryPhone,
-        address: formData.homeAddress,
+        address: formData.pickupAddress, // Just an example mapping
       }
 
       // Call API to update student
       await studentAPI.update(editingStudentId, updatePayload)
+
+      // Link guardians (Sync selection)
+      const studentIdNumber = formData.studentId
+
+      // 1. Get current student details to find existing links (not strictly necessary but good for differential update)
+      // For simplicity, we'll just update all currently selected guardians
+      if (formData.selectedGuardians.length > 0) {
+        for (const guardianId of formData.selectedGuardians) {
+          const guardian = availableGuardians.find(g => g.guardian_id === guardianId)
+          if (guardian) {
+            const currentLinked = Array.isArray(guardian.linked_students) ? guardian.linked_students : []
+            if (!currentLinked.includes(studentIdNumber)) {
+              try {
+                await guardianAPI.update(guardian.id, {
+                  linked_students: [...currentLinked, studentIdNumber]
+                })
+              } catch (linkError) {
+                console.error(`Failed to link guardian ${guardianId} during edit:`, linkError)
+              }
+            }
+          }
+        }
+      }
 
       // Refresh the student list to get updated data
       await fetchStudents()
@@ -581,7 +663,6 @@ export default function StudentsPage() {
     setActiveDropdownId(null)
     router.push({
       pathname: '/auth/login',
-      query: { email: student.email }
     })
   }
 
@@ -591,9 +672,7 @@ export default function StudentsPage() {
     const matchesSearch =
       student.firstName.toLowerCase().includes(query) ||
       student.lastName.toLowerCase().includes(query) ||
-      student.email.toLowerCase().includes(query) ||
-      student.studentId.toLowerCase().includes(query) ||
-      student.primaryPhone.includes(query)
+      student.studentId.toLowerCase().includes(query)
 
     const matchesClass = filters.class ? student.currentClass === filters.class : true
     const matchesSection = filters.section ? student.section === filters.section : true
@@ -611,7 +690,17 @@ export default function StudentsPage() {
   // Load from API
   useEffect(() => {
     fetchStudents()
+    fetchGuardians()
   }, [])
+
+  const fetchGuardians = async () => {
+    try {
+      const response = await guardianAPI.list()
+      setAvailableGuardians(response.data.parents || [])
+    } catch (error) {
+      console.error('Failed to fetch guardians:', error)
+    }
+  }
 
   const fetchStudents = async () => {
     try {
@@ -630,36 +719,25 @@ export default function StudentsPage() {
         currentClass: s.class,
         section: s.section,
         rollNumber: s.roll_number || '',
-        // Parent info might be missing in list view, handle gracefully
-        fatherName: '',
-        motherName: '',
-        guardianName: '',
-        guardianRelation: '',
-        primaryPhone: s.primary_phone || '',
-        secondaryPhone: '',
-        email: s.email,
-        homeAddress: '',
-        emergencyContactName: '',
-        emergencyContactPhone: '',
-        emergencyContactRelation: '',
-        previousSchool: '',
-        subjects: '',
-        feeCategory: '',
-        house: '',
-        medicalConditions: '',
-        allergies: '',
-        medications: '',
-        specialNeeds: '',
-        bloodGroup: '',
-        rfidNumber: '',
-        busRoute: '',
-        uniformSize: '',
-        pickupAddress: '',
-        dropoffAddress: '',
-        driverInfo: '',
+        selectedGuardians: s.linked_guardians || [], // Assuming backend might provide this eventually
+        previousSchool: s.previous_school || '',
+        subjects: s.subjects || '',
+        feeCategory: s.fee_category || 'Regular',
+        house: s.house || '',
+        medicalConditions: s.medical_conditions || '',
+        allergies: s.allergies || '',
+        medications: s.medications || '',
+        specialNeeds: s.special_needs || '',
+        bloodGroup: s.blood_group || '',
+        rfidNumber: s.rfid_number || '',
+        busRoute: s.bus_route || '',
+        uniformSize: s.uniform_size || '',
+        pickupAddress: s.pickup_address || '',
+        dropoffAddress: s.dropoff_address || '',
+        driverInfo: s.driver_info || '',
         status: s.status || 'Active',
-        username: s.email, // using email as username wrapper
-        notes: '',
+        username: s.email || '',
+        notes: s.notes || '',
       }))
       setStudents(mappedStudents)
     } catch (error) {
@@ -859,7 +937,7 @@ export default function StudentsPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 font-semibold text-gray-900">{student.currentClass}</td>
-                      <td className="px-6 py-4 text-gray-600">{student.primaryPhone}</td>
+                      <td className="px-6 py-4 text-gray-600">{student.username}</td>
                       <td className="px-6 py-4">
                         <span
                           className={`px-3 py-1 rounded-full text-sm font-semibold inline-block ${student.status === 'Active'
@@ -1145,155 +1223,138 @@ export default function StudentsPage() {
                     </div>
                   )}
 
-                  {/* Guardian Details */}
+                  {/* Guardians Tab */}
                   {activeTab === 'guardian' && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Father's Name
-                        </label>
-                        <input
-                          type="text"
-                          name="fatherName"
-                          value={formData.fatherName}
-                          onChange={handleChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
+                    <div className="space-y-4">
+                      <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-start gap-3 mb-4">
+                        <span className="text-xl">ℹ️</span>
+                        <div>
+                          <p className="text-sm text-blue-800 font-medium">Link or Create Guardians</p>
+                          <p className="text-xs text-blue-600 mt-1">Select existing guardians or create a new one directly for this student.</p>
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Mother's Name
+
+                      {/* Inline Guardian Creation */}
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="block text-sm font-semibold text-gray-700">
+                          {isAddingInlineGuardian ? 'Register New Guardian' : 'Select Existing Guardians'}
                         </label>
-                        <input
-                          type="text"
-                          name="motherName"
-                          value={formData.motherName}
-                          onChange={handleChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Guardian Name (if different)
-                        </label>
-                        <input
-                          type="text"
-                          name="guardianName"
-                          value={formData.guardianName}
-                          onChange={handleChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Guardian Relation
-                        </label>
-                        <select
-                          value={formData.guardianRelation === customGuardianRelation && customGuardianRelation !== '' ? 'Other (specify)' : formData.guardianRelation}
-                          onChange={handleGuardianRelationChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingInlineGuardian(!isAddingInlineGuardian)}
+                          className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${isAddingInlineGuardian
+                            ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                            : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
                         >
-                          <option value="">Select Relation</option>
-                          {GUARDIAN_RELATIONS.map((rel) => (
-                            <option key={rel} value={rel}>{rel}</option>
-                          ))}
-                        </select>
-                        {formData.guardianRelation === 'Other (specify)' && (
-                          <input
-                            type="text"
-                            placeholder="Please specify the relation"
-                            value={customGuardianRelation}
-                            onChange={handleCustomGuardianRelationChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2"
-                          />
-                        )}
+                          {isAddingInlineGuardian ? '✕ Cancel' : '+ Add New Guardian'}
+                        </button>
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Primary Phone *
-                        </label>
-                        <input
-                          type="tel"
-                          name="primaryPhone"
-                          value={formData.primaryPhone}
-                          onChange={handleChange}
-                          required
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Secondary Phone
-                        </label>
-                        <input
-                          type="tel"
-                          name="secondaryPhone"
-                          value={formData.secondaryPhone}
-                          onChange={handleChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Email *
-                        </label>
-                        <input
-                          type="email"
-                          name="email"
-                          value={formData.email}
-                          onChange={handleChange}
-                          required
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Home Address
-                        </label>
-                        <textarea
-                          name="homeAddress"
-                          value={formData.homeAddress}
-                          onChange={handleChange}
-                          rows={3}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Emergency Contact Name
-                        </label>
-                        <input
-                          type="text"
-                          name="emergencyContactName"
-                          value={formData.emergencyContactName}
-                          onChange={handleChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Emergency Contact Phone
-                        </label>
-                        <input
-                          type="tel"
-                          name="emergencyContactPhone"
-                          value={formData.emergencyContactPhone}
-                          onChange={handleChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Relation
-                        </label>
-                        <input
-                          type="text"
-                          name="emergencyContactRelation"
-                          value={formData.emergencyContactRelation}
-                          onChange={handleChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
+
+                      {isAddingInlineGuardian ? (
+                        <div className="bg-gray-50 p-5 rounded-2xl border-2 border-dashed border-gray-200 animate-in fade-in slide-in-from-top-2">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <input
+                                type="text"
+                                placeholder="First Name *"
+                                value={newGuardianFormData.firstName}
+                                onChange={(e) => setNewGuardianFormData({ ...newGuardianFormData, firstName: e.target.value })}
+                                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                              />
+                            </div>
+                            <div>
+                              <input
+                                type="text"
+                                placeholder="Last Name *"
+                                value={newGuardianFormData.lastName}
+                                onChange={(e) => setNewGuardianFormData({ ...newGuardianFormData, lastName: e.target.value })}
+                                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                              />
+                            </div>
+                            <div>
+                              <input
+                                type="email"
+                                placeholder="Email Address *"
+                                value={newGuardianFormData.email}
+                                onChange={(e) => setNewGuardianFormData({ ...newGuardianFormData, email: e.target.value })}
+                                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                              />
+                            </div>
+                            <div>
+                              <input
+                                type="tel"
+                                placeholder="Phone Number *"
+                                value={newGuardianFormData.phone_number}
+                                onChange={(e) => setNewGuardianFormData({ ...newGuardianFormData, phone_number: e.target.value })}
+                                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                              />
+                            </div>
+                            <div>
+                              <select
+                                value={newGuardianFormData.relationship}
+                                onChange={(e) => setNewGuardianFormData({ ...newGuardianFormData, relationship: e.target.value })}
+                                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                              >
+                                {GUARDIAN_RELATIONS.filter(r => r !== 'Other (specify)').map(r => (
+                                  <option key={r} value={r}>{r}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleSaveInlineGuardian}
+                              className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow-md transition-all active:scale-95"
+                            >
+                              Save & Select
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-4">
+                          <div className="border-2 border-gray-200 rounded-xl overflow-hidden bg-white max-h-60 overflow-y-auto">
+                            {availableGuardians.length === 0 ? (
+                              <div className="p-4 text-center text-gray-500 italic">
+                                No guardians found. Use the button above to create one.
+                              </div>
+                            ) : (
+                              <div className="divide-y divide-gray-100">
+                                {availableGuardians.map((guardian) => (
+                                  <label
+                                    key={guardian.id}
+                                    className="flex items-center p-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={formData.selectedGuardians.includes(guardian.guardian_id)}
+                                      onChange={(e) => {
+                                        const checked = e.target.checked
+                                        setFormData(prev => ({
+                                          ...prev,
+                                          selectedGuardians: checked
+                                            ? [...prev.selectedGuardians, guardian.guardian_id]
+                                            : prev.selectedGuardians.filter(id => id !== guardian.guardian_id)
+                                        }))
+                                      }}
+                                      className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 border-gray-300 mr-3"
+                                    />
+                                    <div className="flex-1">
+                                      <div className="font-semibold text-gray-900">
+                                        {guardian.first_name} {guardian.last_name}
+                                      </div>
+                                      <div className="text-xs text-gray-500">
+                                        ID: {guardian.guardian_id} | {guardian.relationship}
+                                      </div>
+                                    </div>
+                                    <div className="text-sm text-gray-600">
+                                      {guardian.phone_number}
+                                    </div>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1729,155 +1790,138 @@ export default function StudentsPage() {
                       </div>
                     )}
 
-                    {/* Guardian Details */}
+                    {/* Guardians Tab */}
                     {activeTab === 'guardian' && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Father's Name
-                          </label>
-                          <input
-                            type="text"
-                            name="fatherName"
-                            value={formData.fatherName}
-                            onChange={handleChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
+                      <div className="space-y-4">
+                        <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 flex items-start gap-3 mb-4">
+                          <span className="text-xl">ℹ️</span>
+                          <div>
+                            <p className="text-sm text-purple-800 font-medium">Link or Create Guardians</p>
+                            <p className="text-xs text-purple-600 mt-1">Select existing guardians or create a new one directly for this student.</p>
+                          </div>
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Mother's Name
+
+                        {/* Inline Guardian Creation */}
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="block text-sm font-semibold text-gray-700">
+                            {isAddingInlineGuardian ? 'Register New Guardian' : 'Select Existing Guardians'}
                           </label>
-                          <input
-                            type="text"
-                            name="motherName"
-                            value={formData.motherName}
-                            onChange={handleChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Guardian Name (if different)
-                          </label>
-                          <input
-                            type="text"
-                            name="guardianName"
-                            value={formData.guardianName}
-                            onChange={handleChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Guardian Relation
-                          </label>
-                          <select
-                            value={formData.guardianRelation === customGuardianRelation && customGuardianRelation !== '' ? 'Other (specify)' : formData.guardianRelation}
-                            onChange={handleGuardianRelationChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          <button
+                            type="button"
+                            onClick={() => setIsAddingInlineGuardian(!isAddingInlineGuardian)}
+                            className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${isAddingInlineGuardian
+                              ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                              : 'bg-purple-50 text-purple-600 hover:bg-purple-100'}`}
                           >
-                            <option value="">Select Relation</option>
-                            {GUARDIAN_RELATIONS.map((rel) => (
-                              <option key={rel} value={rel}>{rel}</option>
-                            ))}
-                          </select>
-                          {formData.guardianRelation === 'Other (specify)' && (
-                            <input
-                              type="text"
-                              placeholder="Please specify the relation"
-                              value={customGuardianRelation}
-                              onChange={handleCustomGuardianRelationChange}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2"
-                            />
-                          )}
+                            {isAddingInlineGuardian ? '✕ Cancel' : '+ Add New Guardian'}
+                          </button>
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Primary Phone *
-                          </label>
-                          <input
-                            type="tel"
-                            name="primaryPhone"
-                            value={formData.primaryPhone}
-                            onChange={handleChange}
-                            required
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Secondary Phone
-                          </label>
-                          <input
-                            type="tel"
-                            name="secondaryPhone"
-                            value={formData.secondaryPhone}
-                            onChange={handleChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div className="col-span-2">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Email *
-                          </label>
-                          <input
-                            type="email"
-                            name="email"
-                            value={formData.email}
-                            onChange={handleChange}
-                            required
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div className="col-span-2">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Home Address
-                          </label>
-                          <textarea
-                            name="homeAddress"
-                            value={formData.homeAddress}
-                            onChange={handleChange}
-                            rows={3}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Emergency Contact Name
-                          </label>
-                          <input
-                            type="text"
-                            name="emergencyContactName"
-                            value={formData.emergencyContactName}
-                            onChange={handleChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Emergency Contact Phone
-                          </label>
-                          <input
-                            type="tel"
-                            name="emergencyContactPhone"
-                            value={formData.emergencyContactPhone}
-                            onChange={handleChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Relation
-                          </label>
-                          <input
-                            type="text"
-                            name="emergencyContactRelation"
-                            value={formData.emergencyContactRelation}
-                            onChange={handleChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
+
+                        {isAddingInlineGuardian ? (
+                          <div className="bg-gray-50 p-5 rounded-2xl border-2 border-dashed border-gray-200 animate-in fade-in slide-in-from-top-2">
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <input
+                                  type="text"
+                                  placeholder="First Name *"
+                                  value={newGuardianFormData.firstName}
+                                  onChange={(e) => setNewGuardianFormData({ ...newGuardianFormData, firstName: e.target.value })}
+                                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
+                                />
+                              </div>
+                              <div>
+                                <input
+                                  type="text"
+                                  placeholder="Last Name *"
+                                  value={newGuardianFormData.lastName}
+                                  onChange={(e) => setNewGuardianFormData({ ...newGuardianFormData, lastName: e.target.value })}
+                                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
+                                />
+                              </div>
+                              <div>
+                                <input
+                                  type="email"
+                                  placeholder="Email Address *"
+                                  value={newGuardianFormData.email}
+                                  onChange={(e) => setNewGuardianFormData({ ...newGuardianFormData, email: e.target.value })}
+                                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
+                                />
+                              </div>
+                              <div>
+                                <input
+                                  type="tel"
+                                  placeholder="Phone Number *"
+                                  value={newGuardianFormData.phone_number}
+                                  onChange={(e) => setNewGuardianFormData({ ...newGuardianFormData, phone_number: e.target.value })}
+                                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
+                                />
+                              </div>
+                              <div>
+                                <select
+                                  value={newGuardianFormData.relationship}
+                                  onChange={(e) => setNewGuardianFormData({ ...newGuardianFormData, relationship: e.target.value })}
+                                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
+                                >
+                                  {GUARDIAN_RELATIONS.filter(r => r !== 'Other (specify)').map(r => (
+                                    <option key={r} value={r}>{r}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleSaveInlineGuardian}
+                                className="w-full py-3 bg-purple-600 text-white font-bold rounded-xl hover:bg-purple-700 shadow-md transition-all active:scale-95"
+                              >
+                                Save & Select
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 gap-4">
+                            <div className="border-2 border-gray-200 rounded-xl overflow-hidden bg-white max-h-60 overflow-y-auto">
+                              {availableGuardians.length === 0 ? (
+                                <div className="p-4 text-center text-gray-500 italic">
+                                  No guardians found. Create guardians in the Guardians module first.
+                                </div>
+                              ) : (
+                                <div className="divide-y divide-gray-100">
+                                  {availableGuardians.map((guardian) => (
+                                    <label
+                                      key={guardian.id}
+                                      className="flex items-center p-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={formData.selectedGuardians.includes(guardian.guardian_id)}
+                                        onChange={(e) => {
+                                          const checked = e.target.checked
+                                          setFormData(prev => ({
+                                            ...prev,
+                                            selectedGuardians: checked
+                                              ? [...prev.selectedGuardians, guardian.guardian_id]
+                                              : prev.selectedGuardians.filter(id => id !== guardian.guardian_id)
+                                          }))
+                                        }}
+                                        className="w-5 h-5 rounded text-purple-600 focus:ring-purple-500 border-gray-300 mr-3"
+                                      />
+                                      <div className="flex-1">
+                                        <div className="font-semibold text-gray-900">
+                                          {guardian.first_name} {guardian.last_name}
+                                        </div>
+                                        <div className="text-xs text-gray-500">
+                                          ID: {guardian.guardian_id} | {guardian.relationship}
+                                        </div>
+                                      </div>
+                                      <div className="text-sm text-gray-600">
+                                        {guardian.phone_number}
+                                      </div>
+                                    </label>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
