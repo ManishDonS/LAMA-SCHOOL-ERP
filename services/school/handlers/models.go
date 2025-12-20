@@ -26,30 +26,35 @@ type Permission struct {
 
 // School represents a school tenant
 type School struct {
-	ID                string                     `json:"id" db:"id"`
-	Name              string                     `json:"name" db:"name"`
-	Code              string                     `json:"code" db:"code"` // Unique identifier (e.g., "EIS", "KMC")
-	DBName            string                     `json:"db_name" db:"db_name"`
-	DBUser            string                     `json:"db_user" db:"db_user"`
-	DBPassword        string                     `json:"-" db:"db_password"` // Never expose in JSON
-	DBHost            string                     `json:"db_host" db:"db_host"`
-	DBPort            int                        `json:"db_port" db:"db_port"`
-	Domain            string                     `json:"domain" db:"domain"` // e.g., eis.schoolerp.com
-	LogoURL           string                     `json:"logo_url" db:"logo_url"`
-	Timezone          string                     `json:"timezone" db:"timezone"`
-	Email             string                     `json:"email" db:"email"`
-	Phone             string                     `json:"phone" db:"phone"`
-	Address           string                     `json:"address" db:"address"`
-	City              string                     `json:"city" db:"city"`
-	State             string                     `json:"state" db:"state"`
-	Country           string                     `json:"country" db:"country"`
-	Pincode           string                     `json:"pincode" db:"pincode"`
-	Website           string                     `json:"website" db:"website"`
-	Status            string                     `json:"status" db:"status"`
-	ActiveModules     []string                   `json:"active_modules" db:"active_modules"`
-	ModulePermissions map[string]map[string]bool `json:"module_permissions" db:"module_permissions"`
-	CreatedAt         time.Time                  `json:"created_at" db:"created_at"`
-	UpdatedAt         time.Time                  `json:"updated_at" db:"updated_at"`
+	ID                 string                     `json:"id" db:"id"`
+	Name               string                     `json:"name" db:"name"`
+	Code               string                     `json:"code" db:"code"` // Unique identifier (e.g., "EIS", "KMC")
+	DBName             string                     `json:"db_name" db:"db_name"`
+	DBUser             string                     `json:"db_user" db:"db_user"`
+	DBPassword         string                     `json:"-" db:"db_password"` // Never expose in JSON
+	DBHost             string                     `json:"db_host" db:"db_host"`
+	DBPort             int                        `json:"db_port" db:"db_port"`
+	Domain             string                     `json:"domain" db:"domain"` // e.g., eis.schoolerp.com
+	LogoURL            string                     `json:"logo_url" db:"logo_url"`
+	Timezone           string                     `json:"timezone" db:"timezone"`
+	Email              string                     `json:"email" db:"email"`
+	Phone              string                     `json:"phone" db:"phone"`
+	Address            string                     `json:"address" db:"address"`
+	City               string                     `json:"city" db:"city"`
+	State              string                     `json:"state" db:"state"`
+	Country            string                     `json:"country" db:"country"`
+	Pincode            string                     `json:"pincode" db:"pincode"`
+	Website            string                     `json:"website" db:"website"`
+	VATNumber          string                     `json:"vat_number" db:"vat_number"`
+	RegistrationNumber string                     `json:"registration_number" db:"registration_number"`
+	TaxID              string                     `json:"tax_id" db:"tax_id"`
+	SchoolType         string                     `json:"school_type" db:"school_type"`
+	AlternatePhone     string                     `json:"alternate_phone" db:"alternate_phone"`
+	Status             string                     `json:"status" db:"status"`
+	ActiveModules      []string                   `json:"active_modules" db:"active_modules"`
+	ModulePermissions  map[string]map[string]bool `json:"module_permissions" db:"module_permissions"`
+	CreatedAt          time.Time                  `json:"created_at" db:"created_at"`
+	UpdatedAt          time.Time                  `json:"updated_at" db:"updated_at"`
 }
 
 // CreateSchoolRequest is the request body for creating a school
@@ -78,20 +83,25 @@ type CreateSchoolRequest struct {
 
 // UpdateSchoolRequest is the request body for updating a school
 type UpdateSchoolRequest struct {
-	Name              string                     `json:"name" validate:"omitempty,min=2,max=255"`
-	Domain            string                     `json:"domain" validate:"omitempty"`
-	LogoURL           string                     `json:"logo_url" validate:"omitempty,url"`
-	Timezone          string                     `json:"timezone" validate:"omitempty"`
-	Email             string                     `json:"email" validate:"omitempty,email"`
-	Phone             string                     `json:"phone" validate:"omitempty"`
-	Address           string                     `json:"address" validate:"omitempty"`
-	City              string                     `json:"city" validate:"omitempty"`
-	State             string                     `json:"state" validate:"omitempty"`
-	Country           string                     `json:"country" validate:"omitempty"`
-	Pincode           string                     `json:"pincode" validate:"omitempty"`
-	Website           string                     `json:"website" validate:"omitempty"`
-	Status            string                     `json:"status" validate:"omitempty,oneof=active inactive suspended"`
-	ModulePermissions map[string]map[string]bool `json:"module_permissions" validate:"omitempty"`
+	Name               string                     `json:"name" validate:"omitempty,min=2,max=255"`
+	Domain             string                     `json:"domain" validate:"omitempty"`
+	LogoURL            string                     `json:"logo_url" validate:"omitempty,url"`
+	Timezone           string                     `json:"timezone" validate:"omitempty"`
+	Email              string                     `json:"email" validate:"omitempty,email"`
+	Phone              string                     `json:"phone" validate:"omitempty"`
+	Address            string                     `json:"address" validate:"omitempty"`
+	City               string                     `json:"city" validate:"omitempty"`
+	State              string                     `json:"state" validate:"omitempty"`
+	Country            string                     `json:"country" validate:"omitempty"`
+	Pincode            string                     `json:"pincode" validate:"omitempty"`
+	Website            string                     `json:"website" validate:"omitempty"`
+	VATNumber          string                     `json:"vat_number" validate:"omitempty"`
+	RegistrationNumber string                     `json:"registration_number" validate:"omitempty"`
+	TaxID              string                     `json:"tax_id" validate:"omitempty"`
+	SchoolType         string                     `json:"school_type" validate:"omitempty"`
+	AlternatePhone     string                     `json:"alternate_phone" validate:"omitempty"`
+	Status             string                     `json:"status" validate:"omitempty,oneof=active inactive suspended"`
+	ModulePermissions  map[string]map[string]bool `json:"module_permissions" validate:"omitempty"`
 }
 
 // SchoolDBCredentials holds encrypted database credentials

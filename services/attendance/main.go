@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/joho/godotenv"
@@ -12,6 +14,8 @@ import (
 	"school-erp/attendance/config"
 	"school-erp/attendance/database"
 	"school-erp/attendance/messaging"
+	"school-erp/attendance/middleware"
+	"school-erp/attendance/pkg/tenant"
 	"school-erp/attendance/routes"
 )
 
@@ -25,18 +29,29 @@ func contains(allowedOrigins string, origin string) bool {
 	}
 	return false
 }
+
 func main() {
 	godotenv.Load()
 	cfg := config.LoadConfig()
 
-	db, err := database.InitDB(cfg)
+	// Initialize Main Database (for school metadata)
+	mainDB, err := database.InitDB(cfg)
 	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		log.Fatalf("Failed to initialize main database: %v", err)
 	}
-	defer db.Close()
+	defer mainDB.Close()
 
-	if err := database.RunMigrations(db); err != nil {
-		log.Fatalf("Failed to run migrations: %v", err)
+	// Initialize Tenant Manager
+	dbPort, _ := strconv.Atoi(cfg.DBPort)
+	tm, err := tenant.NewTenantManager(
+		os.Getenv("ENCRYPTION_KEY"),
+		10,
+		5,
+		time.Hour,
+		cfg.DBPassword,
+	)
+	if err != nil {
+		log.Fatalf("Failed to create tenant manager: %v", err)
 	}
 
 	messaging.ConnectNATS()
@@ -45,20 +60,29 @@ func main() {
 	app := fiber.New(fiber.Config{AppName: "School ERP Attendance Service"})
 	setupMiddleware(app)
 
+	// Setup Tenant Resolver Middleware
+	tenantResolver := middleware.NewTenantResolver(middleware.TenantResolverConfig{
+		TenantManager: tm,
+		MainDB:        mainDB,
+		DBHost:        cfg.DBHost,
+		DBPort:        dbPort,
+	})
+
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"service": "School ERP Attendance Service",
 			"version": "v1.0.0",
-			"status": "running",
+			"status":  "running",
 			"endpoints": fiber.Map{
-				"health": "/health",
-				"metrics": "/metrics",
+				"health":     "/health",
+				"metrics":    "/metrics",
 				"attendance": "/api/v1/attendance",
 			},
 		})
 	})
 
-	routes.SetupRoutes(app, db)
+	// Setup Routes with multi-tenancy support
+	routes.SetupRoutes(app, mainDB, cfg, tm, tenantResolver)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "healthy", "service": "attendance"})
@@ -92,7 +116,7 @@ func setupMiddleware(app *fiber.App) {
 		}
 
 		c.Set("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS,PATCH")
-		c.Set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With")
+		c.Set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With,X-Tenant-Code")
 		c.Set("Access-Control-Allow-Credentials", "true")
 
 		if c.Method() == "OPTIONS" {

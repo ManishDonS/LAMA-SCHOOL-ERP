@@ -112,11 +112,84 @@ func (h *UserHandler) CreateUser(c *fiber.Ctx) error {
 		})
 	}
 
+	// 1. Create User in Auth Service
+	authPayload := map[string]interface{}{
+		"email":      req.Email,
+		"password":   "TempPass123!", // You typically want to generate or send this
+		"first_name": req.FirstName,
+		"last_name":  req.LastName,
+		"role":       req.Role, // e.g., "staff", "admin"
+		"school_id":  fmt.Sprintf("%d", req.SchoolID),
+	}
+
+	authBody, err := json.Marshal(authPayload)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to prepare auth request"})
+	}
+
+	authURL := fmt.Sprintf("%s/api/v1/auth/register", h.cfg.AuthServiceURL)
+	proxyReq, err := http.NewRequest("POST", authURL, bytes.NewBuffer(authBody))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create auth request"})
+	}
+	proxyReq.Header.Set("Content-Type", "application/json")
+
+	tenantCode := middleware.GetTenantCode(c)
+	if tenantCode != "" {
+		proxyReq.Header.Set("X-Tenant-Code", tenantCode)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(proxyReq)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to connect to Auth Service"})
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		var authErr map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&authErr)
+		return c.Status(resp.StatusCode).JSON(authErr)
+	}
+
+	var authResp struct {
+		Data struct {
+			UserID string `json:"user_id"`
+			ID     string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to parse auth response"})
+	}
+
+	userID := authResp.Data.UserID
+	if userID == "" {
+		userID = authResp.Data.ID
+	}
+
+	// 2. Sync to Tenant DB (school_handler creates the users table)
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		// Try resolving via SchoolID if not in context
+		var err error
+		tenantDB, _, err = h.getTenantDBBySchoolID(c.Context(), fmt.Sprintf("%d", req.SchoolID))
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve school database"})
+		}
+	}
+
+	err = h.SyncUserToTenant(c.Context(), tenantDB, userID, req.Email, req.FirstName, req.LastName, req.Role, fmt.Sprintf("%d", req.SchoolID))
+	if err != nil {
+		// Log error but verify if it's just duplicate
+		fmt.Printf("Warning: Failed to sync user to tenant DB: %v\n", err)
+	}
+
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"message": "User created successfully",
 		"data": fiber.Map{
 			"school_id": req.SchoolID,
 			"email":     req.Email,
+			"user_id":   userID,
 		},
 	})
 }
@@ -133,10 +206,48 @@ func (h *UserHandler) GetUser(c *fiber.Ctx) error {
 func (h *UserHandler) GetUsersBySchool(c *fiber.Ctx) error {
 	schoolID := c.Params("school_id")
 
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		// Try resolving via SchoolID
+		var err error
+		tenantDB, _, err = h.getTenantDBBySchoolID(c.Context(), schoolID)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve school database"})
+		}
+	}
+
+	// Fetch users from tenant DB
+	query := `
+		SELECT id, first_name, last_name, email, role, status
+		FROM users
+		ORDER BY created_at DESC
+	`
+	rows, err := tenantDB.Query(c.Context(), query)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch users"})
+	}
+	defer rows.Close()
+
+	users := []fiber.Map{}
+	for rows.Next() {
+		var id, firstName, lastName, email, role, status string
+		if err := rows.Scan(&id, &firstName, &lastName, &email, &role, &status); err != nil {
+			continue
+		}
+		users = append(users, fiber.Map{
+			"id":         id,
+			"first_name": firstName,
+			"last_name":  lastName,
+			"email":      email,
+			"role":       role,
+			"status":     status,
+		})
+	}
+
 	return c.JSON(fiber.Map{
 		"message":   "Users retrieved successfully",
 		"school_id": schoolID,
-		"users":     []fiber.Map{},
+		"users":     users,
 	})
 }
 

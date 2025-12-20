@@ -107,6 +107,31 @@ func createSchoolsTable(ctx context.Context, db *pgxpool.Pool) error {
 		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='module_permissions') THEN
 			ALTER TABLE schools ADD COLUMN module_permissions JSONB DEFAULT '{}'::jsonb;
 		END IF;
+
+		-- Add vat_number column
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='vat_number') THEN
+			ALTER TABLE schools ADD COLUMN vat_number VARCHAR(100);
+		END IF;
+
+		-- Add registration_number column
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='registration_number') THEN
+			ALTER TABLE schools ADD COLUMN registration_number VARCHAR(100);
+		END IF;
+
+		-- Add tax_id column
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='tax_id') THEN
+			ALTER TABLE schools ADD COLUMN tax_id VARCHAR(100);
+		END IF;
+
+		-- Add school_type column
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='school_type') THEN
+			ALTER TABLE schools ADD COLUMN school_type VARCHAR(50) DEFAULT 'School';
+		END IF;
+
+		-- Add alternate_phone column
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='schools' AND column_name='alternate_phone') THEN
+			ALTER TABLE schools ADD COLUMN alternate_phone VARCHAR(20);
+		END IF;
 	END $$;
 	`
 

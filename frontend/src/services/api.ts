@@ -299,12 +299,94 @@ export const guardianAPI = {
   delete: (id: string) => userApiClient.delete(`/api/v1/parents/${id}`),
 }
 
+// Separate API client for attendance service
+export const ATTENDANCE_API_URL = process.env.NEXT_PUBLIC_ATTENDANCE_API_URL || 'http://localhost:3004'
+
+const attendanceApiClient: AxiosInstance = axios.create({
+  baseURL: ATTENDANCE_API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Add request interceptor to attendance API client to include token and tenant code
+attendanceApiClient.interceptors.request.use(
+  (config) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    // Add Tenant Code header 
+    if (typeof window !== 'undefined') {
+      const selectedSchoolStr = localStorage.getItem('selected_school')
+      if (selectedSchoolStr) {
+        try {
+          const selectedSchool = JSON.parse(selectedSchoolStr)
+          if (selectedSchool && selectedSchool.code) {
+            config.headers['X-Tenant-Code'] = selectedSchool.code
+          }
+        } catch (e) {
+          console.error('Failed to parse selected_school from localStorage', e)
+        }
+      }
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
 export const attendanceAPI = {
-  list: (params?: any) => api.get('/api/v1/attendance', { params }),
-  get: (id: number) => api.get(`/api/v1/attendance/${id}`),
-  create: (data: any) => api.post('/api/v1/attendance', data),
-  update: (id: number, data: any) => api.put(`/api/v1/attendance/${id}`, data),
+  list: (params?: any) => attendanceApiClient.get('/api/v1/attendance', { params }),
+  get: (id: string) => attendanceApiClient.get(`/api/v1/attendance/${id}`),
+  create: (data: any) => attendanceApiClient.post('/api/v1/attendance', data),
+  update: (id: string, data: any) => attendanceApiClient.put(`/api/v1/attendance/${id}`, data),
+  delete: (id: string) => attendanceApiClient.delete(`/api/v1/attendance/${id}`),
 }
+
+// Separate API client for class service
+export const CLASS_API_URL = process.env.NEXT_PUBLIC_CLASS_API_URL || 'http://localhost:3014'
+
+const classApiClient: AxiosInstance = axios.create({
+  baseURL: CLASS_API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Add request interceptor to class API client to include token and tenant code
+classApiClient.interceptors.request.use(
+  (config) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    // Add Tenant Code header 
+    if (typeof window !== 'undefined') {
+      const selectedSchoolStr = localStorage.getItem('selected_school')
+      if (selectedSchoolStr) {
+        try {
+          const selectedSchool = JSON.parse(selectedSchoolStr)
+          if (selectedSchool && selectedSchool.code) {
+            config.headers['X-Tenant-Code'] = selectedSchool.code
+          }
+        } catch (e) {
+          console.error('Failed to parse selected_school from localStorage', e)
+        }
+      }
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
+export const classAPI = {
+  list: (params?: any) => classApiClient.get('/api/v1/classes', { params }),
+  get: (id: string) => classApiClient.get(`/api/v1/classes/${id}`),
+  create: (data: any) => classApiClient.post('/api/v1/classes', data),
+  update: (id: number, data: any) => classApiClient.put(`/api/v1/classes/${id}`, data),
+  delete: (id: number) => classApiClient.delete(`/api/v1/classes/${id}`),
+}
+
 
 export const userAPI = {
   list: (params?: any) => userApiClient.get('/api/v1/users', { params }),
@@ -415,6 +497,7 @@ createResponseInterceptor(schoolApiClient)
 createResponseInterceptor(studentApiClient)
 createResponseInterceptor(userApiClient)
 createResponseInterceptor(transportApiClient)
+createResponseInterceptor(classApiClient)
 
 // Set timeout for other clients
 studentApiClient.defaults.timeout = 30000

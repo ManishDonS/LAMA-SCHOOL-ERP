@@ -4,7 +4,7 @@ import { useRouter } from 'next/router'
 import Sidebar from '@/components/Sidebar'
 import Navbar from '@/components/Navbar'
 import { useAuthStore } from '@/store/authStore'
-import { studentAPI, guardianAPI } from '@/services/api'
+import { studentAPI, guardianAPI, classAPI } from '@/services/api'
 import NepaliDatePicker from '@/components/NepaliDatePicker'
 import { toast } from 'react-hot-toast'
 
@@ -299,6 +299,7 @@ export default function StudentsPage() {
   const [showPasswordModal, setShowPasswordModal] = useState(false)
   const [passwordForm, setPasswordForm] = useState({ id: 0, password: '' })
   const [availableGuardians, setAvailableGuardians] = useState<any[]>([])
+  const [classes, setClasses] = useState<any[]>([])
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('')
@@ -691,7 +692,17 @@ export default function StudentsPage() {
   useEffect(() => {
     fetchStudents()
     fetchGuardians()
+    fetchClasses()
   }, [])
+
+  const fetchClasses = async () => {
+    try {
+      const response = await classAPI.list()
+      setClasses(response.data.classes || [])
+    } catch (error) {
+      console.error('Failed to fetch classes:', error)
+    }
+  }
 
   const fetchGuardians = async () => {
     try {
@@ -1121,14 +1132,18 @@ export default function StudentsPage() {
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           Current Class *
                         </label>
-                        <input
-                          type="text"
+                        <select
                           name="currentClass"
                           value={formData.currentClass}
                           onChange={handleChange}
                           required
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
+                        >
+                          <option value="">Select Class</option>
+                          {classes.map(c => (
+                            <option key={c.id} value={c.name}>{c.name}</option>
+                          ))}
+                        </select>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1701,14 +1716,18 @@ export default function StudentsPage() {
                           <label className="block text-sm font-medium text-gray-700 mb-1">
                             Current Class *
                           </label>
-                          <input
-                            type="text"
+                          <select
                             name="currentClass"
                             value={formData.currentClass}
                             onChange={handleChange}
                             required
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
+                          >
+                            <option value="">Select Class</option>
+                            {classes.map(c => (
+                              <option key={c.id} value={c.name}>{c.name}</option>
+                            ))}
+                          </select>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">

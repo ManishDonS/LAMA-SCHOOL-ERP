@@ -169,6 +169,7 @@ services:
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
     depends_on:
       postgres:
         condition: service_healthy
@@ -513,7 +514,6 @@ services:
       DB_PORT: 5432
       DB_USER: postgres
       DB_PASSWORD: postgres
-      DB_NAME: school_erp
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
@@ -522,6 +522,37 @@ services:
       postgres:
         condition: service_healthy
       nats:
+        condition: service_healthy
+    networks:
+      - school-erp-network
+    restart: on-failure
+
+  # Class Service
+  class-service:
+    build:
+      context: ./services/class
+      dockerfile: Dockerfile
+      args:
+        - GOPROXY=https://proxy.golang.org,direct
+    container_name: school-erp-class
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    ports:
+      - "3014:3014"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: school_erp
+      NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+      CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
+      PORT: 3014
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+    depends_on:
+      postgres:
         condition: service_healthy
     networks:
       - school-erp-network

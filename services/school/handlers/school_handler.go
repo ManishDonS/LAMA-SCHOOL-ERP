@@ -512,7 +512,10 @@ func (h *SchoolHandler) GetSchools(c *fiber.Ctx) error {
 	SELECT id, name, COALESCE(code, ''), COALESCE(domain, ''), COALESCE(logo_url, ''), COALESCE(timezone, ''), COALESCE(db_name, ''), COALESCE(db_user, ''), 
 	       COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''), 
 	       COALESCE(city, ''), COALESCE(state, ''), COALESCE(country, ''), 
-	       COALESCE(pincode, ''), COALESCE(website, ''), status, active_modules, module_permissions, created_at, updated_at
+	       COALESCE(pincode, ''), COALESCE(website, ''),
+	       COALESCE(vat_number, ''), COALESCE(registration_number, ''), COALESCE(tax_id, ''),
+	       COALESCE(school_type, 'School'), COALESCE(alternate_phone, ''),
+	       status, active_modules, module_permissions, created_at, updated_at
 	FROM schools
 	WHERE status != 'suspended'
 	ORDER BY created_at DESC
@@ -549,6 +552,11 @@ func (h *SchoolHandler) GetSchools(c *fiber.Ctx) error {
 			&school.Country,
 			&school.Pincode,
 			&school.Website,
+			&school.VATNumber,
+			&school.RegistrationNumber,
+			&school.TaxID,
+			&school.SchoolType,
+			&school.AlternatePhone,
 			&school.Status,
 			&activeModulesJSON,
 			&modulePermissionsJSON,
@@ -598,7 +606,10 @@ func (h *SchoolHandler) GetSchool(c *fiber.Ctx) error {
 	SELECT id, name, COALESCE(code, ''), COALESCE(domain, ''), COALESCE(logo_url, ''), COALESCE(timezone, ''), COALESCE(db_name, ''), COALESCE(db_user, ''), 
 	       COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''), 
 	       COALESCE(city, ''), COALESCE(state, ''), COALESCE(country, ''), 
-	       COALESCE(pincode, ''), COALESCE(website, ''), status, active_modules, module_permissions, created_at, updated_at
+	       COALESCE(pincode, ''), COALESCE(website, ''), 
+	       COALESCE(vat_number, ''), COALESCE(registration_number, ''), COALESCE(tax_id, ''), 
+	       COALESCE(school_type, 'School'), COALESCE(alternate_phone, ''),
+	       status, active_modules, module_permissions, created_at, updated_at
 	FROM schools
 	WHERE id = $1
 	`
@@ -622,6 +633,11 @@ func (h *SchoolHandler) GetSchool(c *fiber.Ctx) error {
 		&school.Country,
 		&school.Pincode,
 		&school.Website,
+		&school.VATNumber,
+		&school.RegistrationNumber,
+		&school.TaxID,
+		&school.SchoolType,
+		&school.AlternatePhone,
 		&school.Status,
 		&activeModulesJSON,
 		&modulePermissionsJSON,
@@ -725,6 +741,31 @@ func (h *SchoolHandler) UpdateSchool(c *fiber.Ctx) error {
 	if req.Website != "" {
 		updateFields += fmt.Sprintf(", website = $%d", argIndex)
 		args = append(args, req.Website)
+		argIndex++
+	}
+	if req.VATNumber != "" {
+		updateFields += fmt.Sprintf(", vat_number = $%d", argIndex)
+		args = append(args, req.VATNumber)
+		argIndex++
+	}
+	if req.RegistrationNumber != "" {
+		updateFields += fmt.Sprintf(", registration_number = $%d", argIndex)
+		args = append(args, req.RegistrationNumber)
+		argIndex++
+	}
+	if req.TaxID != "" {
+		updateFields += fmt.Sprintf(", tax_id = $%d", argIndex)
+		args = append(args, req.TaxID)
+		argIndex++
+	}
+	if req.SchoolType != "" {
+		updateFields += fmt.Sprintf(", school_type = $%d", argIndex)
+		args = append(args, req.SchoolType)
+		argIndex++
+	}
+	if req.AlternatePhone != "" {
+		updateFields += fmt.Sprintf(", alternate_phone = $%d", argIndex)
+		args = append(args, req.AlternatePhone)
 		argIndex++
 	}
 	if req.Status != "" {
