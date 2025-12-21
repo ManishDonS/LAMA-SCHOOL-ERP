@@ -12,8 +12,9 @@ import (
 
 // SetupRoutes sets up all application routes
 func SetupRoutes(app *fiber.App, db *pgxpool.Pool, tenantManager *tenant.TenantManager, cfg *config.Config) {
-	// Create handler
+	// Create handlers
 	schoolHandler := handlers.NewSchoolHandler(db, tenantManager)
+	logoHandler := handlers.NewLogoUploadHandler(db)
 
 	// API routes
 	api := app.Group("/api/v1")
@@ -26,8 +27,7 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool, tenantManager *tenant.TenantM
 	// But let's assume we want to apply JWT middleware generally.
 	// Since we are implementing RBAC for School Admins, we focus on /api/v1/schools/:id/roles
 
-	schools.Post("/upload-logo", schoolHandler.UploadLogo) // Upload school logo
-	schools.Post("/", schoolHandler.CreateSchool)          // Create school
+	schools.Post("/", schoolHandler.CreateSchool) // Create school
 
 	// Routes that might need generic auth
 	schools.Get("/", schoolHandler.GetSchools)                 // List schools
@@ -37,6 +37,10 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool, tenantManager *tenant.TenantM
 	schools.Get("/:code/stats", schoolHandler.GetSchoolStats)  // Get school DB stats
 	schools.Get("/:id/admin", schoolHandler.GetSchoolAdmin)    // Get school admin details
 	schools.Put("/:id/admin", schoolHandler.UpdateSchoolAdmin) // Update school admin details
+
+	// Logo management
+	schools.Post("/:id/logo", logoHandler.UploadLogo)   // Upload/update school logo
+	schools.Delete("/:id/logo", logoHandler.DeleteLogo) // Delete school logo
 
 	// Module management
 	moduleHandler := handlers.NewModuleHandler(db)

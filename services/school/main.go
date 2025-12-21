@@ -78,11 +78,16 @@ func main() {
 		})
 	})
 
-	// Serve static files (uploaded logos) - MUST be before API routes
-	app.Static("/uploads", "/app/uploads")
-
-	// Setup routes
+	// Setup routes first
 	routes.SetupRoutes(app, mainDB, tenantManager, cfg)
+
+	// Create uploads directory if it doesn't exist
+	if err := os.MkdirAll("./uploads/logos", 0755); err != nil {
+		log.Printf("Warning: Failed to create uploads directory: %v\n", err)
+	}
+
+	// Serve static files (uploaded logos) - AFTER API routes to avoid conflicts
+	app.Static("/uploads", "./uploads")
 
 	// Health check endpoint
 	app.Get("/health", func(c *fiber.Ctx) error {

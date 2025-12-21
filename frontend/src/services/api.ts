@@ -402,15 +402,16 @@ export const schoolAPI = {
   update: (id: string, data: any) => schoolApiClient.put(`/api/v1/schools/${id}`, data),
   delete: (id: string) => schoolApiClient.delete(`/api/v1/schools/${id}`),
   stats: (code: string) => schoolApiClient.get(`/api/v1/schools/${code}/stats`),
-  uploadLogo: (file: File) => {
+  uploadLogo: (schoolId: string, file: File) => {
     const formData = new FormData()
     formData.append('logo', file)
-    return schoolApiClient.post('/api/v1/schools/upload-logo', formData, {
+    return schoolApiClient.post(`/api/v1/schools/${schoolId}/logo`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
     })
   },
+  deleteLogo: (schoolId: string) => schoolApiClient.delete(`/api/v1/schools/${schoolId}/logo`),
   getModules: () => schoolApiClient.get('/api/v1/modules'),
   toggleModule: (schoolId: string, moduleId: string, active: boolean) =>
     schoolApiClient.post(`/api/v1/schools/${schoolId}/modules`, {

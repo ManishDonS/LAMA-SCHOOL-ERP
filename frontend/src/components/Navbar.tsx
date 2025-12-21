@@ -28,26 +28,40 @@ export default function Navbar({ showBackButton = false, backLink = '/dashboard'
   useEffect(() => {
     setMounted(true)
     // Load selected school from localStorage
-    if (typeof window !== 'undefined') {
-      const schoolData = localStorage.getItem('selected_school')
-      const storedSystemLogo = localStorage.getItem('system_logo')
-      const storedSystemName = localStorage.getItem('system_name')
+    const loadSchoolData = () => {
+      if (typeof window !== 'undefined') {
+        const schoolData = localStorage.getItem('selected_school')
+        const storedSystemLogo = localStorage.getItem('system_logo')
+        const storedSystemName = localStorage.getItem('system_name')
 
-      if (schoolData) {
-        try {
-          setSelectedSchool(JSON.parse(schoolData))
-        } catch (error) {
-          console.error('Failed to parse school data:', error)
+        if (schoolData) {
+          try {
+            setSelectedSchool(JSON.parse(schoolData))
+          } catch (error) {
+            console.error('Failed to parse school data:', error)
+          }
+        }
+
+        if (storedSystemLogo) {
+          setSystemLogo(storedSystemLogo)
+        }
+
+        if (storedSystemName) {
+          setSystemName(storedSystemName)
         }
       }
+    }
 
-      if (storedSystemLogo) {
-        setSystemLogo(storedSystemLogo)
-      }
+    loadSchoolData()
 
-      if (storedSystemName) {
-        setSystemName(storedSystemName)
-      }
+    // Listen for storage changes (e.g., when logo is updated)
+    const handleStorageChange = () => {
+      loadSchoolData()
+    }
+
+    window.addEventListener('storage', handleStorageChange)
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
     }
   }, [])
 
@@ -111,13 +125,19 @@ export default function Navbar({ showBackButton = false, backLink = '/dashboard'
           <Link href="/dashboard" className="flex items-center">
             {displayLogo ? (
               <img
-                src={displayLogo}
+                src={shouldShowSchool && displayLogo ? `${process.env.NEXT_PUBLIC_SCHOOL_API_URL}${displayLogo}` : displayLogo}
                 alt={displayName}
-                className="h-8 w-8 object-contain rounded"
+                className="h-10 w-10 object-contain rounded"
+                onError={(e) => {
+                  // Fallback to default logo if image fails to load
+                  e.currentTarget.style.display = 'none'
+                  e.currentTarget.nextElementSibling?.classList.remove('hidden')
+                }}
               />
-            ) : (
-              <div className="h-8 w-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded flex items-center justify-center text-white font-bold text-sm">
-                LAMA
+            ) : null}
+            {!displayLogo && (
+              <div className="h-10 w-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded flex items-center justify-center text-white font-bold text-sm">
+                {shouldShowSchool ? selectedSchool?.name?.substring(0, 2).toUpperCase() : 'LAMA'}
               </div>
             )}
           </Link>

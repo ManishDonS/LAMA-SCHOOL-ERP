@@ -81,6 +81,10 @@ export default function SettingsPage() {
     password: '', // In real app, might auto-generate or send invite
   })
 
+  // Logo Upload State
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false)
+  const [logoPreview, setLogoPreview] = useState<string | null>(null)
+
   useEffect(() => {
     setIsHydrated(true)
   }, [])
@@ -213,6 +217,80 @@ export default function SettingsPage() {
     } catch (error: any) {
       console.error('Failed to save settings:', error)
       toast.error(error.response?.data?.error || 'Error saving settings')
+    }
+  }
+
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml']
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Invalid file type. Only PNG, JPG, JPEG, and SVG are allowed')
+      return
+    }
+
+    // Validate file size (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size exceeds 5MB limit')
+      return
+    }
+
+    const schoolId = user?.schoolId
+    if (!schoolId) return
+
+    setIsUploadingLogo(true)
+    try {
+      const response = await schoolAPI.uploadLogo(schoolId.toString(), file)
+      const logoURL = response.data.logo_url
+
+      // Update general settings with new logo URL
+      setGeneralSettings(prev => prev ? { ...prev, logo_url: logoURL } : null)
+      setTempGeneralSettings(prev => prev ? { ...prev, logo_url: logoURL } : null)
+
+      // Update localStorage so Navbar reflects the change immediately
+      if (typeof window !== 'undefined') {
+        const selectedSchoolStr = localStorage.getItem('selected_school')
+        if (selectedSchoolStr) {
+          try {
+            const selectedSchool = JSON.parse(selectedSchoolStr)
+            selectedSchool.logo_url = logoURL
+            localStorage.setItem('selected_school', JSON.stringify(selectedSchool))
+            // Trigger a storage event to notify other components
+            window.dispatchEvent(new Event('storage'))
+          } catch (e) {
+            console.error('Failed to update selected_school in localStorage', e)
+          }
+        }
+      }
+
+      toast.success('Logo uploaded successfully')
+    } catch (error: any) {
+      console.error('Failed to upload logo:', error)
+      toast.error(error.response?.data?.error || 'Failed to upload logo')
+    } finally {
+      setIsUploadingLogo(false)
+    }
+  }
+
+  const handleLogoDelete = async () => {
+    const schoolId = user?.schoolId
+    if (!schoolId) return
+
+    if (!confirm('Are you sure you want to remove the school logo?')) return
+
+    try {
+      await schoolAPI.deleteLogo(schoolId.toString())
+
+      // Update general settings to remove logo URL
+      setGeneralSettings(prev => prev ? { ...prev, logo_url: '' } : null)
+      setTempGeneralSettings(prev => prev ? { ...prev, logo_url: '' } : null)
+
+      toast.success('Logo removed successfully')
+    } catch (error: any) {
+      console.error('Failed to delete logo:', error)
+      toast.error(error.response?.data?.error || 'Failed to remove logo')
     }
   }
 
@@ -351,7 +429,7 @@ export default function SettingsPage() {
 
           {/* Main Content Area */}
           <div className="flex-1 overflow-y-auto p-8 bg-white">
-            <div className="max-w-4xl mx-auto">
+            <div className="w-full">
               <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-bold text-gray-900">
                   {modules.find(m => m.id === activeModule)?.label}
@@ -361,261 +439,355 @@ export default function SettingsPage() {
               {activeModule === 'general' && generalSettings && (
                 <div className="space-y-6">
                   {/* Header with Edit/Save buttons */}
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h2 className="text-2xl font-bold text-gray-900">School Information</h2>
-                      <p className="mt-1 text-sm text-gray-500">Manage your school's basic information and legal details</p>
-                    </div>
-                    {!isEditingGeneral ? (
-                      <button
-                        onClick={() => {
-                          setTempGeneralSettings(generalSettings)
-                          setIsEditingGeneral(true)
-                        }}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium shadow-sm"
-                      >
-                        ✏️ Edit Settings
-                      </button>
-                    ) : (
-                      <div className="flex space-x-3">
-                        <button
-                          onClick={() => setIsEditingGeneral(false)}
-                          className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm font-medium"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleSaveGeneralSettings}
-                          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium shadow-sm"
-                        >
-                          💾 Save Changes
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  {/* Header with Logo and School Name */}
+                  <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+                    <div className="p-6 border-b border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-6">
+                          {/* Logo */}
+                          <div className="relative group">
+                            {generalSettings.logo_url ? (
+                              <div className="relative">
+                                <img
+                                  src={`${process.env.NEXT_PUBLIC_SCHOOL_API_URL}${generalSettings.logo_url}`}
+                                  alt="School Logo"
+                                  className="h-24 w-24 object-contain border-2 border-gray-200 rounded-lg bg-white p-2"
+                                />
+                                {/* Hover Overlay */}
+                                <div className="absolute inset-0 bg-black bg-opacity-60 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center space-x-2">
+                                  <button
+                                    onClick={() => window.open(`${process.env.NEXT_PUBLIC_SCHOOL_API_URL}${generalSettings.logo_url}`, '_blank')}
+                                    className="px-2 py-1 bg-white text-gray-700 rounded text-xs font-medium hover:bg-gray-100"
+                                  >
+                                    👁️
+                                  </button>
+                                  <label className="px-2 py-1 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 cursor-pointer">
+                                    🔄
+                                    <input
+                                      type="file"
+                                      className="hidden"
+                                      accept="image/png,image/jpeg,image/jpg,image/svg+xml"
+                                      onChange={handleLogoUpload}
+                                      disabled={isUploadingLogo}
+                                    />
+                                  </label>
+                                </div>
+                              </div>
+                            ) : (
+                              <label className="block cursor-pointer group">
+                                <div className="h-24 w-24 border-2 border-dashed border-gray-300 rounded-lg group-hover:border-blue-500 group-hover:bg-blue-50 transition-colors flex flex-col items-center justify-center text-gray-400 group-hover:text-blue-500">
+                                  <span className="text-2xl mb-1">📷</span>
+                                  <span className="text-[10px] font-medium">Add Logo</span>
+                                </div>
+                                <input
+                                  type="file"
+                                  className="hidden"
+                                  accept="image/png,image/jpeg,image/jpg,image/svg+xml"
+                                  onChange={handleLogoUpload}
+                                  disabled={isUploadingLogo}
+                                />
+                              </label>
+                            )}
+                          </div>
 
-                  {/* Basic Information Card */}
-                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                      <span className="mr-2">🏫</span> Basic Information
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">School Name *</label>
-                        <input
-                          type="text"
-                          disabled={!isEditingGeneral}
-                          value={isEditingGeneral ? tempGeneralSettings?.schoolName : generalSettings.schoolName}
-                          onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, schoolName: e.target.value })}
-                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-50 disabled:text-gray-500 border p-2.5"
-                          placeholder="Enter school name"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">School Code</label>
-                        <input
-                          type="text"
-                          disabled={true}
-                          value={generalSettings.schoolCode}
-                          className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm bg-gray-50 text-gray-500 border p-2.5"
-                          placeholder="Auto-generated"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Institution Type</label>
-                        <select
-                          disabled={!isEditingGeneral}
-                          value={isEditingGeneral ? tempGeneralSettings?.schoolType : generalSettings.schoolType}
-                          onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, schoolType: e.target.value })}
-                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-50 disabled:text-gray-500 border p-2.5"
-                        >
-                          <option value="School">School</option>
-                          <option value="College">College</option>
-                          <option value="Institute">Institute</option>
-                          <option value="Academy">Academy</option>
-                          <option value="University">University</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Website</label>
-                        <input
-                          type="url"
-                          disabled={!isEditingGeneral}
-                          value={isEditingGeneral ? tempGeneralSettings?.website : generalSettings.website}
-                          onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, website: e.target.value })}
-                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-50 disabled:text-gray-500 border p-2.5"
-                          placeholder="https://www.example.com"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Contact Information Card */}
-                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                      <span className="mr-2">📞</span> Contact Information
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Primary Email *</label>
-                        <input
-                          type="email"
-                          disabled={!isEditingGeneral}
-                          value={isEditingGeneral ? tempGeneralSettings?.email : generalSettings.email}
-                          onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, email: e.target.value })}
-                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-50 disabled:text-gray-500 border p-2.5"
-                          placeholder="contact@school.com"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Primary Phone *</label>
-                        <input
-                          type="tel"
-                          disabled={!isEditingGeneral}
-                          value={isEditingGeneral ? tempGeneralSettings?.phone : generalSettings.phone}
-                          onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, phone: e.target.value })}
-                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-50 disabled:text-gray-500 border p-2.5"
-                          placeholder="+977-XXX-XXXXXXX"
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Alternate Phone</label>
-                        <input
-                          type="tel"
-                          disabled={!isEditingGeneral}
-                          value={isEditingGeneral ? tempGeneralSettings?.alternatePhone : generalSettings.alternatePhone}
-                          onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, alternatePhone: e.target.value })}
-                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-50 disabled:text-gray-500 border p-2.5"
-                          placeholder="Secondary contact number"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Address Information Card */}
-                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                      <span className="mr-2">📍</span> Address Information
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Street Address</label>
-                        <input
-                          type="text"
-                          disabled={!isEditingGeneral}
-                          value={isEditingGeneral ? tempGeneralSettings?.address : generalSettings.address}
-                          onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, address: e.target.value })}
-                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-50 disabled:text-gray-500 border p-2.5"
-                          placeholder="Street address, building number"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
-                        <input
-                          type="text"
-                          disabled={!isEditingGeneral}
-                          value={isEditingGeneral ? tempGeneralSettings?.city : generalSettings.city}
-                          onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, city: e.target.value })}
-                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-50 disabled:text-gray-500 border p-2.5"
-                          placeholder="City name"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">State/Province</label>
-                        <input
-                          type="text"
-                          disabled={!isEditingGeneral}
-                          value={isEditingGeneral ? tempGeneralSettings?.state : generalSettings.state}
-                          onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, state: e.target.value })}
-                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-50 disabled:text-gray-500 border p-2.5"
-                          placeholder="State or province"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
-                        <input
-                          type="text"
-                          disabled={!isEditingGeneral}
-                          value={isEditingGeneral ? tempGeneralSettings?.country : generalSettings.country}
-                          onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, country: e.target.value })}
-                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-50 disabled:text-gray-500 border p-2.5"
-                          placeholder="Country"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">ZIP/Postal Code</label>
-                        <input
-                          type="text"
-                          disabled={!isEditingGeneral}
-                          value={isEditingGeneral ? tempGeneralSettings?.zipCode : generalSettings.zipCode}
-                          onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, zipCode: e.target.value })}
-                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-50 disabled:text-gray-500 border p-2.5"
-                          placeholder="Postal code"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Legal & Registration Card */}
-                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                      <span className="mr-2">📄</span> Legal & Registration Details
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">VAT Number</label>
-                        <input
-                          type="text"
-                          disabled={!isEditingGeneral}
-                          value={isEditingGeneral ? tempGeneralSettings?.vatNumber : generalSettings.vatNumber}
-                          onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, vatNumber: e.target.value })}
-                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-50 disabled:text-gray-500 border p-2.5"
-                          placeholder="VAT registration number"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Registration Number</label>
-                        <input
-                          type="text"
-                          disabled={!isEditingGeneral}
-                          value={isEditingGeneral ? tempGeneralSettings?.registrationNumber : generalSettings.registrationNumber}
-                          onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, registrationNumber: e.target.value })}
-                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-50 disabled:text-gray-500 border p-2.5"
-                          placeholder="Company/School registration number"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Tax ID</label>
-                        <input
-                          type="text"
-                          disabled={!isEditingGeneral}
-                          value={isEditingGeneral ? tempGeneralSettings?.taxId : generalSettings.taxId}
-                          onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, taxId: e.target.value })}
-                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-50 disabled:text-gray-500 border p-2.5"
-                          placeholder="Tax identification number"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Logo Section - Placeholder for now */}
-                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                      <span className="mr-2">🖼️</span> Branding
-                    </h3>
-                    <div className="flex items-center space-x-4">
-                      {generalSettings.logo_url && (
-                        <div className="flex-shrink-0">
-                          <img
-                            src={generalSettings.logo_url}
-                            alt="School Logo"
-                            className="h-20 w-20 object-contain border border-gray-200 rounded-lg"
-                          />
+                          {/* School Name and Quick Stats */}
+                          <div>
+                            <h2 className="text-3xl font-bold text-gray-900 tracking-tight">
+                              {generalSettings.schoolName || 'School Name'}
+                            </h2>
+                            <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
+                              {generalSettings.schoolCode && (
+                                <span className="flex items-center">
+                                  <span className="bg-gray-100 px-2 py-0.5 rounded text-xs font-medium text-gray-600 mr-2">CODE</span>
+                                  {generalSettings.schoolCode}
+                                </span>
+                              )}
+                              {generalSettings.schoolType && (
+                                <span className="flex items-center">
+                                  <span className="w-1 h-1 bg-gray-300 rounded-full mx-2"></span>
+                                  {generalSettings.schoolType}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      )}
-                      <div className="flex-1">
-                        <p className="text-sm text-gray-600 mb-2">School Logo</p>
-                        <p className="text-xs text-gray-500">Logo upload functionality coming soon</p>
+
+                        {/* Edit/Save Buttons */}
+                        <div>
+                          {!isEditingGeneral ? (
+                            <button
+                              onClick={() => {
+                                setTempGeneralSettings(generalSettings)
+                                setIsEditingGeneral(true)
+                              }}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium shadow-sm flex items-center"
+                            >
+                              <span className="mr-2">✏️</span> Edit Information
+                            </button>
+                          ) : (
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => setIsEditingGeneral(false)}
+                                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={handleSaveGeneralSettings}
+                                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium shadow-sm flex items-center"
+                              >
+                                <span className="mr-2">💾</span> Save Changes
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Navigation Tabs */}
+                    <div className="border-b border-gray-200 bg-gray-50 px-6">
+                      <nav className="flex space-x-8" aria-label="Tabs">
+                        <button className="border-b-2 border-blue-600 py-4 px-1 text-sm font-medium text-blue-600 flex items-center">
+                          <span className="mr-2">📝</span> General Information
+                        </button>
+                      </nav>
+                    </div>
+
+                    {/* Form Content */}
+                    <div className="p-8">
+                      <div className="grid grid-cols-12 gap-8">
+                        {/* Left Column: Primary Details */}
+                        <div className="col-span-12 md:col-span-6 space-y-6">
+                          <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
+                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Identity & Contact</h4>
+
+                            {/* School Name */}
+                            <div className="mb-4">
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                School / Organization Name <span className="text-red-500">*</span>
+                              </label>
+                              {isEditingGeneral ? (
+                                <input
+                                  type="text"
+                                  value={tempGeneralSettings?.schoolName}
+                                  onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, schoolName: e.target.value })}
+                                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                />
+                              ) : (
+                                <p className="text-gray-900 font-medium">{generalSettings.schoolName}</p>
+                              )}
+                            </div>
+
+                            {/* Email & Phone */}
+                            <div className="grid grid-cols-2 gap-4 mb-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                                {isEditingGeneral ? (
+                                  <input
+                                    type="email"
+                                    value={tempGeneralSettings?.email}
+                                    onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, email: e.target.value })}
+                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                  />
+                                ) : (
+                                  <p className="text-gray-900">{generalSettings.email || '-'}</p>
+                                )}
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                                {isEditingGeneral ? (
+                                  <input
+                                    type="tel"
+                                    value={tempGeneralSettings?.phone}
+                                    onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, phone: e.target.value })}
+                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                  />
+                                ) : (
+                                  <p className="text-gray-900">{generalSettings.phone || '-'}</p>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Website */}
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Website</label>
+                              {isEditingGeneral ? (
+                                <div className="mt-1 flex rounded-md shadow-sm">
+                                  <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm">
+                                    https://
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={tempGeneralSettings?.website?.replace('https://', '')}
+                                    onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, website: `https://${e.target.value}` })}
+                                    className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md border-gray-300 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                  />
+                                </div>
+                              ) : (
+                                <a href={generalSettings.website} target="_blank" rel="noreferrer" className="text-blue-600 hover:text-blue-800 hover:underline">
+                                  {generalSettings.website || '-'}
+                                </a>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
+                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Legal Details</h4>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Tax ID / PAN</label>
+                                {isEditingGeneral ? (
+                                  <input
+                                    type="text"
+                                    value={tempGeneralSettings?.taxId}
+                                    onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, taxId: e.target.value })}
+                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm bg-white"
+                                  />
+                                ) : (
+                                  <p className="text-gray-900">{generalSettings.taxId || '-'}</p>
+                                )}
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">VAT Number</label>
+                                {isEditingGeneral ? (
+                                  <input
+                                    type="text"
+                                    value={tempGeneralSettings?.vatNumber}
+                                    onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, vatNumber: e.target.value })}
+                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm bg-white"
+                                  />
+                                ) : (
+                                  <p className="text-gray-900">{generalSettings.vatNumber || '-'}</p>
+                                )}
+                              </div>
+                              <div className="col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Registration No.</label>
+                                {isEditingGeneral ? (
+                                  <input
+                                    type="text"
+                                    value={tempGeneralSettings?.registrationNumber}
+                                    onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, registrationNumber: e.target.value })}
+                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm bg-white"
+                                  />
+                                ) : (
+                                  <p className="text-gray-900">{generalSettings.registrationNumber || '-'}</p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right Column: Address & Type */}
+                        <div className="col-span-12 md:col-span-6 space-y-6">
+                          <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
+                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Location</h4>
+
+                            {/* Address Fields */}
+                            <div className="space-y-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Street Address</label>
+                                {isEditingGeneral ? (
+                                  <input
+                                    type="text"
+                                    value={tempGeneralSettings?.address}
+                                    onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, address: e.target.value })}
+                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                  />
+                                ) : (
+                                  <p className="text-gray-900">{generalSettings.address || '-'}</p>
+                                )}
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+                                  {isEditingGeneral ? (
+                                    <input
+                                      type="text"
+                                      value={tempGeneralSettings?.city}
+                                      onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, city: e.target.value })}
+                                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                    />
+                                  ) : (
+                                    <p className="text-gray-900">{generalSettings.city || '-'}</p>
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">State / Province</label>
+                                  {isEditingGeneral ? (
+                                    <input
+                                      type="text"
+                                      value={tempGeneralSettings?.state}
+                                      onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, state: e.target.value })}
+                                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                    />
+                                  ) : (
+                                    <p className="text-gray-900">{generalSettings.state || '-'}</p>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">ZIP Info</label>
+                                  {isEditingGeneral ? (
+                                    <input
+                                      type="text"
+                                      value={tempGeneralSettings?.zipCode}
+                                      onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, zipCode: e.target.value })}
+                                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                    />
+                                  ) : (
+                                    <p className="text-gray-900">{generalSettings.zipCode || '-'}</p>
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                                  {isEditingGeneral ? (
+                                    <input
+                                      type="text"
+                                      value={tempGeneralSettings?.country}
+                                      onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, country: e.target.value })}
+                                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                    />
+                                  ) : (
+                                    <p className="text-gray-900">{generalSettings.country || '-'}</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
+                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Configurations</h4>
+                            <div className="space-y-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Institution Type</label>
+                                {isEditingGeneral ? (
+                                  <select
+                                    value={tempGeneralSettings?.schoolType}
+                                    onChange={(e) => setTempGeneralSettings({ ...tempGeneralSettings!, schoolType: e.target.value })}
+                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                  >
+                                    <option value="School">School</option>
+                                    <option value="College">College</option>
+                                    <option value="University">University</option>
+                                    <option value="Institute">Institute</option>
+                                    <option value="Academy">Academy</option>
+                                  </select>
+                                ) : (
+                                  <p className="text-gray-900">{generalSettings.schoolType || 'School'}</p>
+                                )}
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">System Code</label>
+                                <code className="bg-gray-200 px-2 py-1 rounded text-xs text-gray-800 font-mono">
+                                  {generalSettings.schoolCode}
+                                </code>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
