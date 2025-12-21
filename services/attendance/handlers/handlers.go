@@ -35,11 +35,17 @@ func (h *Handler) ListAttendance(c *fiber.Ctx) error {
 	class := c.Query("class")
 	date := c.Query("date")
 	status := c.Query("status")
+	studentID := c.Query("student_id")
 
 	query := `SELECT id, school_id, student_id, class, date, status, remarks, marked_by, created_at, updated_at FROM attendance WHERE 1=1`
 	args := []interface{}{}
 	argIdx := 1
 
+	if studentID != "" {
+		query += fmt.Sprintf(" AND student_id = $%d", argIdx)
+		args = append(args, studentID)
+		argIdx++
+	}
 	if class != "" {
 		query += fmt.Sprintf(" AND class = $%d", argIdx)
 		args = append(args, class)
@@ -85,6 +91,7 @@ func (h *Handler) ListAttendance(c *fiber.Ctx) error {
 }
 
 // MarkAttendance handles POST /api/v1/attendance
+// MarkAttendance handles POST /api/v1/attendance
 func (h *Handler) MarkAttendance(c *fiber.Ctx) error {
 	db := middleware.GetTenantDB(c)
 	if db == nil {
@@ -92,14 +99,15 @@ func (h *Handler) MarkAttendance(c *fiber.Ctx) error {
 	}
 
 	var req struct {
-		StudentID int64     `json:"student_id"`
-		Class     string    `json:"class"`
-		Date      time.Time `json:"date"`
-		Status    string    `json:"status"`
-		Remarks   string    `json:"remarks"`
+		StudentID int64  `json:"student_id"`
+		Class     string `json:"class"`
+		Date      string `json:"date"`
+		Status    string `json:"status"`
+		Remarks   string `json:"remarks"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
+		log.Printf("Error parsing body: %v", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
@@ -107,8 +115,21 @@ func (h *Handler) MarkAttendance(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Missing required fields"})
 	}
 
-	if req.Date.IsZero() {
-		req.Date = time.Now()
+	var attendanceDate time.Time
+	var err error
+	if req.Date == "" {
+		attendanceDate = time.Now()
+	} else {
+		// Try parsing YYYY-MM-DD first
+		attendanceDate, err = time.Parse("2006-01-02", req.Date)
+		if err != nil {
+			// Try parsing RFC3339 (should cover ISO strings from JS)
+			attendanceDate, err = time.Parse(time.RFC3339, req.Date)
+			if err != nil {
+				log.Printf("Error parsing date: %v", err)
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid date format"})
+			}
+		}
 	}
 
 	schoolID := int64(0) // Should ideally be context-driven
@@ -120,7 +141,7 @@ func (h *Handler) MarkAttendance(c *fiber.Ctx) error {
 
 	var id int64
 	var createdAt, updatedAt time.Time
-	err := db.QueryRow(context.Background(), query, schoolID, req.StudentID, req.Class, req.Date, req.Status, req.Remarks).Scan(&id, &createdAt, &updatedAt)
+	err = db.QueryRow(context.Background(), query, schoolID, req.StudentID, req.Class, attendanceDate, req.Status, req.Remarks).Scan(&id, &createdAt, &updatedAt)
 	if err != nil {
 		log.Printf("Error marking attendance: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to save attendance record"})
@@ -135,6 +156,7 @@ func (h *Handler) MarkAttendance(c *fiber.Ctx) error {
 }
 
 // UpdateAttendance handles PUT /api/v1/attendance/:id
+// UpdateAttendance handles PUT /api/v1/attendance/:id
 func (h *Handler) UpdateAttendance(c *fiber.Ctx) error {
 	db := middleware.GetTenantDB(c)
 	if db == nil {
@@ -145,21 +167,42 @@ func (h *Handler) UpdateAttendance(c *fiber.Ctx) error {
 	var req struct {
 		Status  string `json:"status"`
 		Remarks string `json:"remarks"`
+		Date    string `json:"date"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	query := `
-		UPDATE attendance 
-		SET status = $1, remarks = $2, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $3
-		RETURNING id, updated_at`
+	var attendanceDate time.Time
+	var err error
+	if req.Date != "" {
+		attendanceDate, err = time.Parse("2006-01-02", req.Date)
+		if err != nil {
+			attendanceDate, err = time.Parse(time.RFC3339, req.Date)
+			if err != nil {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid date format"})
+			}
+		}
+	}
+
+	// Build dynamic query
+	query := `UPDATE attendance SET status = $1, remarks = $2, updated_at = CURRENT_TIMESTAMP`
+	args := []interface{}{req.Status, req.Remarks}
+	argIdx := 3
+
+	if !attendanceDate.IsZero() {
+		query += fmt.Sprintf(", date = $%d", argIdx)
+		args = append(args, attendanceDate)
+		argIdx++
+	}
+
+	query += fmt.Sprintf(" WHERE id = $%d RETURNING id, updated_at", argIdx)
+	args = append(args, id)
 
 	var updatedID int64
 	var updatedAt time.Time
-	err := db.QueryRow(context.Background(), query, req.Status, req.Remarks, id).Scan(&updatedID, &updatedAt)
+	err = db.QueryRow(context.Background(), query, args...).Scan(&updatedID, &updatedAt)
 	if err != nil {
 		log.Printf("Error updating attendance: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update attendance record"})

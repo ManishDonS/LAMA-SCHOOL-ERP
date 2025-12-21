@@ -5,7 +5,7 @@ import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import Navbar from '@/components/Navbar'
 import { useAuthStore } from '@/store/authStore'
-import { studentAPI } from '@/services/api'
+import { studentAPI, guardianAPI, attendanceAPI } from '@/services/api'
 import { toast } from 'react-hot-toast'
 
 interface Student {
@@ -144,6 +144,20 @@ interface FeeSummary {
     lastPaymentDate: string
 }
 
+interface AttendanceRecord {
+    id: number
+    studentId: number
+    date: string
+    status: string
+    checkInTime: string
+    checkOutTime: string
+    reason: string
+    remarks: string
+    markedBy: number
+    createdAt: string
+    updatedAt: string
+}
+
 interface HealthRecord {
     id: number
     recordType: string
@@ -155,6 +169,19 @@ interface HealthRecord {
     hospital: string
     prescription: string
     notes: string
+}
+
+interface AttendanceSummary {
+    id: number
+    studentId: number
+    academicYear: string
+    month: string
+    totalDays: number
+    presentDays: number
+    absentDays: number
+    lateDays: number
+    excusedDays: number
+    attendancePercentage: number
 }
 
 interface BehavioralRecord {
@@ -362,54 +389,102 @@ export default function StudentDetailsPage() {
                 }
 
                 // Map guardian info from API response
-                const mappedGuardians: Guardian[] = []
-                if (studentData.guardians && Array.isArray(studentData.guardians)) {
-                    studentData.guardians.forEach((guardian: any, index: number) => {
-                        mappedGuardians.push({
-                            id: guardian.id || index + 1,
-                            guardianType: guardian.guardianType || guardian.guardian_type || 'guardian',
-                            name: guardian.name || '',
-                            relationship: guardian.relationship || '',
-                            phone: guardian.phone || '',
-                            email: guardian.email || '',
-                            occupation: guardian.occupation || '',
-                            address: guardian.address || '',
-                            isPrimary: guardian.isPrimary || guardian.is_primary || false,
-                        })
-                    })
-                } else {
-                    // Fallback to legacy fields if guardians array not present
-                    if (studentData.fatherName || studentData.father_name) {
-                        mappedGuardians.push({
-                            id: 1,
-                            guardianType: 'father',
-                            name: studentData.fatherName || studentData.father_name,
-                            relationship: 'Father',
-                            phone: studentData.primaryPhone || studentData.primary_phone || '',
-                            email: studentData.email || '',
-                            occupation: '',
-                            address: studentData.homeAddress || studentData.home_address || '',
-                            isPrimary: true,
-                        })
+                let mappedGuardians: Guardian[] = []
+
+                // 1. First try to get from user-service (Guardians module data)
+                try {
+                    const guardiansResponse = await guardianAPI.list()
+                    if (guardiansResponse.data && guardiansResponse.data.parents) {
+                        const studentIdNo = mappedStudent.studentIdNumber
+                        const matchingGuardians = guardiansResponse.data.parents.filter((p: any) =>
+                            Array.isArray(p.linked_students) && p.linked_students.includes(studentIdNo)
+                        )
+
+                        if (matchingGuardians.length > 0) {
+                            mappedGuardians = matchingGuardians.map((p: any) => ({
+                                id: p.id,
+                                guardianType: p.relationship?.toLowerCase() || 'guardian',
+                                name: `${p.first_name} ${p.last_name}`,
+                                relationship: p.relationship || '',
+                                phone: p.phone_number || '',
+                                email: p.email || '',
+                                occupation: p.occupation || '',
+                                address: p.address || '',
+                                isPrimary: p.id === matchingGuardians[0].id, // Default first matching to primary if not specified
+                            }))
+                        }
                     }
-                    if (studentData.motherName || studentData.mother_name) {
-                        mappedGuardians.push({
-                            id: 2,
-                            guardianType: 'mother',
-                            name: studentData.motherName || studentData.mother_name,
-                            relationship: 'Mother',
-                            phone: '',
-                            email: '',
-                            occupation: '',
-                            address: studentData.homeAddress || studentData.home_address || '',
-                            isPrimary: false,
+                } catch (err) {
+                    console.error('Failed to fetch guardians from user-service:', err)
+                }
+
+                // 2. If no guardians found in user-service, fall back to student-service results or legacy fields
+                if (mappedGuardians.length === 0) {
+                    if (studentData.guardians && Array.isArray(studentData.guardians) && studentData.guardians.length > 0) {
+                        studentData.guardians.forEach((guardian: any, index: number) => {
+                            mappedGuardians.push({
+                                id: guardian.id || index + 1,
+                                guardianType: guardian.guardianType || guardian.guardian_type || 'guardian',
+                                name: guardian.name || '',
+                                relationship: guardian.relationship || '',
+                                phone: guardian.phone || '',
+                                email: guardian.email || '',
+                                occupation: guardian.occupation || '',
+                                address: guardian.address || '',
+                                isPrimary: guardian.isPrimary || guardian.is_primary || false,
+                            })
                         })
+                    } else {
+                        // Fallback to legacy fields if guardians array not present
+                        if (studentData.fatherName || studentData.father_name || s.father_name) {
+                            mappedGuardians.push({
+                                id: 1,
+                                guardianType: 'father',
+                                name: studentData.fatherName || studentData.father_name || s.father_name,
+                                relationship: 'Father',
+                                phone: studentData.primaryPhone || studentData.primary_phone || s.phone || '',
+                                email: studentData.email || s.email || '',
+                                occupation: '',
+                                address: studentData.homeAddress || studentData.home_address || s.address || '',
+                                isPrimary: true,
+                            })
+                        }
+                        if (studentData.motherName || studentData.mother_name || s.mother_name) {
+                            mappedGuardians.push({
+                                id: 2,
+                                guardianType: 'mother',
+                                name: studentData.motherName || studentData.mother_name || s.mother_name,
+                                relationship: 'Mother',
+                                phone: '',
+                                email: '',
+                                occupation: '',
+                                address: studentData.homeAddress || studentData.home_address || s.address || '',
+                                isPrimary: false,
+                            })
+                        }
                     }
                 }
 
-                // Mock statistics based on real data where possible, or defaults
+                // 3. Fetch real attendance records from attendance-service
+                let realAttendancePercent = 0
+                try {
+                    const attendanceResponse = await attendanceAPI.list({ student_id: id })
+                    if (attendanceResponse.data && attendanceResponse.data.records) {
+                        const records = attendanceResponse.data.records
+                        setAttendanceRecords(records)
+
+                        if (records.length > 0) {
+                            const presentCount = records.filter((r: any) => r.status.toLowerCase() === 'present').length
+                            realAttendancePercent = Math.round((presentCount / records.length) * 100)
+                        }
+                    }
+                } catch (err) {
+                    console.error('Failed to fetch attendance from attendance-service:', err)
+                }
+
+                // Map statistics based on real data where possible, or defaults
                 const derivedStatistics: Statistics = {
-                    overallAttendance: studentData.overallAttendance || studentData.overall_attendance || 0,
+                    overallAttendance: realAttendancePercent || studentData.overallAttendance || studentData.overall_attendance || 0,
                     currentGpa: studentData.currentGpa || studentData.current_gpa || 0,
                     currentPercentage: studentData.currentPercentage || studentData.current_percentage || 0,
                     totalFeesPaid: studentData.totalFeesPaid || studentData.total_fees_paid || 0,
@@ -1022,11 +1097,47 @@ export default function StudentDetailsPage() {
 
                             {/* Attendance Tab */}
                             {activeTab === 'attendance' && (
-                                <div className="text-center py-12">
-                                    <div className="text-6xl mb-4">📅</div>
-                                    <h3 className="text-2xl font-bold text-gray-800 mb-2">Attendance Records</h3>
-                                    <p className="text-gray-600">Comprehensive attendance history and statistics will be displayed here.</p>
-                                    <p className="text-sm text-gray-500 mt-2">Including calendar heatmap, monthly summaries, and absence reasons.</p>
+                                <div className="space-y-6">
+                                    <div className="bg-white rounded-xl p-6 border border-gray-200">
+                                        <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                            <span>📅</span> Recent Attendance
+                                        </h3>
+                                        {attendanceRecords.length > 0 ? (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left border-collapse">
+                                                    <thead>
+                                                        <tr className="border-b border-gray-100">
+                                                            <th className="py-3 px-4 text-sm font-semibold text-gray-600">Date</th>
+                                                            <th className="py-3 px-4 text-sm font-semibold text-gray-600">Status</th>
+                                                            <th className="py-3 px-4 text-sm font-semibold text-gray-600">Remarks</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {attendanceRecords.slice(0, 10).map((record) => (
+                                                            <tr key={record.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                                                                <td className="py-3 px-4 text-sm text-gray-700">{formatDate(record.date)}</td>
+                                                                <td className="py-3 px-4">
+                                                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${record.status.toLowerCase() === 'present'
+                                                                        ? 'bg-green-100 text-green-700'
+                                                                        : record.status.toLowerCase() === 'absent'
+                                                                            ? 'bg-red-100 text-red-700'
+                                                                            : 'bg-yellow-100 text-yellow-700'
+                                                                        }`}>
+                                                                        {record.status}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="py-3 px-4 text-sm text-gray-500">{record.remarks || '-'}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                                                <p className="text-gray-500">No attendance records found.</p>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             )}
 

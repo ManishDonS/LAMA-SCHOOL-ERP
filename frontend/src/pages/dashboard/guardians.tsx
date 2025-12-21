@@ -147,6 +147,23 @@ export default function GuardiansPage() {
     status: '',
     relationship: '',
   })
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false)
+  const [showColumnPicker, setShowColumnPicker] = useState(false)
+  const [visibleColumns, setVisibleColumns] = useState({
+    guardian: true,
+    contactInfo: true,
+    relationship: true,
+    linkedStudents: true,
+    status: true,
+    actions: true,
+  });
+
+  const toggleColumn = (column: keyof typeof visibleColumns) => {
+    setVisibleColumns(prev => ({
+      ...prev,
+      [column]: !prev[column]
+    }));
+  };
 
   useEffect(() => {
     fetchGuardians()
@@ -345,7 +362,7 @@ export default function GuardiansPage() {
       <div className="flex flex-1">
         <Sidebar />
 
-        <main className="flex-1 py-8 px-6 overflow-y-auto">
+        <main className="flex-1 py-8 px-6 pb-64 overflow-y-auto">
           {/* Header Section */}
           <div className="mb-8">
             <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
@@ -356,116 +373,245 @@ export default function GuardiansPage() {
 
           {/* Stats Overview */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            {[
-              { label: 'Total Guardians', value: guardians.length, color: 'blue', icon: '👨‍👩‍👧‍👦' },
-              { label: 'Active Profiles', value: guardians.filter(g => g.status === 'active').length, color: 'emerald', icon: '✅' },
-              { label: 'Inactive Profiles', value: guardians.filter(g => g.status === 'inactive').length, color: 'rose', icon: '⏳' },
-            ].map((stat, i) => (
-              <div key={i} className="bg-white/60 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-white/40 flex items-center gap-4 hover:shadow-md transition-shadow">
-                <div className={`w-12 h-12 rounded-xl bg-${stat.color}-50 flex items-center justify-center text-2xl`}>
-                  {stat.icon}
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-500">{stat.label}</p>
-                  <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-                </div>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4 transition-all hover:shadow-md">
+              <div className="p-3 bg-blue-50 rounded-xl">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
               </div>
-            ))}
-          </div>
-
-          {/* Search & Actions Bar */}
-          <div className="mb-6 space-y-4">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-              <div className="flex-1 w-full md:w-auto relative group">
-                <input
-                  type="text"
-                  placeholder="Search by name, email, or phone..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full md:w-96 px-5 py-3 pl-12 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 bg-white/50 backdrop-blur-sm shadow-sm hover:shadow-md"
-                />
-                <div className="absolute left-4 top-3.5 text-gray-400 group-focus-within:text-blue-500 transition-colors">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </div>
-              </div>
-
-              <div className="flex gap-3 w-full md:w-auto">
-                <button
-                  onClick={() => setShowFilters(!showFilters)}
-                  className={`px-4 py-3 rounded-xl border font-medium flex items-center gap-2 transition-all duration-200 ${showFilters
-                    ? 'bg-blue-50 border-blue-200 text-blue-700'
-                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                    }`}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                  </svg>
-                  Filters
-                </button>
-
-                <button
-                  onClick={handleAddGuardian}
-                  className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center gap-2 whitespace-nowrap"
-                >
-                  <span className="text-xl">+</span>
-                  Add Guardian
-                </button>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Total Guardians</p>
+                <p className="text-2xl font-bold text-gray-900">{guardians.length}</p>
               </div>
             </div>
 
-            {/* Advanced Filters Panel */}
-            {showFilters && (
-              <div className="bg-white/80 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-gray-100 animation-fade-in-down">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Status</label>
-                    <select
-                      value={filters.status}
-                      onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                      className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 bg-gray-50/50"
-                    >
-                      <option value="">All Statuses</option>
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Relationship</label>
-                    <select
-                      value={filters.relationship}
-                      onChange={(e) => setFilters({ ...filters, relationship: e.target.value })}
-                      className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 bg-gray-50/50"
-                    >
-                      <option value="">All Relationships</option>
-                      {RELATIONSHIPS.map(rel => (
-                        <option key={rel} value={rel}>{rel}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4 transition-all hover:shadow-md">
+              <div className="p-3 bg-green-50 rounded-xl">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
               </div>
-            )}
+              <div>
+                <p className="text-sm font-medium text-gray-500">Active Profiles</p>
+                <p className="text-2xl font-bold text-gray-900">{guardians.filter(g => g.status?.toLowerCase() === 'active').length}</p>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4 transition-all hover:shadow-md">
+              <div className="p-3 bg-orange-50 rounded-xl">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Inactive Profiles</p>
+                <p className="text-2xl font-bold text-gray-900">{guardians.length - guardians.filter(g => g.status?.toLowerCase() === 'active').length}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Search & Actions Bar */}
+          <div className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="max-w-2xl w-full relative group">
+              {/* Search Bar Container */}
+              <div className="flex items-center bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 focus-within:ring-2 focus-within:ring-blue-100 focus-within:border-blue-500 overflow-hidden">
+                <div className="pl-3 text-gray-400">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+
+                {/* Active Filter Chips */}
+                <div className="flex flex-wrap gap-2 px-2 max-w-[50%]">
+                  {Object.entries(filters).map(([key, value]) => value && (
+                    <span key={key} className="flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs font-semibold border border-blue-100">
+                      <span className="opacity-60 capitalize">{key}:</span> {value}
+                      <button
+                        onClick={() => setFilters(prev => ({ ...prev, [key]: '' }))}
+                        className="hover:bg-blue-200 rounded-full p-0.5 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </span>
+                  ))}
+                </div>
+
+                <input
+                  type="text"
+                  placeholder="Search by Name, Email, ID..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="flex-1 px-3 py-2 focus:outline-none text-sm bg-transparent"
+                />
+
+                {/* Dropdown Trigger */}
+                <button
+                  onClick={() => setShowSearchDropdown(!showSearchDropdown)}
+                  className={`p-2 border-l border-gray-100 transition-colors hover:bg-gray-50 ${showSearchDropdown ? 'bg-gray-100 text-blue-600' : 'text-gray-400'}`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${showSearchDropdown ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Dropdown Menu */}
+              {showSearchDropdown && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowSearchDropdown(false)}></div>
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl z-50 border border-gray-100 grid grid-cols-1 md:grid-cols-3 p-6 animate-fade-in-up">
+                    {/* Filters Section */}
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 text-blue-600 font-bold text-sm uppercase tracking-wider mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                        Filters
+                      </div>
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-gray-500 uppercase">Status</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {['Active', 'Inactive'].map(st => (
+                              <button
+                                key={st}
+                                onClick={() => setFilters(prev => ({ ...prev, status: prev.status === st.toLowerCase() ? '' : st.toLowerCase() }))}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${filters.status === st.toLowerCase() ? 'bg-blue-100 text-blue-600 border-blue-200' : 'bg-gray-50 text-gray-600 border-gray-100 hover:bg-gray-100'} border`}
+                              >
+                                {st}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-gray-500 uppercase">Relationship</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {['Father', 'Mother', 'Guardian'].map(rel => (
+                              <button
+                                key={rel}
+                                onClick={() => setFilters(prev => ({ ...prev, relationship: prev.relationship === rel ? '' : rel }))}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${filters.relationship === rel ? 'bg-blue-100 text-blue-600 border-blue-200' : 'bg-gray-50 text-gray-600 border-gray-100 hover:bg-gray-100'} border`}
+                              >
+                                {rel}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Group By Section */}
+                    <div className="border-l border-gray-100 pl-6 space-y-4">
+                      <div className="flex items-center gap-2 text-purple-600 font-bold text-sm uppercase tracking-wider mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                        </svg>
+                        Group By
+                      </div>
+                      <div className="space-y-2">
+                        {['Relationship', 'Status', 'Occupation'].map(group => (
+                          <button
+                            key={group}
+                            className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium text-gray-600 hover:bg-purple-50 hover:text-purple-600 transition-all border border-transparent hover:border-purple-100"
+                          >
+                            {group}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Favorites Section */}
+                    <div className="border-l border-gray-100 pl-6 space-y-4">
+                      <div className="flex items-center gap-2 text-yellow-600 font-bold text-sm uppercase tracking-wider mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.382-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                        </svg>
+                        Favorites
+                      </div>
+                      <button className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-gray-400 border-2 border-dashed border-gray-100 hover:border-yellow-200 hover:text-yellow-600 hover:bg-yellow-50 transition-all flex items-center gap-2">
+                        <span className="text-lg">+</span> Save current search
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex gap-3 w-full md:w-auto">
+              <button
+                onClick={handleAddGuardian}
+                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center gap-2 whitespace-nowrap"
+              >
+                <span className="text-xl">+</span>
+                Add Guardian
+              </button>
+            </div>
           </div>
 
           {/* Table Container */}
           <div className="bg-white rounded-2xl shadow-xl overflow-visible border border-gray-100">
             <table className="w-full">
-              <thead>
+              <thead className="relative z-20">
                 <tr className="bg-gradient-to-r from-blue-600 to-blue-700 text-white">
-                  <th className="px-6 py-4 text-left font-semibold">Guardian</th>
-                  <th className="px-6 py-4 text-left font-semibold">Contact Info</th>
-                  <th className="px-6 py-4 text-left font-semibold">Relationship</th>
-                  <th className="px-6 py-4 text-left font-semibold">Linked Students</th>
-                  <th className="px-6 py-4 text-left font-semibold">Status</th>
-                  <th className="px-6 py-4 text-left font-semibold">Actions</th>
+                  {visibleColumns.guardian && <th className="px-6 py-4 text-left font-semibold uppercase tracking-wider">Guardian</th>}
+                  {visibleColumns.contactInfo && <th className="px-6 py-4 text-left font-semibold uppercase tracking-wider">Contact Info</th>}
+                  {visibleColumns.relationship && <th className="px-6 py-4 text-left font-semibold uppercase tracking-wider">Relationship</th>}
+                  {visibleColumns.linkedStudents && <th className="px-6 py-4 text-left font-semibold uppercase tracking-wider">Linked Students</th>}
+                  {visibleColumns.status && <th className="px-6 py-4 text-left font-semibold uppercase tracking-wider">Status</th>}
+                  <th className="px-6 py-4 text-left font-semibold uppercase tracking-wider relative">
+                    <div className="flex items-center justify-between gap-2">
+                      <span>Actions</span>
+                      <div className="relative">
+                        <button
+                          onClick={() => setShowColumnPicker(!showColumnPicker)}
+                          className="p-1.5 hover:bg-white/20 rounded-lg transition-all duration-200 group active:scale-95"
+                          title="Column Visibility"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                        </button>
+
+                        {showColumnPicker && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setShowColumnPicker(false)}></div>
+                            <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-2xl z-50 border border-gray-100 py-3 animate-fade-in-up">
+                              <div className="px-4 py-2 border-b border-gray-100">
+                                <h4 className="text-sm font-bold text-gray-900">Show/Hide Columns</h4>
+                              </div>
+                              <div className="max-h-[300px] overflow-y-auto py-2">
+                                {Object.entries(visibleColumns).map(([key, isVisible]) => (
+                                  <label
+                                    key={key}
+                                    className="flex items-center px-4 py-2 hover:bg-blue-50 cursor-pointer group transition-colors"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isVisible}
+                                      onChange={() => toggleColumn(key as keyof typeof visibleColumns)}
+                                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-gray-300 transition-all cursor-pointer"
+                                    />
+                                    <span className="ml-3 text-sm font-medium text-gray-700 capitalize group-hover:text-blue-600 transition-colors">
+                                      {key.replace(/([A-Z])/g, ' $1')}
+                                    </span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={Object.values(visibleColumns).filter(Boolean).length} className="px-6 py-12 text-center text-gray-500">
                       <div className="flex flex-col items-center gap-3">
                         <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                         <p className="font-medium">Loading guardians...</p>
@@ -474,7 +620,7 @@ export default function GuardiansPage() {
                   </tr>
                 ) : filteredGuardians.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={Object.values(visibleColumns).filter(Boolean).length} className="px-6 py-12 text-center text-gray-500">
                       <div className="flex flex-col items-center justify-center">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -486,59 +632,69 @@ export default function GuardiansPage() {
                   </tr>
                 ) : (
                   filteredGuardians.map((guardian) => (
-                    <tr key={guardian.id} className="hover:bg-blue-50 transition-colors duration-150 border-b border-gray-100">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center text-blue-600 font-bold shadow-sm">
-                            {guardian.first_name[0]}{guardian.last_name[0]}
+                    <tr key={guardian.id} className={`hover:bg-blue-50 transition-colors duration-150 border-b border-gray-100 ${activeDropdownId === guardian.id ? 'relative z-30' : ''}`}>
+                      {visibleColumns.guardian && (
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center text-blue-600 font-bold shadow-sm">
+                              {guardian.first_name[0]}{guardian.last_name[0]}
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-900	">
+                                {guardian.first_name} {guardian.last_name}
+                              </p>
+                              <p className="text-xs text-gray-500">{guardian.guardian_id}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-semibold text-gray-900	">
-                              {guardian.first_name} {guardian.last_name}
-                            </p>
-                            <p className="text-xs text-gray-500">{guardian.guardian_id}</p>
+                        </td>
+                      )}
+                      {visibleColumns.contactInfo && (
+                        <td className="px-6 py-4">
+                          <div className="text-sm">
+                            <p className="text-gray-900 font-medium">{guardian.email}</p>
+                            <p className="text-gray-500">{guardian.phone_number}</p>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm">
-                          <p className="text-gray-900 font-medium">{guardian.email}</p>
-                          <p className="text-gray-500">{guardian.phone_number}</p>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                          {guardian.relationship}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-wrap gap-1">
-                          {guardian.linked_students?.length > 0 ? (
-                            guardian.linked_students.map((sid: string) => (
-                              <div
-                                key={sid}
-                                className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-100 shadow-sm"
-                                title={`Full Student ID: ${sid}`}
-                              >
-                                {sid}
-                              </div>
-                            ))
-                          ) : (
-                            <span className="text-xs text-gray-400 italic">None linked</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-semibold inline-block cursor-pointer transition-colors ${guardian.status === 'active'
-                            ? 'bg-green-100 text-green-700 border border-green-200 hover:bg-green-200'
-                            : 'bg-red-100 text-red-700 border border-red-200 hover:bg-red-200'
-                            }`}
-                          onClick={() => handleStatusChange(guardian.id, guardian.status === 'active' ? 'inactive' : 'active')}
-                        >
-                          {guardian.status.toUpperCase()}
-                        </span>
-                      </td>
+                        </td>
+                      )}
+                      {visibleColumns.relationship && (
+                        <td className="px-6 py-4">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                            {guardian.relationship}
+                          </span>
+                        </td>
+                      )}
+                      {visibleColumns.linkedStudents && (
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-1">
+                            {guardian.linked_students?.length > 0 ? (
+                              guardian.linked_students.map((sid: string) => (
+                                <div
+                                  key={sid}
+                                  className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-100 shadow-sm"
+                                  title={`Full Student ID: ${sid}`}
+                                >
+                                  {sid}
+                                </div>
+                              ))
+                            ) : (
+                              <span className="text-xs text-gray-400 italic">None linked</span>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                      {visibleColumns.status && (
+                        <td className="px-6 py-4">
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-semibold inline-block cursor-pointer transition-colors ${guardian.status?.toLowerCase() === 'active'
+                              ? 'bg-green-100 text-green-700 border border-green-200 hover:bg-green-200'
+                              : 'bg-red-100 text-red-700 border border-red-200 hover:bg-red-200'
+                              }`}
+                            onClick={() => handleStatusChange(guardian.id, guardian.status?.toLowerCase() === 'active' ? 'inactive' : 'active')}
+                          >
+                            {guardian.status?.toUpperCase()}
+                          </span>
+                        </td>
+                      )}
                       <td className="px-6 py-4">
                         <div className="relative">
                           <button

@@ -39,8 +39,8 @@ func CreateChannel(c *fiber.Ctx) error {
 	if channel.Type == "" {
 		channel.Type = "public"
 	}
-	if channel.SchoolID == 0 {
-		channel.SchoolID = 1 // Default for dev
+	if channel.SchoolID == "" {
+		channel.SchoolID = "1" // Default for dev
 	}
 
 	tx := database.DB.Begin()
@@ -53,14 +53,13 @@ func CreateChannel(c *fiber.Ctx) error {
 	// Add members
 	if len(req.Members) > 0 {
 		for _, memberIDStr := range req.Members {
-			memberID, _ := strconv.ParseUint(memberIDStr, 10, 64)
-			if memberID == 0 {
+			if memberIDStr == "" {
 				continue
 			}
 
 			member := models.CommunicationChannelMember{
 				ChannelID: channel.ID,
-				UserID:    memberID,
+				UserID:    memberIDStr,
 				Role:      "member",
 				JoinedAt:  channel.CreatedAt, // Approximate
 			}
@@ -119,8 +118,8 @@ func SendMessage(c *fiber.Ctx) error {
 
 	message.ChannelID = channelId
 	// Mock SenderID for now, ideally from JWT
-	if message.SenderID == 0 {
-		message.SenderID = 1 // Default to admin or something
+	if message.SenderID == "" {
+		message.SenderID = "1" // Default to admin or something
 	}
 
 	result := database.DB.Create(&message)
@@ -168,7 +167,7 @@ func GetUsers(c *fiber.Ctx) error {
 		}
 
 		response = append(response, UserResponse{
-			ID:     strconv.FormatUint(u.ID, 10),
+			ID:     u.ID,
 			Name:   name,
 			Avatar: "https://ui-avatars.com/api/?name=" + name + "&background=random",
 			Status: u.Status,
@@ -194,7 +193,7 @@ func GetUsers(c *fiber.Ctx) error {
 		// Real solution: Convert member.user_id to string (in next step).
 
 		response = append(response, UserResponse{
-			ID:     strconv.FormatUint(s.ID, 10), // Warning: Potential ID collision with Users
+			ID:     s.ID,
 			Name:   name,
 			Avatar: s.PhotoURL,
 			Status: "active",
@@ -215,7 +214,7 @@ func AddMember(c *fiber.Ctx) error {
 	}
 
 	type AddMemberRequest struct {
-		UserID uint64 `json:"userId"`
+		UserID string `json:"userId"`
 	}
 
 	req := new(AddMemberRequest)

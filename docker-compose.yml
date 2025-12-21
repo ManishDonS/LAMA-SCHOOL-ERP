@@ -353,7 +353,7 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
     volumes:
-      - school_uploads:/app/uploads
+      - school_uploads:/root/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -387,7 +387,7 @@ services:
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
       PORT: 3010
     volumes:
-      - expense_uploads:/app/uploads
+      - expense_uploads:/root/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -514,6 +514,7 @@ services:
       DB_PORT: 5432
       DB_USER: postgres
       DB_PASSWORD: postgres
+      DB_NAME: school_erp
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
