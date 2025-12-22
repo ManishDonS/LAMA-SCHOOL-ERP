@@ -385,6 +385,12 @@ export const classAPI = {
   create: (data: any) => classApiClient.post('/api/v1/classes', data),
   update: (id: number, data: any) => classApiClient.put(`/api/v1/classes/${id}`, data),
   delete: (id: number) => classApiClient.delete(`/api/v1/classes/${id}`),
+
+  // Academic Years
+  listAY: () => classApiClient.get('/api/v1/academic-years'),
+  createAY: (data: any) => classApiClient.post('/api/v1/academic-years', data),
+  updateAY: (id: string, data: any) => classApiClient.put(`/api/v1/academic-years/${id}`, data),
+  deleteAY: (id: string) => classApiClient.delete(`/api/v1/academic-years/${id}`),
 }
 
 

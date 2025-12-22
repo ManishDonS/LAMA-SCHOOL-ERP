@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
 import Sidebar from '@/components/Sidebar'
 import Navbar from '@/components/Navbar'
+import NepaliDatePicker from '@/components/NepaliDatePicker'
 
 interface InvoiceItem {
   description: string
@@ -560,22 +561,20 @@ export default function InvoiceManagementPage() {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Issue Date *</label>
-                    <input
-                      type="date"
+                    <NepaliDatePicker
                       value={formData.issueDate}
-                      onChange={(e) => setFormData({ ...formData, issueDate: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      onChange={(date) => setFormData(prev => ({ ...prev, issueDate: date }))}
                       required
+                      className=""
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Due Date *</label>
-                    <input
-                      type="date"
+                    <NepaliDatePicker
                       value={formData.dueDate}
-                      onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      onChange={(date) => setFormData(prev => ({ ...prev, dueDate: date }))}
                       required
+                      className=""
                     />
                   </div>
                   <div>

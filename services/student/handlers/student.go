@@ -320,7 +320,13 @@ func (h *StudentHandler) CreateStudent(c *fiber.Ctx) error {
 
 	userID := authResp.Data.UserID
 
-	// 2. Create Student in Database
+	// 2. Sync User to Tenant DB (Crucial for list join!)
+	err = h.SyncUserToTenant(ctx, tenantDB, userID, req.Email, req.FirstName, req.LastName, "student", req.SchoolID)
+	if err != nil {
+		log.Printf("[Student-Service] Warning: Failed to sync user to tenant DB: %v", err)
+	}
+
+	// 3. Create Student in Database
 	query := `
 		INSERT INTO students (
 			school_id, user_id, first_name, last_name, email, 
@@ -451,6 +457,22 @@ func (h *StudentHandler) GetStudent(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(details)
+}
+
+func (h *StudentHandler) SyncUserToTenant(ctx context.Context, tenantDB *pgxpool.Pool, userID string, email, firstName, lastName, role, schoolID string) error {
+	query := `
+		INSERT INTO users (id, email, first_name, last_name, role, password_hash, status, school_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+		ON CONFLICT (id) DO UPDATE SET
+			email = EXCLUDED.email,
+			first_name = EXCLUDED.first_name,
+			last_name = EXCLUDED.last_name,
+			role = EXCLUDED.role,
+			school_id = EXCLUDED.school_id,
+			updated_at = NOW()
+	`
+	_, err := tenantDB.Exec(ctx, query, userID, email, firstName, lastName, role, "EXTERNAL_AUTH", "active", schoolID)
+	return err
 }
 
 // GetStudentStatistics godoc
@@ -1203,6 +1225,7 @@ func (h *StudentHandler) UpdateStudent(c *fiber.Ctx) error {
 	)
 
 	var updatedID int64
+	var userID, email, firstName, lastName, scID string
 	err := tenantDB.QueryRow(ctx, query, args...).Scan(&updatedID)
 	if err != nil {
 		if err.Error() == "no rows in result set" {
@@ -1215,6 +1238,13 @@ func (h *StudentHandler) UpdateStudent(c *fiber.Ctx) error {
 			"error":   "Failed to update student",
 			"details": err.Error(),
 		})
+	}
+
+	// 4. Fetch updated details to sync with tenant users table
+	err = tenantDB.QueryRow(ctx, "SELECT user_id, email, first_name, last_name, school_id FROM students WHERE id = $1", updatedID).
+		Scan(&userID, &email, &firstName, &lastName, &scID)
+	if err == nil {
+		h.SyncUserToTenant(ctx, tenantDB, userID, email, firstName, lastName, "student", scID)
 	}
 
 	return c.JSON(fiber.Map{

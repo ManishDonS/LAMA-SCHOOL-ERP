@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import { useAuthStore } from '@/store/authStore'
-import { schoolAPI } from '@/services/api'
+import { schoolAPI, userAPI, classAPI } from '@/services/api'
 import Navbar from '@/components/Navbar'
 import Sidebar from '@/components/Sidebar'
 import NepaliDatePicker from '@/components/NepaliDatePicker'
 import { toast } from 'react-hot-toast'
+import { useSettingsStore } from '@/store/settingsStore'
+import FormattedDate from '@/components/common/FormattedDate'
 
 interface AcademicYear {
   id: string
@@ -44,11 +46,15 @@ interface User {
   email: string
   role: string
   status: string
+  employee_id?: string
+  student_id_number?: string
+  guardian_id?: string
 }
 
 export default function SettingsPage() {
   const router = useRouter()
   const { user, token } = useAuthStore()
+  const { dateFormat, toggleDateFormat } = useSettingsStore()
   const [activeModule, setActiveModule] = useState('general')
   const [isHydrated, setIsHydrated] = useState(false)
 
@@ -72,13 +78,16 @@ export default function SettingsPage() {
 
   // User Management State
   const [users, setUsers] = useState<User[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
   const [showUserModal, setShowUserModal] = useState(false)
   const [userFormData, setUserFormData] = useState({
     first_name: '',
     last_name: '',
     email: '',
     role: 'staff',
-    password: '', // In real app, might auto-generate or send invite
+    password: '',
+    employee_id: '',
+    department: '',
   })
 
   // Logo Upload State
@@ -144,15 +153,9 @@ export default function SettingsPage() {
 
   const fetchAcademicYears = async () => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_CLASS_SERVICE_URL}/api/v1/academic-years`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'X-Tenant-ID': user?.schoolId?.toString() || ''
-        }
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setAcademicYears(data)
+      const response = await classAPI.listAY()
+      if (response.data) {
+        setAcademicYears(response.data.data || [])
       }
     } catch (error) {
       console.error('Failed to fetch academic years:', error)
@@ -162,24 +165,9 @@ export default function SettingsPage() {
 
   const fetchUsers = async () => {
     try {
-      const schoolId = user?.schoolId
-      if (!schoolId) return
-
-      // Use user-service URL. Assuming it's available via env or proxy.
-      // If not defined, fallback to localhost for dev or assume API gateway pattern
-      const userServiceUrl = process.env.NEXT_PUBLIC_USER_SERVICE_URL || 'http://localhost:3002'
-
-      const response = await fetch(`${userServiceUrl}/api/v1/users/school/${schoolId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setUsers(data.users || [])
-      } else {
-        toast.error('Failed to fetch users')
+      const response = await userAPI.list()
+      if (response.data) {
+        setUsers(response.data.users || [])
       }
     } catch (error) {
       console.error('Failed to fetch users:', error)
@@ -296,23 +284,11 @@ export default function SettingsPage() {
 
   const handleSaveAY = async () => {
     try {
-      const url = editingAY
-        ? `${process.env.NEXT_PUBLIC_CLASS_SERVICE_URL}/api/v1/academic-years/${editingAY.id}`
-        : `${process.env.NEXT_PUBLIC_CLASS_SERVICE_URL}/api/v1/academic-years`
+      const response = editingAY
+        ? await classAPI.updateAY(editingAY.id, ayFormData)
+        : await classAPI.createAY(ayFormData)
 
-      const method = editingAY ? 'PUT' : 'POST'
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          'X-Tenant-ID': user?.schoolId?.toString() || ''
-        },
-        body: JSON.stringify(ayFormData)
-      })
-
-      if (response.ok) {
+      if (response.status === 200 || response.status === 201) {
         fetchAcademicYears()
         setShowAYModal(false)
         setAYFormData({
@@ -337,14 +313,8 @@ export default function SettingsPage() {
   const handleDeleteAY = async (id: string) => {
     if (!confirm('Are you sure you want to delete this academic year?')) return
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_CLASS_SERVICE_URL}/api/v1/academic-years/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'X-Tenant-ID': user?.schoolId?.toString() || ''
-        }
-      })
-      if (response.ok) {
+      const response = await classAPI.deleteAY(id)
+      if (response.status === 200 || response.status === 204) {
         fetchAcademicYears()
         toast.success('Academic Year deleted')
       }
@@ -356,20 +326,12 @@ export default function SettingsPage() {
 
   const handleCreateUser = async () => {
     try {
-      const userServiceUrl = process.env.NEXT_PUBLIC_USER_SERVICE_URL || 'http://localhost:3002'
-      const response = await fetch(`${userServiceUrl}/api/v1/users`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          school_id: user?.schoolId,
-          ...userFormData
-        })
+      const response = await userAPI.create({
+        school_id: user?.schoolId,
+        ...userFormData
       })
 
-      if (response.ok) {
+      if (response.status === 200 || response.status === 201) {
         fetchUsers()
         setShowUserModal(false)
         setUserFormData({
@@ -378,15 +340,17 @@ export default function SettingsPage() {
           email: '',
           role: 'staff',
           password: '',
+          employee_id: '',
+          department: '',
         })
         toast.success('User created successfully')
       } else {
-        const errorData = await response.json()
-        toast.error(errorData.error || 'Failed to create user')
+        toast.error('Failed to create user')
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating user:', error)
-      toast.error('An error occurred')
+      const errorMessage = error.response?.data?.error || 'An error occurred'
+      toast.error(errorMessage)
     }
   }
 
@@ -785,6 +749,25 @@ export default function SettingsPage() {
                                   {generalSettings.schoolCode}
                                 </code>
                               </div>
+                              {/* Display Date Format - Only if nepali_date module is active */}
+                              {useAuthStore.getState().activeModules.includes('nepali_date') && (
+                                <div className="pt-4 border-t border-gray-100">
+                                  <label className="block text-sm font-medium text-gray-700 mb-2">Display Date Format</label>
+                                  <button
+                                    onClick={toggleDateFormat}
+                                    className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors ${dateFormat === 'BS'
+                                      ? 'bg-orange-100 text-orange-700 border border-orange-200'
+                                      : 'bg-blue-100 text-blue-700 border border-blue-200'
+                                      }`}
+                                  >
+                                    <span className="mr-2">{dateFormat === 'BS' ? '🇳🇵 BS (Nepali)' : '🌐 AD (English)'}</span>
+                                    <span className="text-[10px] bg-white bg-opacity-50 px-1.5 py-0.5 rounded ml-auto">Click to switch</span>
+                                  </button>
+                                  <p className="mt-1.5 text-xs text-gray-500 italic">
+                                    Current format: {dateFormat === 'BS' ? 'Bikram Sambat' : 'Anno Domini'}. This applies to all dates across the system.
+                                  </p>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -834,8 +817,12 @@ export default function SettingsPage() {
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                               {ay.name} {ay.is_current && <span className="ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Current</span>}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{ay.start_date}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{ay.end_date}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              <FormattedDate date={ay.start_date} />
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              <FormattedDate date={ay.end_date} />
+                            </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{ay.status}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                               <button
@@ -874,12 +861,26 @@ export default function SettingsPage() {
                 <div className="bg-white shadow rounded-lg p-6">
                   <div className="flex justify-between items-center mb-6">
                     <h3 className="text-lg font-medium text-gray-900">User Management</h3>
-                    <button
-                      onClick={() => setShowUserModal(true)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium"
-                    >
-                      + Create User
-                    </button>
+                    <div className="flex space-x-4">
+                      <div className="relative">
+                        <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
+                          🔍
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="Search users..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500 w-64"
+                        />
+                      </div>
+                      <button
+                        onClick={() => setShowUserModal(true)}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium shadow-sm flex items-center"
+                      >
+                        + Create User
+                      </button>
+                    </div>
                   </div>
 
                   <div className="overflow-x-auto">
@@ -888,17 +889,25 @@ export default function SettingsPage() {
                         <tr>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee ID</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {users.map((u) => (
-                          <tr key={u.id}>
+                        {users.filter(u =>
+                          u.first_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          u.last_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          u.email.toLowerCase().includes(searchQuery.toLowerCase())
+                        ).map((u) => (
+                          <tr key={u.id} className="hover:bg-gray-50 transition-colors">
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                               {u.first_name} {u.last_name}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{u.email}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {u.employee_id || '-'}
+                            </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 capitalize">
                                 {u.role}
@@ -912,13 +921,17 @@ export default function SettingsPage() {
                             </td>
                           </tr>
                         ))}
-                        {users.length === 0 && (
-                          <tr>
-                            <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">
-                              No users found.
-                            </td>
-                          </tr>
-                        )}
+                        {users.filter(u =>
+                          u.first_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          u.last_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          u.email.toLowerCase().includes(searchQuery.toLowerCase())
+                        ).length === 0 && (
+                            <tr>
+                              <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">
+                                No users found.
+                              </td>
+                            </tr>
+                          )}
                       </tbody>
                     </table>
                   </div>
@@ -1050,18 +1063,44 @@ export default function SettingsPage() {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Role</label>
-                <select
-                  value={userFormData.role}
-                  onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2"
-                >
-                  <option value="staff">Staff</option>
-                  <option value="admin">Admin</option>
-                  <option value="teacher">Teacher</option>
-                </select>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Role</label>
+                  <select
+                    value={userFormData.role}
+                    onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2"
+                  >
+                    <option value="staff">Staff</option>
+                    <option value="admin">Admin</option>
+                    <option value="teacher">Teacher</option>
+                  </select>
+                </div>
+                {(userFormData.role === 'teacher' || userFormData.role === 'staff') && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Employee ID</label>
+                    <input
+                      type="text"
+                      value={userFormData.employee_id}
+                      onChange={(e) => setUserFormData({ ...userFormData, employee_id: e.target.value })}
+                      placeholder="e.g. EMP001"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2"
+                    />
+                  </div>
+                )}
               </div>
+              {(userFormData.role === 'teacher' || userFormData.role === 'staff') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Department</label>
+                  <input
+                    type="text"
+                    value={userFormData.department}
+                    onChange={(e) => setUserFormData({ ...userFormData, department: e.target.value })}
+                    placeholder="e.g. Science, HR"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2"
+                  />
+                </div>
+              )}
             </div>
             <div className="px-6 py-4 bg-gray-50 rounded-b-lg flex justify-end space-x-3">
               <button

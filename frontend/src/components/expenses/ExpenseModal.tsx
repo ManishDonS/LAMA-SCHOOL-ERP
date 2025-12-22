@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react'
+import { X, Upload, DollarSign, Calendar, FileText, Tag, AlignLeft } from 'lucide-react'
+import NepaliDatePicker from '@/components/NepaliDatePicker'
 import { Expense, ExpenseCategory } from './types'
 
 interface ExpenseModalProps {
@@ -155,11 +157,9 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     Expense Date <span className="text-red-500">*</span>
                                 </label>
-                                <input
-                                    type="date"
-                                    value={formData.expenseDate}
-                                    onChange={(e) => handleChange('expenseDate', e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                                <NepaliDatePicker
+                                    value={formData.expenseDate || ''}
+                                    onChange={(date) => setFormData({ ...formData, expenseDate: date })}
                                     required
                                 />
                             </div>
@@ -330,8 +330,8 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                             onDragLeave={handleDragLeave}
                             onDrop={handleDrop}
                             className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${isDragging
-                                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                                    : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50'
+                                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                                : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50'
                                 }`}
                         >
                             <input

@@ -1,5 +1,7 @@
 import React from 'react'
 import { ExpenseFilters as Filters, ExpenseCategory } from './types'
+import { Search, Filter, Calendar, ChevronDown, RefreshCw } from 'lucide-react'
+import NepaliDatePicker from '@/components/NepaliDatePicker'
 
 interface ExpenseFiltersProps {
     filters: Filters
@@ -33,12 +35,14 @@ export const ExpenseFilters: React.FC<ExpenseFiltersProps> = ({
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Date From
                     </label>
-                    <input
-                        type="date"
-                        value={filters.dateFrom || ''}
-                        onChange={(e) => handleChange('dateFrom', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white text-sm"
-                    />
+                    <div className="relative">
+                        <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                        <NepaliDatePicker
+                            value={filters.dateFrom || ''}
+                            onChange={(date) => handleChange('dateFrom', date)}
+                            className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white text-sm"
+                        />
+                    </div>
                 </div>
 
                 {/* Date To */}
@@ -46,12 +50,14 @@ export const ExpenseFilters: React.FC<ExpenseFiltersProps> = ({
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Date To
                     </label>
-                    <input
-                        type="date"
-                        value={filters.dateTo || ''}
-                        onChange={(e) => handleChange('dateTo', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white text-sm"
-                    />
+                    <div className="relative">
+                        <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                        <NepaliDatePicker
+                            value={filters.dateTo || ''}
+                            onChange={(date) => handleChange('dateTo', date)}
+                            className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white text-sm"
+                        />
+                    </div>
                 </div>
 
                 {/* Category */}
@@ -124,16 +130,18 @@ export const ExpenseFilters: React.FC<ExpenseFiltersProps> = ({
             </div>
 
             {/* Clear Filters Button */}
-            {hasActiveFilters && (
-                <div className="mt-4 flex justify-end">
-                    <button
-                        onClick={clearFilters}
-                        className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                    >
-                        Clear All Filters
-                    </button>
-                </div>
-            )}
-        </div>
+            {
+                hasActiveFilters && (
+                    <div className="mt-4 flex justify-end">
+                        <button
+                            onClick={clearFilters}
+                            className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                        >
+                            Clear All Filters
+                        </button>
+                    </div>
+                )
+            }
+        </div >
     )
 }

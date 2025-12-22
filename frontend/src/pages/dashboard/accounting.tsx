@@ -43,13 +43,6 @@ const ACCOUNTING_MODULES: AccountingModule[] = [
     href: '/dashboard/accounting/expenses',
   },
   {
-    id: 'payroll',
-    name: 'Payroll Management',
-    icon: '💵',
-    description: 'Manage staff salaries and payroll processing',
-    href: '/dashboard/accounting/payroll',
-  },
-  {
     id: 'financial-reports',
     name: 'Financial Reports',
     icon: '📊',
@@ -166,19 +159,6 @@ export default function AccountingPage() {
                   </Link>
                 ))}
 
-                {/* Coming Soon Cards */}
-                <div className="bg-gray-50 p-6 rounded-lg shadow-sm border-2 border-dashed border-gray-300">
-                  <div className="flex items-start gap-4">
-                    <div className="bg-gray-200 p-3 rounded-lg">
-                      <span className="text-3xl">💵</span>
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-gray-500 mb-1">Payroll Management</h4>
-                      <p className="text-sm text-gray-400">Manage staff salaries and payroll</p>
-                      <p className="text-xs text-gray-400 mt-2">Coming soon...</p>
-                    </div>
-                  </div>
-                </div>
               </div>
             </div>
 

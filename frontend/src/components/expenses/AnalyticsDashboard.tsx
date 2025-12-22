@@ -12,6 +12,7 @@ import {
     Tooltip,
     Legend,
 } from 'chart.js'
+import NepaliDatePicker from '@/components/NepaliDatePicker'
 
 ChartJS.register(
     CategoryScale,
@@ -128,22 +129,20 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ schoolId
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Start Date
                         </label>
-                        <input
-                            type="date"
+                        <NepaliDatePicker
                             value={dateRange.startDate}
-                            onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
-                            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                            onChange={(date) => setDateRange({ ...dateRange, startDate: date })}
+                            className="px-0 py-0"
                         />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             End Date
                         </label>
-                        <input
-                            type="date"
+                        <NepaliDatePicker
                             value={dateRange.endDate}
-                            onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
-                            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                            onChange={(date) => setDateRange({ ...dateRange, endDate: date })}
+                            className="px-0 py-0"
                         />
                     </div>
                 </div>

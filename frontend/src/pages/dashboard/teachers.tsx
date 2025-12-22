@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/authStore'
 import { schoolAPI, teacherAPI } from '@/services/api'
 import NepaliDatePicker from '@/components/NepaliDatePicker'
 import { toast } from 'react-hot-toast'
+import FormattedDate from '@/components/common/FormattedDate'
 
 interface Teacher {
   id: string
@@ -799,6 +800,9 @@ export default function TeachersPage() {
                       {visibleColumns.department && <td className="px-6 py-4 text-gray-600">{teacher.department || '-'}</td>}
                       {visibleColumns.phone && <td className="px-6 py-4 text-gray-600 text-sm">{teacher.phone || 'N/A'}</td>}
                       {visibleColumns.subject && <td className="px-6 py-4 text-gray-600 text-sm">{teacher.subject || '-'}</td>}
+                      <td className="px-6 py-4 text-gray-600 text-sm">
+                        <FormattedDate date={teacher.join_date || teacher.joiningDate} />
+                      </td>
                       {visibleColumns.status && (
                         <td className="px-6 py-4">
                           <span

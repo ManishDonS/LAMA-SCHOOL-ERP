@@ -135,6 +135,13 @@ var AvailableModules = []Module{
 		Category:    "Administrative",
 		Icon:        "⚙️",
 	},
+	{
+		ID:          "nepali_date",
+		Name:        "Nepali Date",
+		Description: "Enable support for Bikram Sambat (BS) date format across the application.",
+		Category:    "Administrative",
+		Icon:        "📅",
+	},
 }
 
 // IsModuleValid checks if a module ID exists in the registry

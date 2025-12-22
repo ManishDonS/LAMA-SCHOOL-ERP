@@ -97,6 +97,7 @@ function SchoolsPage() {
     reports: { create: false, read: true, update: false, delete: false },
     website: { create: true, read: true, update: true, delete: false },
     settings: { create: false, read: true, update: true, delete: false },
+    nepali_date: { create: true, read: true, update: true, delete: true },
   }
 
   const [permissions, setPermissions] = useState(DEFAULT_PERMISSIONS)
@@ -422,7 +423,11 @@ function SchoolsPage() {
     setError(null)
 
     try {
-      const response = await schoolAPI.uploadLogo(file)
+      if (!editingId) {
+        setError('Editing ID is required for logo upload')
+        return
+      }
+      const response = await schoolAPI.uploadLogo(editingId, file)
       setFormData((prev) => ({ ...prev, logo_url: response.data.url }))
       setSuccess('Logo uploaded successfully')
     } catch (err: any) {

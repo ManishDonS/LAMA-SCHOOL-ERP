@@ -6,6 +6,7 @@ import Sidebar from '@/components/Sidebar'
 import Navbar from '@/components/Navbar'
 import { useAuthStore } from '@/store/authStore'
 import { studentAPI, guardianAPI, attendanceAPI } from '@/services/api'
+import NepaliDatePicker from '@/components/NepaliDatePicker'
 import { toast } from 'react-hot-toast'
 
 interface Student {
@@ -762,11 +763,10 @@ export default function StudentDetailsPage() {
                                             <div>
                                                 <label className="text-sm font-semibold text-gray-600">Date of Birth</label>
                                                 {isEditing ? (
-                                                    <input
-                                                        type="date"
-                                                        className="w-full border rounded px-2 py-1 text-sm mt-1"
-                                                        value={formatDate(editForm.dateOfBirth)}
-                                                        onChange={(e) => setEditForm({ ...editForm, dateOfBirth: e.target.value })}
+                                                    <NepaliDatePicker
+                                                        value={editForm.dateOfBirth}
+                                                        onChange={(date) => setEditForm({ ...editForm, dateOfBirth: date })}
+                                                        className="mt-1"
                                                     />
                                                 ) : (
                                                     <p className="text-gray-800">{formatDate(student.dateOfBirth)}</p>

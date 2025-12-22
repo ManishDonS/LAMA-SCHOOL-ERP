@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
 import Sidebar from '@/components/Sidebar'
 import Navbar from '@/components/Navbar'
+import FormattedDate from '@/components/common/FormattedDate'
 
 interface PayrollStructure {
     id: number
@@ -260,7 +261,7 @@ export default function PayrollPage() {
 
     return (
         <div className="min-h-screen bg-gray-100 flex flex-col">
-            <Navbar showBackButton={true} backLink="/dashboard/accounting" />
+            <Navbar showBackButton={true} backLink="/dashboard" />
 
             <div className="flex flex-1">
                 <Sidebar />

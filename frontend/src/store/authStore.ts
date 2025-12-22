@@ -145,6 +145,7 @@ export const useAuthStore = create<AuthStore>()(
             localStorage.removeItem('access_token')
             // Refresh token cookie is cleared by backend
             localStorage.removeItem('loginUser')
+            localStorage.removeItem('selected_school')
           }
 
           // Attempt to notify backend but don't block on failure

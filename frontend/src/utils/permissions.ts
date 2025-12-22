@@ -66,6 +66,12 @@ export const MENU_ITEMS: MenuItem[] = [
     roles: ['super_admin', 'admin', 'staff'],
   },
   {
+    href: '/dashboard/payroll',
+    label: 'Payroll',
+    icon: '💵',
+    roles: ['super_admin', 'admin', 'staff'],
+  },
+  {
     href: '/dashboard/fees',
     label: 'Fees',
     icon: '💸',

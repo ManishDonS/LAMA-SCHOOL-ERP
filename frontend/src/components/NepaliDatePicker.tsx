@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react'
 import NepaliDate from 'nepali-date-converter'
+import { useAuthStore } from '../store/authStore'
 import { NepaliDatePicker as NDP } from 'nepali-datepicker-reactjs'
 import 'nepali-datepicker-reactjs/dist/index.css'
 
@@ -21,8 +22,17 @@ const NepaliDatePicker: React.FC<NepaliDatePickerProps> = ({
   disabled = false,
 }) => {
   const [bsDate, setBsDate] = useState<string>('')
-  const [calendarType, setCalendarType] = useState<'BS' | 'AD'>('BS')
+  const { activeModules } = useAuthStore()
+  const isNepaliDateActive = activeModules.includes('nepali_date')
+  const [calendarType, setCalendarType] = useState<'BS' | 'AD'>(isNepaliDateActive ? 'BS' : 'AD')
   const isChangingRef = useRef(false)
+
+  // Force AD if module becomes inactive
+  useEffect(() => {
+    if (!isNepaliDateActive && calendarType === 'BS') {
+      setCalendarType('AD')
+    }
+  }, [isNepaliDateActive])
 
   // Convert AD to BS for display
   useEffect(() => {
@@ -77,9 +87,8 @@ const NepaliDatePicker: React.FC<NepaliDatePickerProps> = ({
         </label>
       )}
 
-      <div className="flex gap-2 items-stretch">
-        {/* Date Input */}
-        <div className="flex-1 relative">
+      <div className="relative">
+        <div className="relative">
           {calendarType === 'BS' ? (
             <div className="nepali-calendar-wrapper">
               <NDP
@@ -100,30 +109,18 @@ const NepaliDatePicker: React.FC<NepaliDatePickerProps> = ({
                 }`}
             />
           )}
-        </div>
 
-        {/* Toggle Buttons */}
-        <div className="flex border border-gray-300 rounded-lg overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setCalendarType('BS')}
-            className={`px-3 py-2 text-sm font-semibold transition-colors ${calendarType === 'BS'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-          >
-            BS
-          </button>
-          <button
-            type="button"
-            onClick={() => setCalendarType('AD')}
-            className={`px-3 py-2 text-sm font-semibold transition-colors border-l border-gray-300 ${calendarType === 'AD'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-          >
-            AD
-          </button>
+          {/* Integrated Toggle Badge */}
+          {activeModules.includes('nepali_date') && (
+            <button
+              type="button"
+              onClick={() => setCalendarType(prev => prev === 'BS' ? 'AD' : 'BS')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 z-20 px-2 py-0.5 text-xs font-bold rounded bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 transition-colors shadow-sm"
+              title="Toggle Calendar Format"
+            >
+              {calendarType}
+            </button>
+          )}
         </div>
       </div>
 

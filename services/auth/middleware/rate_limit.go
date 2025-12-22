@@ -15,6 +15,7 @@ type RateLimiter struct {
 	visitors map[string]*Visitor
 	limit    int
 	window   time.Duration
+	KeyFunc  func(*fiber.Ctx) string
 }
 
 // Visitor tracks requests from a single IP address
@@ -117,9 +118,14 @@ func (rl *RateLimiter) cleanup() {
 // Middleware returns a Fiber middleware function for rate limiting
 func (rl *RateLimiter) Middleware() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		ip := c.IP()
+		key := c.IP()
+		if rl.KeyFunc != nil {
+			if customKey := rl.KeyFunc(c); customKey != "" {
+				key = customKey
+			}
+		}
 
-		if !rl.Allow(ip) {
+		if !rl.Allow(key) {
 			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
 				"error": "Too many requests. Please try again later.",
 			})

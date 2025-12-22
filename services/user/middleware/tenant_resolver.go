@@ -43,6 +43,8 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 
 		// Extract tenant code from request
 		tenantCode := extractTenantCode(c)
+		fmt.Printf("[DEBUG] Extracted tenant code: '%s' from path: %s\n", tenantCode, c.Path())
+
 		if tenantCode == "" {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"error":   "Tenant code is required",
@@ -51,8 +53,8 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 		}
 
 		// Skip DB resolution for "system" tenant (Super Admin context)
-		// This allows handlers to handle cross-tenant operations using school_id from body
 		if tenantCode == "system" {
+			fmt.Printf("[DEBUG] System tenant detected, skipping DB resolution\n")
 			c.Locals(TenantCodeContextKey, tenantCode)
 			return c.Next()
 		}
@@ -60,17 +62,23 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 		ctx := context.Background()
 
 		// Fetch school credentials from main database
-		// NOTE: Assuming 'schools' table exists in the main DB that user service connects to
-		var dbUser, encryptedPassword string
-		query := `SELECT db_user, db_password FROM schools WHERE code = $1 AND status = 'active'`
-		err := cfg.MainDB.QueryRow(ctx, query, tenantCode).Scan(&dbUser, &encryptedPassword)
+		var dbUser, encryptedPassword, dbName string
+		query := `SELECT db_user, db_password, db_name FROM schools WHERE code = $1 AND status = 'active'`
+		err := cfg.MainDB.QueryRow(ctx, query, tenantCode).Scan(&dbUser, &encryptedPassword, &dbName)
 		if err != nil {
-			log.Printf("School not found or inactive for tenant %s: %v\n", tenantCode, err)
+			fmt.Printf("[ERROR] School not found or inactive for tenant '%s': %v\n", tenantCode, err)
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 				"error":       "School not found or inactive",
 				"tenant_code": tenantCode,
 			})
 		}
+
+		// If dbName is empty, use the convention
+		if dbName == "" {
+			dbName = fmt.Sprintf("school_%s_db", tenantCode)
+		}
+
+		fmt.Printf("[DEBUG] Resolved tenant '%s' to database '%s'\n", tenantCode, dbName)
 
 		// Get or create tenant database connection
 		tenantDB, err := cfg.TenantManager.GetConnection(
@@ -78,14 +86,14 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 			tenantCode,
 			cfg.DBHost,
 			cfg.DBPort,
-			fmt.Sprintf("school_%s_db", tenantCode),
+			dbName,
 			dbUser,
 			encryptedPassword,
-			database.RunMigrations, // Run migrations on new connection
+			database.RunMigrations,
 		)
 
 		if err != nil {
-			log.Printf("Failed to get tenant database connection for tenant %s: %v\n", tenantCode, err)
+			fmt.Printf("[ERROR] Failed to connect to tenant database '%s' for tenant '%s': %v\n", dbName, tenantCode, err)
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error":       "Failed to connect to tenant database",
 				"tenant_code": tenantCode,
@@ -95,10 +103,6 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 		// Store tenant info in context
 		c.Locals(TenantCodeContextKey, tenantCode)
 		c.Locals(TenantDBContextKey, tenantDB)
-
-		// Also set it in the request context for downstream handlers
-		ctx = context.WithValue(ctx, TenantCodeContextKey, tenantCode)
-		ctx = context.WithValue(ctx, TenantDBContextKey, tenantDB)
 
 		return c.Next()
 	}

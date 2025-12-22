@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import Navbar from '@/components/Navbar'
 import { transportAPI } from '@/services/api'
+import NepaliDatePicker from '@/components/NepaliDatePicker'
 
 // Type Definitions
 interface Bus {
@@ -1619,20 +1620,18 @@ export default function SchoolBusesPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Purchase Date</label>
-                  <input
-                    type="date"
+                  <NepaliDatePicker
                     value={busFormData.purchaseDate}
-                    onChange={(e) => setBusFormData({ ...busFormData, purchaseDate: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    onChange={(date) => setBusFormData({ ...busFormData, purchaseDate: date })}
+                    className="w-full bg-white"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Last Service Date</label>
-                  <input
-                    type="date"
+                  <NepaliDatePicker
                     value={busFormData.lastServiceDate}
-                    onChange={(e) => setBusFormData({ ...busFormData, lastServiceDate: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    onChange={(date) => setBusFormData({ ...busFormData, lastServiceDate: date })}
+                    className="w-full bg-white"
                   />
                 </div>
                 <div>
@@ -1764,11 +1763,10 @@ export default function SchoolBusesPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">License Expiry</label>
-                  <input
-                    type="date"
+                  <NepaliDatePicker
                     value={driverFormData.licenseExpiry}
-                    onChange={(e) => setDriverFormData({ ...driverFormData, licenseExpiry: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    onChange={(date) => setDriverFormData({ ...driverFormData, licenseExpiry: date })}
+                    className="w-full bg-white"
                   />
                 </div>
                 <div>
@@ -1788,11 +1786,10 @@ export default function SchoolBusesPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Join Date</label>
-                  <input
-                    type="date"
+                  <NepaliDatePicker
                     value={driverFormData.joinDate}
-                    onChange={(e) => setDriverFormData({ ...driverFormData, joinDate: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    onChange={(date) => setDriverFormData({ ...driverFormData, joinDate: date })}
+                    className="w-full bg-white"
                   />
                 </div>
                 <div>

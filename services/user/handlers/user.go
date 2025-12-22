@@ -26,7 +26,7 @@ type UserHandler struct {
 }
 
 type CreateUserRequest struct {
-	SchoolID  int64  `json:"school_id" validate:"required"`
+	SchoolID  string `json:"school_id" validate:"required"`
 	Email     string `json:"email" validate:"required,email"`
 	FirstName string `json:"first_name" validate:"required"`
 	LastName  string `json:"last_name" validate:"required"`
@@ -119,7 +119,7 @@ func (h *UserHandler) CreateUser(c *fiber.Ctx) error {
 		"first_name": req.FirstName,
 		"last_name":  req.LastName,
 		"role":       req.Role, // e.g., "staff", "admin"
-		"school_id":  fmt.Sprintf("%d", req.SchoolID),
+		"school_id":  req.SchoolID,
 	}
 
 	authBody, err := json.Marshal(authPayload)
@@ -172,13 +172,13 @@ func (h *UserHandler) CreateUser(c *fiber.Ctx) error {
 	if tenantDB == nil {
 		// Try resolving via SchoolID if not in context
 		var err error
-		tenantDB, _, err = h.getTenantDBBySchoolID(c.Context(), fmt.Sprintf("%d", req.SchoolID))
+		tenantDB, _, err = h.getTenantDBBySchoolID(c.Context(), req.SchoolID)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve school database"})
 		}
 	}
 
-	err = h.SyncUserToTenant(c.Context(), tenantDB, userID, req.Email, req.FirstName, req.LastName, req.Role, fmt.Sprintf("%d", req.SchoolID))
+	err = h.SyncUserToTenant(c.Context(), tenantDB, userID, req.Email, req.FirstName, req.LastName, req.Role, req.SchoolID)
 	if err != nil {
 		// Log error but verify if it's just duplicate
 		fmt.Printf("Warning: Failed to sync user to tenant DB: %v\n", err)
@@ -205,44 +205,80 @@ func (h *UserHandler) GetUser(c *fiber.Ctx) error {
 
 func (h *UserHandler) GetUsersBySchool(c *fiber.Ctx) error {
 	schoolID := c.Params("school_id")
+	tenantCode := middleware.GetTenantCode(c)
+
+	fmt.Printf("[DEBUG] GetUsersBySchool called. tenantCode: '%s', param schoolID: '%s'\n", tenantCode, schoolID)
 
 	tenantDB := middleware.GetTenantDB(c)
 	if tenantDB == nil {
+		if schoolID == "" {
+			fmt.Printf("[ERROR] Tenant DB nil and schoolID empty\n")
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "School ID is required when tenant cannot be resolved"})
+		}
 		// Try resolving via SchoolID
 		var err error
-		tenantDB, _, err = h.getTenantDBBySchoolID(c.Context(), schoolID)
+		var resolvedCode string
+		tenantDB, resolvedCode, err = h.getTenantDBBySchoolID(c.Context(), schoolID)
 		if err != nil {
+			fmt.Printf("[ERROR] Failed to resolve school database for schoolID '%s': %v\n", schoolID, err)
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve school database"})
 		}
+		tenantCode = resolvedCode
+		fmt.Printf("[DEBUG] Resolved tenantCode '%s' from schoolID '%s'\n", tenantCode, schoolID)
 	}
 
-	// Fetch users from tenant DB
+	// Fetch users from tenant DB with role-specific details
 	query := `
-		SELECT id, first_name, last_name, email, role, status
-		FROM users
-		ORDER BY created_at DESC
+		SELECT 
+			u.id, u.first_name, u.last_name, u.email, u.role, u.status,
+			COALESCE(t.employee_id, s.employee_id, '') as employee_id,
+			COALESCE(t.department, s.department, '') as department
+		FROM users u
+		LEFT JOIN teachers t ON u.id = t.user_id::uuid
+		LEFT JOIN staff s ON u.id = s.user_id::uuid
+		WHERE 1=1
 	`
-	rows, err := tenantDB.Query(c.Context(), query)
+	args := []interface{}{}
+
+	// If we're not in 'system' tenant, we should ideally still filter by something if possible,
+	// but since it's a tenant-specific DB, the 'users' table SHOULD only have that tenant's users.
+	// However, if school_id parameter is passed, we MUST filter by it for extra safety.
+	if schoolID != "" {
+		query += " AND u.school_id::text = $1"
+		args = append(args, schoolID)
+	}
+
+	query += " ORDER BY u.created_at DESC"
+
+	fmt.Printf("[DEBUG] Executing query on tenant DB for tenant '%s'\n", tenantCode)
+
+	rows, err := tenantDB.Query(c.Context(), query, args...)
 	if err != nil {
+		fmt.Printf("[ERROR] Failed to fetch users from tenant DB: %v\n", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch users"})
 	}
 	defer rows.Close()
 
 	users := []fiber.Map{}
 	for rows.Next() {
-		var id, firstName, lastName, email, role, status string
-		if err := rows.Scan(&id, &firstName, &lastName, &email, &role, &status); err != nil {
+		var id, firstName, lastName, email, role, status, employeeId, department string
+		if err := rows.Scan(&id, &firstName, &lastName, &email, &role, &status, &employeeId, &department); err != nil {
+			fmt.Printf("[WARN] Failed to scan user row: %v\n", err)
 			continue
 		}
 		users = append(users, fiber.Map{
-			"id":         id,
-			"first_name": firstName,
-			"last_name":  lastName,
-			"email":      email,
-			"role":       role,
-			"status":     status,
+			"id":          id,
+			"first_name":  firstName,
+			"last_name":   lastName,
+			"email":       email,
+			"role":        role,
+			"status":      status,
+			"employee_id": employeeId,
+			"department":  department,
 		})
 	}
+
+	fmt.Printf("[DEBUG] Successfully retrieved %d users for tenant '%s'\n", len(users), tenantCode)
 
 	return c.JSON(fiber.Map{
 		"message":   "Users retrieved successfully",
@@ -582,47 +618,38 @@ func (h *UserHandler) UpdateTeacher(c *fiber.Ctx) error {
 		})
 	}
 
-	// 2. Update User in Main DB (Auth database) and Tenant DB
-	// We can update first_name, last_name, and email in both central and tenant users tables
+	// 2. Update User details if provided
 	if req.FirstName != "" || req.LastName != "" || req.Email != "" {
-		updateUserQuery := "UPDATE users SET "
-		userArgs := []interface{}{}
-		argPos := 1
+		// Fetch current details from central DB
+		var currentEmail, currentFN, currentLN string
+		err = h.db.QueryRow(c.Context(), "SELECT email, first_name, last_name FROM users WHERE id = $1", userID).
+			Scan(&currentEmail, &currentFN, &currentLN)
+		if err == nil {
+			firstName := req.FirstName
+			if firstName == "" {
+				firstName = currentFN
+			}
+			lastName := req.LastName
+			if lastName == "" {
+				lastName = currentLN
+			}
+			email := req.Email
+			if email == "" {
+				email = currentEmail
+			}
 
-		if req.FirstName != "" {
-			updateUserQuery += fmt.Sprintf("first_name = $%d, ", argPos)
-			userArgs = append(userArgs, req.FirstName)
-			argPos++
-		}
-		if req.LastName != "" {
-			updateUserQuery += fmt.Sprintf("last_name = $%d, ", argPos)
-			userArgs = append(userArgs, req.LastName)
-			argPos++
-		}
-		if req.Email != "" {
-			updateUserQuery += fmt.Sprintf("email = $%d, ", argPos)
-			userArgs = append(userArgs, req.Email)
-			argPos++
-		}
+			// Update Central DB
+			_, err = h.db.Exec(c.Context(), "UPDATE users SET first_name = $1, last_name = $2, email = $3, updated_at = NOW() WHERE id = $4",
+				firstName, lastName, email, userID)
+			if err != nil {
+				fmt.Printf("Error updating teacher user in central DB: %v\n", err)
+			}
 
-		// Remove trailing comma and space
-		updateUserQuery = updateUserQuery[:len(updateUserQuery)-2]
-		updateUserQuery += fmt.Sprintf(" WHERE id = $%d", argPos)
-		userArgs = append(userArgs, userID)
-
-		// Update Central DB
-		_, err = h.db.Exec(c.Context(), updateUserQuery, userArgs...)
-		if err != nil {
-			fmt.Printf("Error updating user in main DB: %v\n", err)
-			// Log but continue to update tenant DB and teacher record
-		}
-
-		// Update Tenant DB
-		_, err = tenantDB.Exec(c.Context(), updateUserQuery, userArgs...)
-		if err != nil {
-			fmt.Printf("Error updating user in tenant DB: %v\n", err)
-			// If tenant users table doesn't have the user yet (e.g. from old data), this might fail.
-			// In a real system we might want to UPSERT here.
+			// Sync to Tenant DB (UPSERT)
+			err = h.SyncUserToTenant(c.Context(), tenantDB, userID, email, firstName, lastName, "teacher", req.SchoolID)
+			if err != nil {
+				fmt.Printf("Error syncing teacher to tenant DB: %v\n", err)
+			}
 		}
 	}
 
@@ -1056,29 +1083,37 @@ func (h *UserHandler) UpdateParent(c *fiber.Ctx) error {
 
 	// Update User info if changed
 	if req.FirstName != "" || req.LastName != "" || req.Email != "" {
-		updateUserQuery := "UPDATE users SET "
-		userArgs := []interface{}{}
-		argPos := 1
-		if req.FirstName != "" {
-			updateUserQuery += fmt.Sprintf("first_name = $%d, ", argPos)
-			userArgs = append(userArgs, req.FirstName)
-			argPos++
-		}
-		if req.LastName != "" {
-			updateUserQuery += fmt.Sprintf("last_name = $%d, ", argPos)
-			userArgs = append(userArgs, req.LastName)
-			argPos++
-		}
-		if req.Email != "" {
-			updateUserQuery += fmt.Sprintf("email = $%d, ", argPos)
-			userArgs = append(userArgs, req.Email)
-			argPos++
-		}
-		updateUserQuery = updateUserQuery[:len(updateUserQuery)-2] + fmt.Sprintf(" WHERE id = $%d", argPos)
-		userArgs = append(userArgs, userID)
+		// Fetch current details from central DB
+		var currentEmail, currentFN, currentLN string
+		err = h.db.QueryRow(c.Context(), "SELECT email, first_name, last_name FROM users WHERE id = $1", userID).
+			Scan(&currentEmail, &currentFN, &currentLN)
+		if err == nil {
+			firstName := req.FirstName
+			if firstName == "" {
+				firstName = currentFN
+			}
+			lastName := req.LastName
+			if lastName == "" {
+				lastName = currentLN
+			}
+			email := req.Email
+			if email == "" {
+				email = currentEmail
+			}
 
-		h.db.Exec(c.Context(), updateUserQuery, userArgs...)
-		tenantDB.Exec(c.Context(), updateUserQuery, userArgs...)
+			// Update Central DB
+			_, err = h.db.Exec(c.Context(), "UPDATE users SET first_name = $1, last_name = $2, email = $3, updated_at = NOW() WHERE id = $4",
+				firstName, lastName, email, userID)
+			if err != nil {
+				fmt.Printf("Error updating parent user in central DB: %v\n", err)
+			}
+
+			// Sync to Tenant DB (UPSERT)
+			err = h.SyncUserToTenant(c.Context(), tenantDB, userID, email, firstName, lastName, "parent", req.SchoolID)
+			if err != nil {
+				fmt.Printf("Error syncing parent to tenant DB: %v\n", err)
+			}
+		}
 	}
 
 	// Update Parent profile
