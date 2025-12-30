@@ -31,7 +31,7 @@ export default function LoginPage() {
 
   const fetchSchools = async () => {
     try {
-      const response = await schoolAPI.list({ limit: 100, offset: 0 })
+      const response = await schoolAPI.listPublic()
       // Handle both response.data.data and response.data formats
       const schoolsData = response.data.data || response.data || []
       setSchools(Array.isArray(schoolsData) ? schoolsData : [])

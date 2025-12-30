@@ -1,1309 +1,814 @@
-import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
+import {
+  Users, Briefcase, Phone, Mail, MapPin,
+  Search, Plus, Filter, MoreVertical, Trash2, Edit2,
+  Building2, GraduationCap, Calendar, X, Loader2,
+  CheckCircle2, AlertCircle, LayoutGrid, List
+} from 'lucide-react'
+import { toast } from 'react-hot-toast'
 import Sidebar from '@/components/Sidebar'
 import Navbar from '@/components/Navbar'
-import { useAuthStore } from '@/store/authStore'
+import { staffAPI, departmentAPI } from '@/services/api'
 import NepaliDatePicker from '@/components/NepaliDatePicker'
+import { useAuthStore } from '@/store/authStore'
 
+// Types
 interface StaffMember {
   id: string
-  firstName: string
-  lastName: string
+  school_id: string
+  user_id: string
+  first_name: string
+  last_name: string
   email: string
   phone: string
-  position: string
   department: string
-  joinDate: string
-  accessLevel: 'Admin' | 'Staff' | 'Teacher' | 'Support'
-  status: 'Active' | 'On Leave' | 'Inactive'
+  position: string
+  employee_id: string
   address: string
   city: string
   state: string
-  zipCode: string
+  zip_code: string
   qualification: string
   experience: number
-  salary?: number
-  notes?: string
-}
-
-interface FormData {
-  firstName: string
-  lastName: string
-  email: string
-  phone: string
-  position: string
-  department: string
-  joinDate: string
-  accessLevel: 'Admin' | 'Staff' | 'Teacher' | 'Support'
-  status: 'Active' | 'On Leave' | 'Inactive'
-  address: string
-  city: string
-  state: string
-  zipCode: string
-  qualification: string
-  experience: number
-  salary?: number
-  notes?: string
+  salary: number
+  notes: string
+  join_date: string
+  status: 'active' | 'inactive' | 'on_leave'
+  created_at: string
 }
 
 interface Department {
   id: string
-  name: string
-  description?: string
-  headOfDepartment?: string
-  createdAt: string
-}
-
-interface DepartmentFormData {
+  school_id: string
   name: string
   description: string
-  headOfDepartment: string
+  head_of_department: string
+  created_at: string
+  updated_at: string
 }
 
 const POSITIONS = [
-  'Principal',
-  'Vice Principal',
-  'Teacher',
-  'Assistant Teacher',
-  'Counselor',
-  'Librarian',
-  'Administrative Staff',
-  'Support Staff',
-  'Driver',
-  'Security',
-]
-
-const DEFAULT_DEPARTMENTS: Department[] = [
-  { id: '1', name: 'Academic', description: 'Academic and teaching staff', createdAt: new Date().toISOString() },
-  { id: '2', name: 'Administration', description: 'Administrative staff', createdAt: new Date().toISOString() },
-  { id: '3', name: 'Finance', description: 'Finance and accounting', createdAt: new Date().toISOString() },
-  { id: '4', name: 'IT', description: 'Information Technology', createdAt: new Date().toISOString() },
-  { id: '5', name: 'Support Services', description: 'Support and maintenance', createdAt: new Date().toISOString() },
-  { id: '6', name: 'Counseling', description: 'Student counseling services', createdAt: new Date().toISOString() },
-  { id: '7', name: 'Sports', description: 'Sports and physical education', createdAt: new Date().toISOString() },
+  'Principal', 'Vice Principal', 'Teacher', 'Assistant Teacher',
+  'Counselor', 'Librarian', 'Administrative Staff', 'Support Staff',
+  'Driver', 'Security', 'Accountant', 'IT Administrator'
 ]
 
 const QUALIFICATIONS = [
-  'B.A.',
-  'B.Sc.',
-  'B.Com.',
-  'B.Tech',
-  'M.A.',
-  'M.Sc.',
-  'M.Com.',
-  'M.Tech',
-  'M.Ed.',
-  'Ph.D.',
+  'High School', 'Diploma', 'Bachelor\'s Degree', 'Master\'s Degree',
+  'Ph.D.', 'B.Ed.', 'M.Ed.', 'B.Tech', 'M.Tech', 'MBA', 'CA', 'Other'
 ]
 
-const ACCESS_LEVELS = ['Admin', 'Staff', 'Teacher', 'Support'] as const
-
-const DEFAULT_FORM_STATE: FormData = {
-  firstName: '',
-  lastName: '',
-  email: '',
-  phone: '',
-  position: 'Teacher',
-  department: 'Academic',
-  joinDate: '',
-  accessLevel: 'Staff',
-  status: 'Active',
-  address: '',
-  city: '',
-  state: '',
-  zipCode: '',
-  qualification: 'B.A.',
-  experience: 0,
-  salary: 0,
-  notes: '',
-}
+const ACCESS_LEVELS = ['Staff', 'Admin', 'Teacher', 'Support'] // Kept for UI consistency if needed, though role handles this
 
 export default function StaffPage() {
-  const { user } = useAuthStore()
   const router = useRouter()
+  const { user } = useAuthStore()
+
+  // State
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
-  const [isHydrated, setIsHydrated] = useState(false)
-  const [showModal, setShowModal] = useState(false)
-  const [showDepartmentModal, setShowDepartmentModal] = useState(false)
-  const [currentView, setCurrentView] = useState<'staff' | 'departments'>('staff') // Track which view to show
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editingDepartmentId, setEditingDepartmentId] = useState<string | null>(null)
-  const [formData, setFormData] = useState<FormData>(DEFAULT_FORM_STATE)
-  const [departmentFormData, setDepartmentFormData] = useState<DepartmentFormData>({ name: '', description: '', headOfDepartment: '' })
-  const [activeTab, setActiveTab] = useState<'personal' | 'professional' | 'contact'>('personal')
+  const [loading, setLoading] = useState(true)
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [searchQuery, setSearchQuery] = useState('')
+  const [filterDepartment, setFilterDepartment] = useState('All')
+  const [filterStatus, setFilterStatus] = useState('All')
 
-  const menuItems = [
-    { href: '/dashboard', label: 'Dashboard', icon: '📊' },
-    { href: '/dashboard/students', label: 'Students', icon: '👨‍🎓' },
-    { href: '/dashboard/teachers', label: 'Teachers', icon: '👨‍🏫' },
-    { href: '/dashboard/guardians', label: 'Guardians', icon: '👨‍👩‍👧' },
-    { href: '/dashboard/staff', label: 'Staff', icon: '👔' },
-    { href: '/dashboard/attendance', label: 'Attendance', icon: '📋' },
-    { href: '/dashboard/fees', label: 'Fees', icon: '💰' },
-    { href: '/dashboard/library', label: 'Library', icon: '📚' },
-    { href: '/dashboard/classes', label: 'Classes', icon: '🏫' },
-    { href: '/dashboard/school-buses', label: 'School Buses', icon: '🚌' },
-    { href: '/dashboard/exams', label: 'Exams', icon: '📝' },
-    { href: '/dashboard/notifications', label: 'Notifications', icon: '🔔' },
-    { href: '/dashboard/reports', label: 'Reports', icon: '📈' },
-    { href: '/dashboard/settings', label: 'Settings', icon: '⚙️' },
-  ]
+  // Modal State
+  const [showStaffModal, setShowStaffModal] = useState(false)
+  const [showDepartmentModal, setShowDepartmentModal] = useState(false)
+  const [activeTab, setActiveTab] = useState<'personal' | 'professional' | 'contact'>('personal')
+  const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null)
 
-  // Load from localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      // Load staff
-      const savedStaff = localStorage.getItem('staff')
-      if (savedStaff) {
-        try {
-          setStaffMembers(JSON.parse(savedStaff))
-        } catch (error) {
-          console.error('Failed to load staff:', error)
-          const defaultStaff: StaffMember[] = [
-            {
-              id: '1',
-              firstName: 'Rajesh',
-              lastName: 'Kumar',
-              email: 'rajesh.kumar@school.edu',
-              phone: '+91-98765-43210',
-              position: 'Principal',
-              department: 'Administration',
-              joinDate: '2015-06-01',
-              accessLevel: 'Admin',
-              status: 'Active',
-              address: '123 School Lane',
-              city: 'Kathmandu',
-              state: 'Bagmati',
-              zipCode: '44600',
-              qualification: 'M.Ed.',
-              experience: 15,
-              salary: 75000,
-              notes: 'Senior Administrator',
-            },
-            {
-              id: '2',
-              firstName: 'Priya',
-              lastName: 'Singh',
-              email: 'priya.singh@school.edu',
-              phone: '+91-98765-43211',
-              position: 'Teacher',
-              department: 'Academic',
-              joinDate: '2018-08-15',
-              accessLevel: 'Teacher',
-              status: 'Active',
-              address: '456 School Lane',
-              city: 'Kathmandu',
-              state: 'Bagmati',
-              zipCode: '44600',
-              qualification: 'M.A.',
-              experience: 6,
-              salary: 45000,
-              notes: 'Mathematics Teacher',
-            },
-            {
-              id: '3',
-              firstName: 'Amit',
-              lastName: 'Patel',
-              email: 'amit.patel@school.edu',
-              phone: '+91-98765-43212',
-              position: 'Support Staff',
-              department: 'Support Services',
-              joinDate: '2020-01-10',
-              accessLevel: 'Support',
-              status: 'Active',
-              address: '789 School Lane',
-              city: 'Kathmandu',
-              state: 'Bagmati',
-              zipCode: '44600',
-              qualification: 'B.A.',
-              experience: 2,
-              salary: 25000,
-              notes: 'Maintenance Staff',
-            },
-          ]
-          setStaffMembers(defaultStaff)
-        }
-      } else {
-        const defaultStaff: StaffMember[] = [
-          {
-            id: '1',
-            firstName: 'Rajesh',
-            lastName: 'Kumar',
-            email: 'rajesh.kumar@school.edu',
-            phone: '+91-98765-43210',
-            position: 'Principal',
-            department: 'Administration',
-            joinDate: '2015-06-01',
-            accessLevel: 'Admin',
-            status: 'Active',
-            address: '123 School Lane',
-            city: 'Kathmandu',
-            state: 'Bagmati',
-            zipCode: '44600',
-            qualification: 'M.Ed.',
-            experience: 15,
-            salary: 75000,
-            notes: 'Senior Administrator',
-          },
-          {
-            id: '2',
-            firstName: 'Priya',
-            lastName: 'Singh',
-            email: 'priya.singh@school.edu',
-            phone: '+91-98765-43211',
-            position: 'Teacher',
-            department: 'Academic',
-            joinDate: '2018-08-15',
-            accessLevel: 'Teacher',
-            status: 'Active',
-            address: '456 School Lane',
-            city: 'Kathmandu',
-            state: 'Bagmati',
-            zipCode: '44600',
-            qualification: 'M.A.',
-            experience: 6,
-            salary: 45000,
-            notes: 'Mathematics Teacher',
-          },
-          {
-            id: '3',
-            firstName: 'Amit',
-            lastName: 'Patel',
-            email: 'amit.patel@school.edu',
-            phone: '+91-98765-43212',
-            position: 'Support Staff',
-            department: 'Support Services',
-            joinDate: '2020-01-10',
-            accessLevel: 'Support',
-            status: 'Active',
-            address: '789 School Lane',
-            city: 'Kathmandu',
-            state: 'Bagmati',
-            zipCode: '44600',
-            qualification: 'B.A.',
-            experience: 2,
-            salary: 25000,
-            notes: 'Maintenance Staff',
-          },
-        ]
-        setStaffMembers(defaultStaff)
-      }
+  // Form State
+  const [formData, setFormData] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
+    phone: '',
+    department: '',
+    position: '',
+    employee_id: '',
+    address: '',
+    city: '',
+    state: '',
+    zip_code: '',
+    qualification: '',
+    experience: 0,
+    salary: 0,
+    notes: '',
+    join_date: '',
+    status: 'active',
+  })
 
-      // Load departments
-      const savedDepartments = localStorage.getItem('departments')
-      if (savedDepartments) {
-        try {
-          setDepartments(JSON.parse(savedDepartments))
-        } catch (error) {
-          console.error('Failed to load departments:', error)
-          setDepartments(DEFAULT_DEPARTMENTS)
-        }
-      } else {
-        setDepartments(DEFAULT_DEPARTMENTS)
-      }
+  // Department Form State
+  const [departmentForm, setDepartmentForm] = useState({
+    id: '',
+    name: '',
+    description: '',
+    head_of_department: ''
+  })
+  const [editingDepartmentId, setEditingDepartmentId] = useState<string | null>(null)
 
-      setIsHydrated(true)
+  // Fetch Data
+  const fetchData = async () => {
+    try {
+      setLoading(true)
+      const [staffRes, deptRes] = await Promise.all([
+        staffAPI.list({ school_id: user?.schoolId }),
+        departmentAPI.list({ school_id: user?.schoolId })
+      ])
+      setStaffMembers(staffRes.data.staff || [])
+      setDepartments(deptRes.data.departments || [])
+    } catch (error) {
+      console.error('Error fetching data:', error)
+      toast.error('Failed to load staff data')
+    } finally {
+      setLoading(false)
     }
-  }, [])
-
-  // Save to localStorage
-  useEffect(() => {
-    if (isHydrated && typeof window !== 'undefined') {
-      localStorage.setItem('staff', JSON.stringify(staffMembers))
-      localStorage.setItem('departments', JSON.stringify(departments))
-    }
-  }, [staffMembers, departments, isHydrated])
-
-  // Handle hash navigation for view switching
-  useEffect(() => {
-    const handleHashChange = () => {
-      if (typeof window !== 'undefined') {
-        const hash = window.location.hash
-
-        if (hash === '#departments') {
-          setCurrentView('departments')
-          // Clear the hash after changing view
-          window.history.replaceState(null, '', window.location.pathname)
-        } else if (hash === '#staff-view') {
-          setCurrentView('staff')
-          // Clear the hash after changing view
-          window.history.replaceState(null, '', window.location.pathname)
-        }
-      }
-    }
-
-    // Check on mount and route change
-    handleHashChange()
-
-    // Listen for hash changes
-    window.addEventListener('hashchange', handleHashChange)
-
-    return () => {
-      window.removeEventListener('hashchange', handleHashChange)
-    }
-  }, [router.asPath]) // Re-run when route changes
-
-  const handleAddStaff = () => {
-    setEditingId(null)
-    setFormData(DEFAULT_FORM_STATE)
-    setActiveTab('personal')
-    setShowModal(true)
   }
 
-  const handleEditStaff = (staff: StaffMember) => {
-    setEditingId(staff.id)
-    setFormData({
-      firstName: staff.firstName,
-      lastName: staff.lastName,
-      email: staff.email,
-      phone: staff.phone,
-      position: staff.position,
-      department: staff.department,
-      joinDate: staff.joinDate,
-      accessLevel: staff.accessLevel,
-      status: staff.status,
-      address: staff.address,
-      city: staff.city,
-      state: staff.state,
-      zipCode: staff.zipCode,
-      qualification: staff.qualification,
-      experience: staff.experience,
-      salary: staff.salary,
-      notes: staff.notes,
-    })
-    setActiveTab('personal')
-    setShowModal(true)
-  }
+  useEffect(() => {
+    if (user?.schoolId) {
+      fetchData()
+    }
+  }, [user?.schoolId])
 
-  const handleCloseModal = () => {
-    setShowModal(false)
-    setFormData(DEFAULT_FORM_STATE)
-    setEditingId(null)
-    setActiveTab('personal')
-  }
-
+  // Handlers
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
-    setFormData((prev) => ({
+    setFormData(prev => ({
       ...prev,
-      [name]: name === 'experience' || name === 'salary' ? (parseInt(value) || 0) : value,
+      [name]: name === 'experience' || name === 'salary' ? (Number(value) || 0) : value
     }))
   }
 
-  const validateForm = () => {
-    if (!formData.firstName.trim()) {
-      alert('Please enter first name')
-      return false
-    }
-    if (!formData.lastName.trim()) {
-      alert('Please enter last name')
-      return false
-    }
-    if (!formData.email.trim()) {
-      alert('Please enter email')
-      return false
-    }
-    if (!formData.phone.trim()) {
-      alert('Please enter phone number')
-      return false
-    }
-    if (!formData.joinDate) {
-      alert('Please select join date')
-      return false
-    }
-    return true
-  }
-
-  const handleSaveStaff = () => {
-    if (!validateForm()) return
-
-    if (editingId) {
-      // Update existing staff
-      setStaffMembers((prev) =>
-        prev.map((staff) =>
-          staff.id === editingId
-            ? {
-              ...staff,
-              firstName: formData.firstName,
-              lastName: formData.lastName,
-              email: formData.email,
-              phone: formData.phone,
-              position: formData.position,
-              department: formData.department,
-              joinDate: formData.joinDate,
-              accessLevel: formData.accessLevel,
-              status: formData.status,
-              address: formData.address,
-              city: formData.city,
-              state: formData.state,
-              zipCode: formData.zipCode,
-              qualification: formData.qualification,
-              experience: formData.experience,
-              salary: formData.salary,
-              notes: formData.notes,
-            }
-            : staff
-        )
-      )
+  const handleOpenStaffModal = (staff?: StaffMember) => {
+    if (staff) {
+      setEditingStaff(staff)
+      setFormData({
+        first_name: staff.first_name,
+        last_name: staff.last_name,
+        email: staff.email,
+        phone: staff.phone,
+        department: staff.department,
+        position: staff.position,
+        employee_id: staff.employee_id,
+        address: staff.address,
+        city: staff.city,
+        state: staff.state,
+        zip_code: staff.zip_code,
+        qualification: staff.qualification,
+        experience: staff.experience,
+        salary: staff.salary,
+        notes: staff.notes,
+        join_date: staff.join_date ? new Date(staff.join_date).toISOString().split('T')[0] : '',
+        status: staff.status,
+      })
     } else {
-      // Add new staff
-      const newStaff: StaffMember = {
-        id: Date.now().toString(),
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        email: formData.email,
-        phone: formData.phone,
-        position: formData.position,
-        department: formData.department,
-        joinDate: formData.joinDate,
-        accessLevel: formData.accessLevel,
-        status: formData.status,
-        address: formData.address,
-        city: formData.city,
-        state: formData.state,
-        zipCode: formData.zipCode,
-        qualification: formData.qualification,
-        experience: formData.experience,
-        salary: formData.salary,
-        notes: formData.notes,
+      setEditingStaff(null)
+      setFormData({
+        first_name: '', last_name: '', email: '', phone: '',
+        department: departments[0]?.name || '', position: 'Teacher', employee_id: '',
+        address: '', city: '', state: '', zip_code: '',
+        qualification: 'Bachelor\'s Degree', experience: 0, salary: 0,
+        notes: '', join_date: new Date().toISOString().split('T')[0], status: 'active'
+      })
+    }
+    setActiveTab('personal')
+    setShowStaffModal(true)
+  }
+
+  const handleSaveStaff = async () => {
+    try {
+      if (!formData.first_name || !formData.last_name || !formData.email) {
+        toast.error('Please fill in all required fields')
+        return
       }
-      setStaffMembers((prev) => [newStaff, ...prev])
-    }
 
-    handleCloseModal()
-  }
-
-  const handleDeleteStaff = (id: string) => {
-    if (confirm('Are you sure you want to delete this staff member?')) {
-      setStaffMembers((prev) => prev.filter((staff) => staff.id !== id))
-    }
-  }
-
-  // Department Management Functions
-  const handleManageDepartments = () => {
-    setShowDepartmentModal(true)
-  }
-
-  const handleCloseDepartmentModal = () => {
-    setShowDepartmentModal(false)
-    setEditingDepartmentId(null)
-    setDepartmentFormData({ name: '', description: '', headOfDepartment: '' })
-  }
-
-  const handleAddDepartment = () => {
-    setEditingDepartmentId(null)
-    setDepartmentFormData({ name: '', description: '', headOfDepartment: '' })
-  }
-
-  const handleEditDepartment = (dept: Department) => {
-    setEditingDepartmentId(dept.id)
-    setDepartmentFormData({
-      name: dept.name,
-      description: dept.description || '',
-      headOfDepartment: dept.headOfDepartment || '',
-    })
-  }
-
-  const handleSaveDepartment = () => {
-    if (!departmentFormData.name.trim()) {
-      alert('Please enter department name')
-      return
-    }
-
-    if (editingDepartmentId) {
-      // Update existing department
-      setDepartments((prev) =>
-        prev.map((dept) =>
-          dept.id === editingDepartmentId
-            ? {
-              ...dept,
-              name: departmentFormData.name,
-              description: departmentFormData.description,
-              headOfDepartment: departmentFormData.headOfDepartment,
-            }
-            : dept
-        )
-      )
-    } else {
-      // Add new department
-      const newDepartment: Department = {
-        id: Date.now().toString(),
-        name: departmentFormData.name,
-        description: departmentFormData.description,
-        headOfDepartment: departmentFormData.headOfDepartment,
-        createdAt: new Date().toISOString(),
+      const payload = {
+        ...formData,
+        school_id: user?.schoolId,
       }
-      setDepartments((prev) => [...prev, newDepartment])
-    }
 
-    setEditingDepartmentId(null)
-    setDepartmentFormData({ name: '', description: '', headOfDepartment: '' })
-  }
+      if (editingStaff) {
+        await staffAPI.update(editingStaff.id, payload)
+        toast.success('Staff member updated successfully')
+      } else {
+        await staffAPI.create(payload)
+        toast.success('Staff member added successfully')
+      }
 
-  const handleDeleteDepartment = (id: string) => {
-    const departmentToDelete = departments.find((d) => d.id === id)
-    if (!departmentToDelete) return
-
-    // Check if any staff members are assigned to this department
-    const staffInDepartment = staffMembers.filter((s) => s.department === departmentToDelete.name)
-    if (staffInDepartment.length > 0) {
-      alert(`Cannot delete department "${departmentToDelete.name}" because ${staffInDepartment.length} staff member(s) are assigned to it.`)
-      return
-    }
-
-    if (confirm(`Are you sure you want to delete the department "${departmentToDelete.name}"?`)) {
-      setDepartments((prev) => prev.filter((dept) => dept.id !== id))
+      setShowStaffModal(false)
+      fetchData()
+    } catch (error: any) {
+      console.error('Error saving staff:', error)
+      toast.error(error.response?.data?.error || 'Failed to save staff member')
     }
   }
 
-  const handleDepartmentInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target
-    setDepartmentFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }))
-  }
-
-  const getAccessLevelColor = (level: string) => {
-    switch (level) {
-      case 'Admin':
-        return 'bg-red-100 text-red-800'
-      case 'Staff':
-        return 'bg-blue-100 text-blue-800'
-      case 'Teacher':
-        return 'bg-green-100 text-green-800'
-      case 'Support':
-        return 'bg-yellow-100 text-yellow-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
+  const handleDeleteStaff = async (id: string, name: string) => {
+    if (window.confirm(`Are you sure you want to remove ${name}?`)) {
+      try {
+        await staffAPI.delete(id)
+        toast.success('Staff member removed')
+        setStaffMembers(prev => prev.filter(s => s.id !== id))
+      } catch (error) {
+        toast.error('Failed to remove staff member')
+      }
     }
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Active':
-        return 'bg-green-100 text-green-800'
-      case 'On Leave':
-        return 'bg-orange-100 text-orange-800'
-      case 'Inactive':
-        return 'bg-red-100 text-red-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
+  // Department Handlers
+  const handleSaveDepartment = async () => {
+    try {
+      if (!departmentForm.name) {
+        toast.error('Department name is required')
+        return
+      }
+
+      if (editingDepartmentId) {
+        await departmentAPI.update(editingDepartmentId, {
+          ...departmentForm,
+          school_id: user?.schoolId
+        })
+        toast.success('Department updated')
+      } else {
+        await departmentAPI.create({
+          ...departmentForm,
+          school_id: user?.schoolId
+        })
+        toast.success('Department created')
+      }
+
+      setShowDepartmentModal(false)
+      setDepartmentForm({ id: '', name: '', description: '', head_of_department: '' })
+      setEditingDepartmentId(null)
+      fetchData() // Refresh both to update dropdowns
+    } catch (error) {
+      toast.error('Failed to save department')
     }
   }
+
+  const handleDeleteDepartment = async (id: string) => {
+    if (window.confirm('Delete this department?')) {
+      try {
+        await departmentAPI.delete(id)
+        toast.success('Department deleted')
+        setDepartments(prev => prev.filter(d => d.id !== id))
+      } catch (error) {
+        toast.error('Failed to delete department')
+      }
+    }
+  }
+
+  // Filter Logic
+  const filteredStaff = staffMembers.filter(staff => {
+    const matchesSearch =
+      staff.first_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      staff.last_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      staff.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      staff.position.toLowerCase().includes(searchQuery.toLowerCase())
+
+    const matchesDept = filterDepartment === 'All' || staff.department === filterDepartment
+    const matchesStatus = filterStatus === 'All' || staff.status === filterStatus
+
+    return matchesSearch && matchesDept && matchesStatus
+  })
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col font-inter">
       <Navbar showBackButton={true} backLink="/dashboard" />
 
       <div className="flex flex-1">
         <Sidebar />
 
-        <main className="flex-1 py-8 px-4">
-          {/* Page Header */}
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-              {currentView === 'staff' ? 'Staff Management' : 'Department Management'}
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">
-              {currentView === 'staff' ? 'Manage your school staff members' : 'Manage school departments'}
-            </p>
+        <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
+          {/* Header Section */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Staff Management</h1>
+              <p className="text-gray-500 dark:text-gray-400">Manage your school's faculty and staff members</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDepartmentModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm"
+              >
+                <Building2 size={18} />
+                Departments
+              </button>
+              <button
+                onClick={() => handleOpenStaffModal()}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md"
+              >
+                <Plus size={18} />
+                Add Staff
+              </button>
+            </div>
           </div>
 
-          {/* Conditional Content Based on View */}
-          {currentView === 'staff' ? (
-            <>
-              {/* Search Bar */}
-              <div className="mb-4">
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Search staff by name, position, department, or email..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full px-4 py-3 pl-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                  />
-                  <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 text-xl">
-                    🔍
-                  </span>
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery('')}
-                      className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
+          {/* Filters & Controls */}
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 mb-6 flex flex-col md:flex-row gap-4 items-center justify-between">
+            <div className="flex flex-1 gap-4 w-full md:w-auto">
+              <div className="relative flex-1 md:max-w-md">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                <input
+                  type="text"
+                  placeholder="Search staff..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                />
               </div>
-
-              {/* Add Staff Button */}
-              <div className="mb-4 flex justify-end">
-                <button
-                  onClick={handleAddStaff}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              <div className="md:w-48">
+                <select
+                  value={filterDepartment}
+                  onChange={(e) => setFilterDepartment(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                 >
-                  <span className="text-xl">+</span>
-                  Add New Staff
-                </button>
+                  <option value="All">All Departments</option>
+                  {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                </select>
               </div>
+              <div className="md:w-40">
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                >
+                  <option value="All">All Status</option>
+                  <option value="active">Active</option>
+                  <option value="on_leave">On Leave</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 bg-gray-100 dark:bg-gray-900 p-1 rounded-lg">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-2 rounded-md transition-all ${viewMode === 'grid' ? 'bg-white dark:bg-gray-800 shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <LayoutGrid size={20} />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-2 rounded-md transition-all ${viewMode === 'list' ? 'bg-white dark:bg-gray-800 shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <List size={20} />
+              </button>
+            </div>
+          </div>
 
-              {staffMembers.length === 0 ? (
-                <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow text-center">
-                  <p className="text-gray-500 dark:text-gray-400 text-lg">No staff members added yet. Click "Add New Staff" to get started.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {(() => {
-                    // Filter staff members based on search query
-                    const filteredStaff = staffMembers.filter((staff) => {
-                      const query = searchQuery.toLowerCase()
-                      return (
-                        staff.firstName.toLowerCase().includes(query) ||
-                        staff.lastName.toLowerCase().includes(query) ||
-                        staff.position.toLowerCase().includes(query) ||
-                        staff.department.toLowerCase().includes(query) ||
-                        staff.email.toLowerCase().includes(query) ||
-                        `${staff.firstName} ${staff.lastName}`.toLowerCase().includes(query)
-                      )
-                    })
-
-                    // Show message if no results found
-                    if (filteredStaff.length === 0) {
-                      return (
-                        <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow text-center">
-                          <p className="text-gray-500 dark:text-gray-400 text-lg">
-                            No staff members found matching "{searchQuery}"
-                          </p>
-                          <button
-                            onClick={() => setSearchQuery('')}
-                            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                          >
-                            Clear Search
-                          </button>
+          {/* Content */}
+          {loading ? (
+            <div className="flex justify-center items-center h-64">
+              <Loader2 className="animate-spin text-blue-600" size={48} />
+            </div>
+          ) : filteredStaff.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-96 bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-300 dark:border-gray-700">
+              <div className="bg-blue-50 dark:bg-blue-900/30 p-4 rounded-full mb-4">
+                <Users className="text-blue-500" size={48} />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">No Staff Members Found</h3>
+              <p className="text-gray-500 dark:text-gray-400 mb-6 text-center max-w-sm">
+                Matches for your search criteria or add your first staff member to get started.
+              </p>
+              <button
+                onClick={() => handleOpenStaffModal()}
+                className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md font-medium"
+              >
+                Add Staff Member
+              </button>
+            </div>
+          ) : (
+            <div className={viewMode === 'grid'
+              ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"
+              : "flex flex-col gap-4"
+            }>
+              {filteredStaff.map((staff) => (
+                <div
+                  key={staff.id}
+                  className={`bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-lg transition-all duration-300 group
+                    ${viewMode === 'list' ? 'flex flex-row items-center p-4 gap-6' : ''}`}
+                >
+                  <div className={`p-6 ${viewMode === 'list' ? 'p-0 flex-1 flex items-center gap-6' : ''}`}>
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-md">
+                          {staff.first_name[0]}{staff.last_name[0]}
                         </div>
-                      )
-                    }
-
-                    return filteredStaff.map((staff) => (
-                      <div key={staff.id} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow hover:shadow-lg transition-shadow">
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                                {staff.firstName} {staff.lastName}
-                              </h3>
-                              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getAccessLevelColor(staff.accessLevel)} dark:${getAccessLevelColor(staff.accessLevel).replace('bg-', 'dark:bg-').replace('text-', 'dark:text-')}`}>
-                                {staff.accessLevel}
-                              </span>
-                              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(staff.status)} dark:${getStatusColor(staff.status).replace('bg-', 'dark:bg-').replace('text-', 'dark:text-')}`}>
-                                {staff.status}
-                              </span>
-                            </div>
-                            <p className="text-gray-600 dark:text-gray-300 mt-2">
-                              <span className="font-semibold">Position:</span> {staff.position} | <span className="font-semibold">Department:</span> {staff.department}
-                            </p>
-                            <div className="grid grid-cols-4 gap-4 mt-3">
-                              <div>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">Email</p>
-                                <p className="font-semibold text-gray-900 dark:text-white">{staff.email}</p>
-                              </div>
-                              <div>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">Phone</p>
-                                <p className="font-semibold text-gray-900 dark:text-white">{staff.phone}</p>
-                              </div>
-                              <div>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">Experience</p>
-                                <p className="font-semibold text-gray-900 dark:text-white">{staff.experience} years</p>
-                              </div>
-                              <div>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">Joined</p>
-                                <p className="font-semibold text-gray-900 dark:text-white">📅 {staff.joinDate}</p>
-                              </div>
-                            </div>
-                            {staff.notes && <p className="text-gray-600 dark:text-gray-300 mt-3 italic">📝 {staff.notes}</p>}
-                          </div>
-                          <div className="flex gap-2 ml-4">
-                            <button
-                              onClick={() => handleEditStaff(staff)}
-                              className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-semibold hover:underline"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeleteStaff(staff.id)}
-                              className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-semibold hover:underline"
-                            >
-                              Delete
-                            </button>
-                          </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-blue-600 transition-colors">
+                            {staff.first_name} {staff.last_name}
+                          </h3>
+                          <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">{staff.position}</p>
                         </div>
                       </div>
-                    ))
-                  })()}
-                </div>
-              )}
-
-              {/* Statistics */}
-              {staffMembers.length > 0 && (
-                <div className="grid grid-cols-5 gap-4 mt-8">
-                  <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow text-center">
-                    <p className="text-gray-600 dark:text-gray-400 text-sm font-medium">Total Staff</p>
-                    <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{staffMembers.length}</p>
-                  </div>
-                  <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow text-center">
-                    <p className="text-gray-600 dark:text-gray-400 text-sm font-medium">Active</p>
-                    <p className="text-3xl font-bold text-green-600 dark:text-green-400">
-                      {staffMembers.filter((s) => s.status === 'Active').length}
-                    </p>
-                  </div>
-                  <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow text-center">
-                    <p className="text-gray-600 dark:text-gray-400 text-sm font-medium">On Leave</p>
-                    <p className="text-3xl font-bold text-orange-600 dark:text-orange-400">
-                      {staffMembers.filter((s) => s.status === 'On Leave').length}
-                    </p>
-                  </div>
-                  <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow text-center">
-                    <p className="text-gray-600 dark:text-gray-400 text-sm font-medium">Admins</p>
-                    <p className="text-3xl font-bold text-red-600 dark:text-red-400">
-                      {staffMembers.filter((s) => s.accessLevel === 'Admin').length}
-                    </p>
-                  </div>
-                  <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow text-center">
-                    <p className="text-gray-600 dark:text-gray-400 text-sm font-medium">Teachers</p>
-                    <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">
-                      {staffMembers.filter((s) => s.position === 'Teacher' || s.position === 'Assistant Teacher').length}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            /* Department Management View */
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-              <div className="mb-6 flex justify-between items-center">
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">All Departments</h2>
-                <button
-                  onClick={() => {
-                    setEditingDepartmentId(null)
-                    setDepartmentFormData({ name: '', description: '', headOfDepartment: '' })
-                    setShowDepartmentModal(true)
-                  }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  + Add Department
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {departments.map((dept) => (
-                  <div key={dept.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition-shadow">
-                    <div className="flex justify-between items-start mb-2">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{dept.name}</h3>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleEditDepartment(dept)}
-                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          onClick={() => handleDeleteDepartment(dept.id)}
-                          className="text-red-600 hover:text-red-800 dark:text-red-400"
-                        >
-                          🗑️
-                        </button>
+                      <div className={`flex gap-2 ${viewMode === 'list' ? 'hidden' : ''}`}>
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border
+                          ${staff.status === 'active' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' :
+                            staff.status === 'on_leave' ? 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800' :
+                              'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700'}`}>
+                          {staff.status.replace('_', ' ')}
+                        </span>
                       </div>
                     </div>
-                    <p className="text-gray-600 dark:text-gray-400 text-sm mb-3">{dept.description}</p>
-                    {dept.headOfDepartment && (
-                      <p className="text-sm text-gray-700 dark:text-gray-300">
-                        <span className="font-medium">Head:</span> {staffMembers.find((s) => s.id === dept.headOfDepartment)?.firstName} {staffMembers.find((s) => s.id === dept.headOfDepartment)?.lastName}
-                      </p>
-                    )}
+
+                    <div className={`space-y-2.5 ${viewMode === 'list' ? 'flex gap-8 space-y-0 items-center' : ''}`}>
+                      <div className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
+                        <Building2 size={16} className="text-gray-400" />
+                        <span>{staff.department || 'No Department'}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
+                        <Mail size={16} className="text-gray-400" />
+                        <span className="truncate">{staff.email}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
+                        <Phone size={16} className="text-gray-400" />
+                        <span>{staff.phone}</span>
+                      </div>
+                    </div>
                   </div>
-                ))}
-              </div>
+
+                  <div className={`px-6 py-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center ${viewMode === 'list' ? 'bg-transparent border-0 p-0 px-0' : ''}`}>
+                    <div className={`text-xs text-gray-500 font-medium ${viewMode === 'list' ? 'hidden' : ''}`}>
+                      ID: {staff.employee_id}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleOpenStaffModal(staff)}
+                        className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                        title="Edit"
+                      >
+                        <Edit2 size={18} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteStaff(staff.id, staff.first_name)}
+                        className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </main>
       </div>
 
       {/* Staff Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-4xl h-auto max-h-[90vh] flex flex-col">
-            {/* Modal Header */}
-            <div className="border-b border-gray-200 dark:border-gray-700 px-8 py-4 flex justify-between items-center">
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {editingId ? 'Edit Staff Member' : 'Add New Staff Member'}
-              </h3>
+      {showStaffModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {editingStaff ? 'Edit Staff Member' : 'Add New Staff Member'}
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Enter the staff details below.</p>
+              </div>
               <button
-                onClick={handleCloseModal}
-                className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 text-3xl font-bold"
+                onClick={() => setShowStaffModal(false)}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
               >
-                ×
+                <X size={24} className="text-gray-500" />
               </button>
             </div>
 
-            {/* Modal Tabs */}
-            <div className="border-b border-gray-200 dark:border-gray-700 px-8">
-              <div className="flex gap-4">
+            <div className="border-b border-gray-100 dark:border-gray-700 px-8 flex gap-8">
+              {['personal', 'professional', 'contact'].map((tab) => (
                 <button
-                  onClick={() => setActiveTab('personal')}
-                  className={`py-3 px-4 font-semibold border-b-2 transition-all ${activeTab === 'personal'
-                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-                    }`}
+                  key={tab}
+                  onClick={() => setActiveTab(tab as any)}
+                  className={`py-4 text-sm font-semibold border-b-2 transition-all capitalize
+                      ${activeTab === tab
+                      ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
                 >
-                  Personal Info
+                  {tab} Details
                 </button>
-                <button
-                  onClick={() => setActiveTab('professional')}
-                  className={`py-3 px-4 font-semibold border-b-2 transition-all ${activeTab === 'professional'
-                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-                    }`}
-                >
-                  Professional Details
-                </button>
-                <button
-                  onClick={() => setActiveTab('contact')}
-                  className={`py-3 px-4 font-semibold border-b-2 transition-all ${activeTab === 'contact'
-                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-                    }`}
-                >
-                  Contact & Address
-                </button>
-              </div>
+              ))}
             </div>
 
-            {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
-              {/* Personal Info Tab */}
+            <div className="flex-1 overflow-y-auto p-8">
               {activeTab === 'personal' && (
-                <>
+                <div className="space-y-6">
                   <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">First Name *</label>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">First Name <span className="text-red-500">*</span></label>
                       <input
-                        type="text"
-                        name="firstName"
-                        value={formData.firstName}
+                        name="first_name"
+                        value={formData.first_name}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter first name"
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="John"
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Last Name *</label>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Last Name <span className="text-red-500">*</span></label>
                       <input
-                        type="text"
-                        name="lastName"
-                        value={formData.lastName}
+                        name="last_name"
+                        value={formData.last_name}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter last name"
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="Doe"
                       />
                     </div>
                   </div>
-
                   <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email *</label>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Email <span className="text-red-500">*</span></label>
                       <input
-                        type="email"
                         name="email"
+                        type="email"
                         value={formData.email}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter email address"
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="john@school.com"
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone *</label>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Phone</label>
                       <input
-                        type="tel"
                         name="phone"
                         value={formData.phone}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter phone number"
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="+1 234 567 8900"
                       />
                     </div>
                   </div>
-                </>
+                </div>
               )}
 
-              {/* Professional Details Tab */}
               {activeTab === 'professional' && (
-                <>
+                <div className="space-y-6">
                   <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Position *</label>
-                      <select
-                        name="position"
-                        value={formData.position}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        {POSITIONS.map((pos) => (
-                          <option key={pos} value={pos}>
-                            {pos}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Department</label>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Department</label>
                       <select
                         name="department"
                         value={formData.department}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                       >
-                        {departments.map((dept) => (
-                          <option key={dept.id} value={dept.name}>
-                            {dept.name}
-                          </option>
-                        ))}
+                        <option value="">Select Department</option>
+                        {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Position</label>
+                      <select
+                        name="position"
+                        value={formData.position}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                      >
+                        {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Employee ID</label>
+                      <input
+                        name="employee_id"
+                        value={formData.employee_id || '(Auto-generated)'}
+                        readOnly
+                        disabled
+                        className="w-full px-4 py-2.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-500 dark:text-gray-400 cursor-not-allowed"
+                        placeholder="Will be auto-generated"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <NepaliDatePicker
+                        label="Join Date"
+                        value={formData.join_date}
+                        onChange={(date: string) => setFormData(p => ({ ...p, join_date: date }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+                      <select
+                        name="status"
+                        value={formData.status}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                      >
+                        <option value="active">Active</option>
+                        <option value="on_leave">On Leave</option>
+                        <option value="inactive">Inactive</option>
                       </select>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Qualification</label>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Qualification</label>
                       <select
                         name="qualification"
                         value={formData.qualification}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                       >
-                        {QUALIFICATIONS.map((qual) => (
-                          <option key={qual} value={qual}>
-                            {qual}
-                          </option>
-                        ))}
+                        {QUALIFICATIONS.map(q => <option key={q} value={q}>{q}</option>)}
                       </select>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Years of Experience</label>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Experience (Years)</label>
                       <input
                         type="number"
                         name="experience"
                         value={formData.experience}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                         min="0"
                       />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-6">
-                    <div>
-                      <NepaliDatePicker
-                        label="Join Date"
-                        value={formData.joinDate}
-                        onChange={(date: string) => setFormData(prev => ({ ...prev, joinDate: date }))}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Access Level</label>
-                      <select
-                        name="accessLevel"
-                        value={formData.accessLevel}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        {ACCESS_LEVELS.map((level) => (
-                          <option key={level} value={level}>
-                            {level}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Status</label>
-                      <select
-                        name="status"
-                        value={formData.status}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="Active">Active</option>
-                        <option value="On Leave">On Leave</option>
-                        <option value="Inactive">Inactive</option>
-                      </select>
-                    </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Notes</label>
+                    <textarea
+                      name="notes"
+                      value={formData.notes}
+                      onChange={handleInputChange}
+                      rows={3}
+                      className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
                   </div>
-
-                  <div className="grid grid-cols-1 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Salary (₹)</label>
-                      <input
-                        type="number"
-                        name="salary"
-                        value={formData.salary || ''}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        min="0"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Notes</label>
-                      <textarea
-                        name="notes"
-                        value={formData.notes || ''}
-                        onChange={handleInputChange}
-                        rows={3}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Add any additional notes..."
-                      />
-                    </div>
-                  </div>
-                </>
+                </div>
               )}
 
-              {/* Contact & Address Tab */}
               {activeTab === 'contact' && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Street Address</label>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Street Address</label>
                     <input
-                      type="text"
                       name="address"
                       value={formData.address}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Enter street address"
+                      className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                      placeholder="123 Main St"
                     />
                   </div>
-
                   <div className="grid grid-cols-3 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City</label>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">City</label>
                       <input
-                        type="text"
                         name="city"
                         value={formData.city}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter city"
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">State/Province</label>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">State</label>
                       <input
-                        type="text"
                         name="state"
                         value={formData.state}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter state"
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">ZIP Code</label>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Zip Code</label>
                       <input
-                        type="text"
-                        name="zipCode"
-                        value={formData.zipCode}
+                        name="zip_code"
+                        value={formData.zip_code}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter ZIP code"
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                       />
                     </div>
                   </div>
-
-                  <div className="bg-blue-50 dark:bg-blue-900 p-4 rounded-lg">
-                    <h4 className="font-semibold text-gray-900 dark:text-blue-100 mb-3">Preview</h4>
-                    <div className="bg-white dark:bg-gray-700 p-4 rounded border border-blue-200 dark:border-blue-700 space-y-2">
-                      <p className="font-semibold text-gray-900 dark:text-white">
-                        {formData.firstName || 'First'} {formData.lastName || 'Last'}
-                      </p>
-                      <p className="text-sm text-gray-600 dark:text-gray-300">{formData.address || 'Address'}</p>
-                      <p className="text-sm text-gray-600 dark:text-gray-300">
-                        {formData.city || 'City'}, {formData.state || 'State'} {formData.zipCode || 'ZIP'}
-                      </p>
-                      <p className="text-sm text-gray-600 dark:text-gray-300">📧 {formData.email || 'email@example.com'}</p>
-                      <p className="text-sm text-gray-600 dark:text-gray-300">📱 {formData.phone || '+91-0000-00000'}</p>
-                    </div>
-                  </div>
-                </>
+                </div>
               )}
             </div>
 
-            {/* Modal Footer */}
-            <div className="border-t border-gray-200 dark:border-gray-700 px-8 py-4 flex justify-end gap-3">
+            <div className="p-6 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex justify-end gap-4">
               <button
-                onClick={handleCloseModal}
-                className="px-6 py-2 bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 text-gray-900 dark:text-white rounded-lg transition-colors font-semibold"
+                onClick={() => setShowStaffModal(false)}
+                className="px-6 py-2.5 text-gray-700 font-medium hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-700 rounded-lg transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveStaff}
-                className="px-6 py-2 bg-blue-600 dark:bg-blue-700 hover:bg-blue-700 dark:hover:bg-blue-800 text-white rounded-lg transition-colors font-semibold shadow-md"
+                className="px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all transform active:scale-95"
               >
-                {editingId ? 'Update Staff' : 'Add Staff'}
+                {editingStaff ? 'Update Staff Member' : 'Add Staff Member'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Department Management Modal */}
+      {/* Department Modal */}
       {showDepartmentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-4xl h-auto max-h-[90vh] flex flex-col">
-            {/* Modal Header */}
-            <div className="border-b border-gray-200 dark:border-gray-700 px-8 py-4 flex justify-between items-center">
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Manage Departments</h3>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden">
+            <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Manage Departments</h2>
               <button
-                onClick={handleCloseDepartmentModal}
-                className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 text-3xl font-bold"
+                onClick={() => setShowDepartmentModal(false)}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
               >
-                ×
+                <X size={20} className="text-gray-500" />
               </button>
             </div>
 
-            {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto px-8 py-6">
-              {/* Add/Edit Department Form */}
-              <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg mb-6">
-                <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            <div className="p-8">
+              <div className="bg-blue-50 dark:bg-gray-700/50 p-6 rounded-xl mb-8 border border-blue-100 dark:border-gray-700">
+                <h3 className="font-semibold text-gray-900 dark:text-white mb-4">
                   {editingDepartmentId ? 'Edit Department' : 'Add New Department'}
-                </h4>
-                <div className="grid grid-cols-1 gap-4">
+                </h3>
+                <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Department Name *
-                    </label>
                     <input
-                      type="text"
-                      name="name"
-                      value={departmentFormData.name}
-                      onChange={handleDepartmentInputChange}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      placeholder="e.g., Human Resources"
+                      placeholder="Department Name e.g. Science"
+                      value={departmentForm.name}
+                      onChange={e => setDepartmentForm(p => ({ ...p, name: e.target.value }))}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Description
-                    </label>
-                    <textarea
-                      name="description"
-                      value={departmentFormData.description}
-                      onChange={handleDepartmentInputChange}
-                      rows={2}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      placeholder="Brief description of the department"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Head of Department
-                    </label>
                     <input
-                      type="text"
-                      name="headOfDepartment"
-                      value={departmentFormData.headOfDepartment}
-                      onChange={handleDepartmentInputChange}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      placeholder="Name of department head"
+                      placeholder="Description"
+                      value={departmentForm.description}
+                      onChange={e => setDepartmentForm(p => ({ ...p, description: e.target.value }))}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                   </div>
-                  <div className="flex gap-3">
+                  <div>
+                    <input
+                      placeholder="Head of Department"
+                      value={departmentForm.head_of_department}
+                      onChange={e => setDepartmentForm(p => ({ ...p, head_of_department: e.target.value }))}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                  <div className="flex gap-3 pt-2">
                     <button
                       onClick={handleSaveDepartment}
-                      className="px-6 py-2 bg-purple-600 dark:bg-purple-700 hover:bg-purple-700 dark:hover:bg-purple-800 text-white rounded-lg transition-colors font-semibold shadow-md"
+                      className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-md font-medium text-sm transition-colors"
                     >
-                      {editingDepartmentId ? 'Update Department' : 'Add Department'}
+                      {editingDepartmentId ? 'Update' : 'Add Department'}
                     </button>
                     {editingDepartmentId && (
                       <button
-                        onClick={handleAddDepartment}
-                        className="px-6 py-2 bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 text-gray-900 dark:text-white rounded-lg transition-colors font-semibold"
+                        onClick={() => {
+                          setEditingDepartmentId(null)
+                          setDepartmentForm({ id: '', name: '', description: '', head_of_department: '' })
+                        }}
+                        className="px-5 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hovered:bg-gray-300 font-medium text-sm transition-colors"
                       >
-                        Cancel Edit
+                        Cancel
                       </button>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Departments List */}
-              <div>
-                <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  All Departments ({departments.length})
-                </h4>
-                {departments.length === 0 ? (
-                  <p className="text-gray-500 dark:text-gray-400 text-center py-8">
-                    No departments added yet.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {departments.map((dept) => (
-                      <div
-                        key={dept.id}
-                        className="bg-white dark:bg-gray-700 p-4 rounded-lg border border-gray-200 dark:border-gray-600 hover:shadow-md transition-shadow"
-                      >
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <h5 className="text-lg font-semibold text-gray-900 dark:text-white">
-                              {dept.name}
-                            </h5>
-                            {dept.description && (
-                              <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-                                {dept.description}
-                              </p>
-                            )}
-                            {dept.headOfDepartment && (
-                              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                                <span className="font-medium">Head:</span> {dept.headOfDepartment}
-                              </p>
-                            )}
-                            <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                              Staff Count: {staffMembers.filter((s) => s.department === dept.name).length}
-                            </p>
-                          </div>
-                          <div className="flex gap-2 ml-4">
-                            <button
-                              onClick={() => handleEditDepartment(dept)}
-                              className="text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 font-semibold hover:underline"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeleteDepartment(dept.id)}
-                              className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-semibold hover:underline"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
+              <div className="space-y-3 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                {departments.map(dept => (
+                  <div key={dept.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/30 border border-gray-100 dark:border-gray-700 rounded-lg group hover:border-blue-200 dark:hover:border-blue-800 transition-colors">
+                    <div>
+                      <h4 className="font-semibold text-gray-900 dark:text-white">{dept.name}</h4>
+                      <div className="text-xs text-gray-500 flex gap-3 mt-1">
+                        <span>Head: {dept.head_of_department || '-'}</span>
+                        <span>•</span>
+                        <span>{staffMembers.filter(s => s.department === dept.name).length} Staff</span>
                       </div>
-                    ))}
+                    </div>
+                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => {
+                          setEditingDepartmentId(dept.id)
+                          setDepartmentForm({
+                            id: dept.id,
+                            name: dept.name,
+                            description: dept.description,
+                            head_of_department: dept.head_of_department
+                          })
+                        }}
+                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                      >
+                        <Edit2 size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteDepartment(dept.id)}
+                        className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
-                )}
+                ))}
               </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="border-t border-gray-200 dark:border-gray-700 px-8 py-4 flex justify-end">
-              <button
-                onClick={handleCloseDepartmentModal}
-                className="px-6 py-2 bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 text-gray-900 dark:text-white rounded-lg transition-colors font-semibold"
-              >
-                Close
-              </button>
             </div>
           </div>
         </div>

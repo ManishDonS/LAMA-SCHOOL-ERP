@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react'
+import { expensesAPI } from '@/services/expenseAPI'
+import { toast } from 'react-hot-toast'
 
 interface BudgetCategory {
     categoryId: string
@@ -38,14 +40,14 @@ export const BudgetDashboard: React.FC<BudgetDashboardProps> = ({ schoolId = '1'
     const loadBudgetData = async () => {
         try {
             setLoading(true)
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-            const response = await fetch(
-                `${API_URL}/expense-service/api/v1/budget/status?schoolId=${schoolId}&year=${selectedYear}&month=${selectedMonth}`
-            )
-            const data = await response.json()
+            const data = await expensesAPI.getBudgetStatus({
+                year: selectedYear,
+                month: selectedMonth,
+            })
             setBudgetData(data)
         } catch (error) {
             console.error('Error loading budget data:', error)
+            toast.error('Failed to load budget tracking data')
         } finally {
             setLoading(false)
         }

@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import { useAuthStore } from '@/store/authStore'
-import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import Navbar from '@/components/Navbar'
-import { transportAPI } from '@/services/api'
-import NepaliDatePicker from '@/components/NepaliDatePicker'
+import { transportAPI, studentAPI } from '@/services/api'
+// Removed unused NepaliDatePicker import
 
 // Type Definitions
 interface Bus {
@@ -14,16 +13,15 @@ interface Bus {
   registrationNo: string
   model: string
   capacity: number
-  currentStudents: number
   driverId: string
-  driverName: string
   routeId: string
-  routeName: string
   status: 'Active' | 'Inactive' | 'Maintenance'
   purchaseDate: string
   lastServiceDate: string
   traccarDeviceId: string
   description: string
+  createdAt: string
+  updatedAt: string
 }
 
 interface Driver {
@@ -34,7 +32,6 @@ interface Driver {
   licenseNumber: string
   licenseExpiry: string
   assignedBusId: string
-  assignedBusNumber: string
   status: 'Active' | 'On Leave' | 'Inactive'
   joinDate: string
   address: string
@@ -50,7 +47,6 @@ interface Route {
   distance: number
   stops: number
   assignedBusId: string
-  assignedBusNumber: string
   departureTime: string
   arrivalTime: string
   status: 'Active' | 'Inactive'
@@ -59,15 +55,34 @@ interface Route {
 
 interface StudentAssignment {
   id: string
-  studentName: string
   studentId: string
+  studentName: string
   busId: string
-  busNumber: string
   routeId: string
-  routeName: string
   pickupStop: string
   dropoffStop: string
   status: 'Active' | 'Inactive'
+}
+
+interface MaintenanceRecord {
+  id: string
+  busId: string
+  serviceDate: string
+  description: string
+  cost: number
+  performedBy: string
+  nextServiceDate: string
+}
+
+interface FuelLog {
+  id: string
+  busId: string
+  date: string
+  fuelQuantity: number
+  cost: number
+  odometerReading: number
+  filledBy: string
+  remarks: string
 }
 
 interface TraccarPosition {
@@ -148,6 +163,25 @@ interface StudentAssignmentFormData {
   status: 'Active' | 'Inactive'
 }
 
+interface MaintenanceFormData {
+  busId: string
+  serviceDate: string
+  description: string
+  cost: number
+  performedBy: string
+  nextServiceDate: string
+}
+
+interface FuelFormData {
+  busId: string
+  date: string
+  fuelQuantity: number
+  cost: number
+  odometerReading: number
+  filledBy: string
+  remarks: string
+}
+
 const DEFAULT_BUS_FORM: BusFormData = {
   busNumber: '',
   registrationNo: '',
@@ -199,311 +233,146 @@ const DEFAULT_STUDENT_FORM: StudentAssignmentFormData = {
   status: 'Active',
 }
 
-const DEFAULT_BUSES: Bus[] = [
-  {
-    id: '1',
-    busNumber: 'BUS-001',
-    registrationNo: 'MH01AB1234',
-    model: 'Volvo B11R',
-    capacity: 50,
-    currentStudents: 42,
-    driverId: '1',
-    driverName: 'Rajesh Kumar',
-    routeId: '1',
-    routeName: 'Route A',
-    status: 'Active',
-    purchaseDate: '2022-01-15',
-    lastServiceDate: '2024-10-20',
-    traccarDeviceId: '123',
-    description: 'Main school bus for Route A',
-  },
-  {
-    id: '2',
-    busNumber: 'BUS-002',
-    registrationNo: 'MH01AB1235',
-    model: 'Ashok Leyland',
-    capacity: 45,
-    currentStudents: 38,
-    driverId: '2',
-    driverName: 'Priya Singh',
-    routeId: '2',
-    routeName: 'Route B',
-    status: 'Active',
-    purchaseDate: '2022-06-10',
-    lastServiceDate: '2024-09-15',
-    traccarDeviceId: '124',
-    description: 'Secondary school bus for Route B',
-  },
-]
+const DEFAULT_MAINTENANCE_FORM: MaintenanceFormData = {
+  busId: '',
+  serviceDate: new Date().toISOString().split('T')[0],
+  description: '',
+  cost: 0,
+  performedBy: '',
+  nextServiceDate: '',
+}
 
-const DEFAULT_DRIVERS: Driver[] = [
-  {
-    id: '1',
-    name: 'Rajesh Kumar',
-    email: 'rajesh@example.com',
-    phone: '+91-9876543210',
-    licenseNumber: 'DL001234',
-    licenseExpiry: '2025-12-31',
-    assignedBusId: '1',
-    assignedBusNumber: 'BUS-001',
-    status: 'Active',
-    joinDate: '2022-01-15',
-    address: '123 Driver Lane, City',
-    emergencyContact: '+91-9123456789',
-  },
-  {
-    id: '2',
-    name: 'Priya Singh',
-    email: 'priya@example.com',
-    phone: '+91-9876543211',
-    licenseNumber: 'DL001235',
-    licenseExpiry: '2025-11-30',
-    assignedBusId: '2',
-    assignedBusNumber: 'BUS-002',
-    status: 'Active',
-    joinDate: '2022-06-10',
-    address: '456 Driver Avenue, City',
-    emergencyContact: '+91-9123456790',
-  },
-]
+const DEFAULT_FUEL_FORM: FuelFormData = {
+  busId: '',
+  date: new Date().toISOString().split('T')[0],
+  fuelQuantity: 0,
+  cost: 0,
+  odometerReading: 0,
+  filledBy: '',
+  remarks: '',
+}
 
-const DEFAULT_ROUTES: Route[] = [
-  {
-    id: '1',
-    routeName: 'Morning Route A',
-    routeNumber: 'R001',
-    startPoint: 'School',
-    endPoint: 'Residential Area A',
-    distance: 25.5,
-    stops: 12,
-    assignedBusId: '1',
-    assignedBusNumber: 'BUS-001',
-    departureTime: '07:00',
-    arrivalTime: '08:00',
-    status: 'Active',
-    description: 'Main morning route covering east side',
-  },
-  {
-    id: '2',
-    routeName: 'Morning Route B',
-    routeNumber: 'R002',
-    startPoint: 'School',
-    endPoint: 'Residential Area B',
-    distance: 20.0,
-    stops: 10,
-    assignedBusId: '2',
-    assignedBusNumber: 'BUS-002',
-    departureTime: '07:15',
-    arrivalTime: '08:15',
-    status: 'Active',
-    description: 'Secondary morning route covering west side',
-  },
-]
+type TabType = 'buses' | 'drivers' | 'routes' | 'map' | 'assignments' | 'maintenance' | 'fuel' | 'settings'
 
 export default function SchoolBusesPage() {
   const router = useRouter()
   const { user } = useAuthStore()
   const [isHydrated, setIsHydrated] = useState(false)
-  const [activeTab, setActiveTab] = useState<'buses' | 'drivers' | 'routes' | 'map' | 'assignments' | 'settings'>('buses')
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<TabType>('buses')
 
-  // Buses State
+  // Core Data State
   const [buses, setBuses] = useState<Bus[]>([])
+  const [drivers, setDrivers] = useState<Driver[]>([])
+  const [routes, setRoutes] = useState<Route[]>([])
+  const [studentAssignments, setStudentAssignments] = useState<StudentAssignment[]>([])
+  const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>([])
+  const [fuelLogs, setFuelLogs] = useState<FuelLog[]>([])
+  const [allStudents, setAllStudents] = useState<any[]>([])
+
+  // Modal State
   const [showBusModal, setShowBusModal] = useState(false)
   const [editingBusId, setEditingBusId] = useState<string | null>(null)
   const [busFormData, setBusFormData] = useState<BusFormData>(DEFAULT_BUS_FORM)
-  const [busSearchTerm, setBusSearchTerm] = useState('')
 
-  // Drivers State
-  const [drivers, setDrivers] = useState<Driver[]>([])
   const [showDriverModal, setShowDriverModal] = useState(false)
   const [editingDriverId, setEditingDriverId] = useState<string | null>(null)
   const [driverFormData, setDriverFormData] = useState<DriverFormData>(DEFAULT_DRIVER_FORM)
-  const [driverSearchTerm, setDriverSearchTerm] = useState('')
 
-  // Routes State
-  const [routes, setRoutes] = useState<Route[]>([])
   const [showRouteModal, setShowRouteModal] = useState(false)
   const [editingRouteId, setEditingRouteId] = useState<string | null>(null)
   const [routeFormData, setRouteFormData] = useState<RouteFormData>(DEFAULT_ROUTE_FORM)
-  const [routeSearchTerm, setRouteSearchTerm] = useState('')
 
-  // Student Assignments State
-  const [studentAssignments, setStudentAssignments] = useState<StudentAssignment[]>([])
   const [showStudentModal, setShowStudentModal] = useState(false)
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null)
   const [studentFormData, setStudentFormData] = useState<StudentAssignmentFormData>(DEFAULT_STUDENT_FORM)
+
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false)
+  const [maintenanceFormData, setMaintenanceFormData] = useState<MaintenanceFormData>(DEFAULT_MAINTENANCE_FORM)
+
+  const [showFuelModal, setShowFuelModal] = useState(false)
+  const [fuelFormData, setFuelFormData] = useState<FuelFormData>(DEFAULT_FUEL_FORM)
+
+  // Search Terms
+  const [busSearchTerm, setBusSearchTerm] = useState('')
+  const [driverSearchTerm, setDriverSearchTerm] = useState('')
+  const [routeSearchTerm, setRouteSearchTerm] = useState('')
   const [studentSearchTerm, setStudentSearchTerm] = useState('')
+  const [maintenanceSearchTerm, setMaintenanceSearchTerm] = useState('')
+  const [fuelSearchTerm, setFuelSearchTerm] = useState('')
 
   // Traccar State
   const [traccarPositions, setTraccarPositions] = useState<Map<number, TraccarPosition>>(new Map())
   const [traccarDevices, setTraccarDevices] = useState<TraccarDevice[]>([])
   const [traccarToken, setTraccarToken] = useState('')
-  const [selectedBusForTracking, setSelectedBusForTracking] = useState<Bus | null>(null)
-
-  // Traccar Settings State
-  const [traccarUrl, setTraccarUrl] = useState('https://system.geotrack.com.np')
+  const [traccarUrl, setTraccarUrl] = useState('')
   const [traccarUsername, setTraccarUsername] = useState('')
   const [traccarPassword, setTraccarPassword] = useState('')
-  const [settingsSaved, setSettingsSaved] = useState(false)
   const [testConnectionStatus, setTestConnectionStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
   const [testConnectionMessage, setTestConnectionMessage] = useState('')
 
-  const menuItems = [
-    { href: '/dashboard', label: 'Dashboard', icon: '📊' },
-    { href: '/dashboard/students', label: 'Students', icon: '👨‍🎓' },
-    { href: '/dashboard/teachers', label: 'Teachers', icon: '👨‍🏫' },
-    { href: '/dashboard/guardians', label: 'Guardians', icon: '👨‍👩‍👧' },
-    { href: '/dashboard/staff', label: 'Staff', icon: '👔' },
-    { href: '/dashboard/attendance', label: 'Attendance', icon: '📋' },
-    { href: '/dashboard/fees', label: 'Fees', icon: '💰' },
-    { href: '/dashboard/library', label: 'Library', icon: '📚' },
-    { href: '/dashboard/classes', label: 'Classes', icon: '🏫' },
-    { href: '/dashboard/school-buses', label: 'School Buses', icon: '🚌' },
-    { href: '/dashboard/exams', label: 'Exams', icon: '📝' },
-    { href: '/dashboard/notifications', label: 'Notifications', icon: '🔔' },
-    { href: '/dashboard/reports', label: 'Reports', icon: '📈' },
-    { href: '/dashboard/settings', label: 'Settings', icon: '⚙️' },
-  ]
-
-  // Load from localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedBuses = localStorage.getItem('buses')
-      const savedDrivers = localStorage.getItem('drivers')
-      const savedRoutes = localStorage.getItem('routes')
-      const savedStudentAssignments = localStorage.getItem('studentAssignments')
-
-      if (savedBuses) {
-        try {
-          setBuses(JSON.parse(savedBuses))
-        } catch (error) {
-          console.error('Failed to load buses:', error)
-          setBuses(DEFAULT_BUSES)
-        }
-      } else {
-        setBuses(DEFAULT_BUSES)
-      }
-
-      if (savedDrivers) {
-        try {
-          setDrivers(JSON.parse(savedDrivers))
-        } catch (error) {
-          console.error('Failed to load drivers:', error)
-          setDrivers(DEFAULT_DRIVERS)
-        }
-      } else {
-        setDrivers(DEFAULT_DRIVERS)
-      }
-
-      if (savedRoutes) {
-        try {
-          setRoutes(JSON.parse(savedRoutes))
-        } catch (error) {
-          console.error('Failed to load routes:', error)
-          setRoutes(DEFAULT_ROUTES)
-        }
-      } else {
-        setRoutes(DEFAULT_ROUTES)
-      }
-
-      if (savedStudentAssignments) {
-        try {
-          setStudentAssignments(JSON.parse(savedStudentAssignments))
-        } catch (error) {
-          console.error('Failed to load student assignments:', error)
-        }
-      }
-
-      // Load Traccar credentials
-      const savedTraccarUrl = localStorage.getItem('traccarUrl')
-      const savedTraccarUsername = localStorage.getItem('traccarUsername')
-      const savedTraccarPassword = localStorage.getItem('traccarPassword')
-
-      if (savedTraccarUrl) setTraccarUrl(savedTraccarUrl)
-      if (savedTraccarUsername) setTraccarUsername(savedTraccarUsername)
-      if (savedTraccarPassword) setTraccarPassword(savedTraccarPassword)
-
-      if (savedTraccarUrl && savedTraccarUsername && savedTraccarPassword) {
-        setSettingsSaved(true)
-      }
-
-      setIsHydrated(true)
-    }
-  }, [])
-
-  // Save to localStorage
-  useEffect(() => {
-    if (isHydrated && typeof window !== 'undefined') {
-      localStorage.setItem('buses', JSON.stringify(buses))
-      localStorage.setItem('drivers', JSON.stringify(drivers))
-      localStorage.setItem('routes', JSON.stringify(routes))
-      localStorage.setItem('studentAssignments', JSON.stringify(studentAssignments))
-    }
-  }, [buses, drivers, routes, studentAssignments, isHydrated])
-
-  // Traccar API Integration
-  const fetchTraccarToken = async () => {
+  // Load Data from API
+  const fetchData = async () => {
+    setLoading(true)
     try {
-      // Get credentials from localStorage
-      const savedUrl = localStorage.getItem('traccarUrl') || traccarUrl
-      const savedUsername = localStorage.getItem('traccarUsername')
-      const savedPassword = localStorage.getItem('traccarPassword')
+      const [busesRes, driversRes, routesRes, assignmentsRes, maintenanceRes, fuelRes, settingsRes, studentsRes] = await Promise.all([
+        transportAPI.listBuses(),
+        transportAPI.listDrivers(),
+        transportAPI.listRoutes(),
+        transportAPI.listAssignments(),
+        transportAPI.listMaintenance(),
+        transportAPI.listFuelLogs(),
+        transportAPI.getSettings(),
+        studentAPI.list()
+      ])
 
-      if (!savedUsername || !savedPassword) {
-        console.error('Traccar credentials not configured')
-        return null
-      }
+      setBuses(busesRes.data || [])
+      setDrivers(driversRes.data || [])
+      setRoutes(routesRes.data || [])
+      setStudentAssignments(assignmentsRes.data || [])
+      setMaintenanceRecords(maintenanceRes.data || [])
+      setFuelLogs(fuelRes.data || [])
+      setAllStudents(studentsRes.data?.students || studentsRes.data || [])
 
-      const credentials = btoa(`${savedUsername}:${savedPassword}`)
-
-      const response = await fetch(`${savedUrl}/api/session/token`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Basic ${credentials}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: `expiration=${new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()}`,
-      })
-
-      if (response.ok) {
-        const token = await response.text()
-        setTraccarToken(token)
-        localStorage.setItem('traccarToken', token)
-        return token
+      if (settingsRes.data) {
+        setTraccarUrl(settingsRes.data.traccar_url || '')
+        setTraccarUsername(settingsRes.data.traccar_username || '')
+        setTraccarPassword(settingsRes.data.traccar_password || '')
       }
     } catch (error) {
-      console.error('Failed to fetch Traccar token:', error)
+      console.error('Failed to fetch transport data:', error)
+    } finally {
+      setLoading(false)
     }
-    return null
+  }
+
+  useEffect(() => {
+    setIsHydrated(true)
+    if (user) {
+      fetchData()
+    } else if (typeof window !== 'undefined') {
+      router.push('/auth/login')
+    }
+  }, [user])
+
+  // Traccar Handlers
+  const fetchTraccarToken = async () => {
+    try {
+      const res = await transportAPI.getTraccarToken()
+      setTraccarToken(res.data)
+      return res.data
+    } catch (error) {
+      console.error('Failed to fetch Traccar token:', error)
+      return null
+    }
   }
 
   const fetchTraccarDevices = async () => {
     try {
-      let token = traccarToken
-      if (!token) {
-        token = localStorage.getItem('traccarToken') || ''
-        if (!token) {
-          token = (await fetchTraccarToken()) || ''
-        }
-      }
-
-      // Get URL from localStorage
-      const savedUrl = localStorage.getItem('traccarUrl') || traccarUrl
-
-      const response = await fetch(`${savedUrl}/api/devices`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (response.ok) {
-        const devices = await response.json()
-        setTraccarDevices(devices)
-        console.log('Available Traccar devices:', devices)
-        return devices
-      } else {
-        console.error('Failed to fetch devices:', response.status)
+      const res = await transportAPI.proxyTraccar('GET', '/api/devices')
+      if (res.data) {
+        setTraccarDevices(res.data)
+        return res.data
       }
     } catch (error) {
       console.error('Failed to fetch Traccar devices:', error)
@@ -513,26 +382,49 @@ export default function SchoolBusesPage() {
 
   const fetchTraccarDevicePosition = async (deviceId: string) => {
     try {
-      // Use the transport-service proxy instead of calling Traccar directly
-      const response = await transportAPI.proxyTraccar('GET', `/api/positions?deviceId=${deviceId}`)
-
-      if (response.data && Array.isArray(response.data) && response.data.length > 0) {
-        setTraccarPositions((prev) => new Map(prev).set(parseInt(deviceId), response.data[0]))
-      } else {
-        console.warn(`No positions found for device ${deviceId}. Response:`, response.data)
+      const res = await transportAPI.proxyTraccar('GET', `/api/positions?deviceId=${deviceId}`)
+      if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+        setTraccarPositions((prev) => new Map(prev).set(parseInt(deviceId), res.data[0]))
       }
     } catch (error) {
       console.error(`Failed to fetch position for device ${deviceId}:`, error)
     }
   }
 
-  useEffect(() => {
-    if (isHydrated && !user) {
-      router.push('/auth/login')
+  const handleTestTraccarConnection = async () => {
+    setTestConnectionStatus('testing')
+    setTestConnectionMessage('Testing connection via transport service...')
+    try {
+      const token = await fetchTraccarToken()
+      if (token) {
+        setTestConnectionStatus('success')
+        setTestConnectionMessage('✅ Connection successful! Token generated.')
+        fetchTraccarDevices()
+      } else {
+        setTestConnectionStatus('error')
+        setTestConnectionMessage('❌ Connection failed. Check service logs.')
+      }
+    } catch (error) {
+      setTestConnectionStatus('error')
+      setTestConnectionMessage(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
-  }, [user, router, isHydrated])
+  }
 
-  // Bus Handlers
+  const handleSaveTraccarSettings = async () => {
+    try {
+      await transportAPI.updateSettings({
+        traccar_url: traccarUrl,
+        traccar_username: traccarUsername,
+        traccar_password: traccarPassword
+      })
+      alert('Settings saved successfully!')
+    } catch (error) {
+      console.error('Failed to save settings:', error)
+      alert('Failed to save settings.')
+    }
+  }
+
+  // CRUD Handlers - Bus
   const handleAddBus = () => {
     setEditingBusId(null)
     setBusFormData(DEFAULT_BUS_FORM)
@@ -559,53 +451,48 @@ export default function SchoolBusesPage() {
 
   const handleSaveBus = async () => {
     if (!busFormData.busNumber.trim() || !busFormData.registrationNo.trim()) {
-      alert('Please fill in all required fields')
+      alert('Required fields missing')
       return
     }
-
     try {
-      const busData = {
-        bus_number: busFormData.busNumber,
-        registration_no: busFormData.registrationNo,
+      const payload = {
+        busNumber: busFormData.busNumber,
+        registrationNo: busFormData.registrationNo,
         model: busFormData.model,
         capacity: busFormData.capacity,
-        driver_id: busFormData.driverId || null,
-        route_id: busFormData.routeId || null,
+        driverId: busFormData.driverId || null,
+        routeId: busFormData.routeId || null,
         status: busFormData.status,
-        purchase_date: busFormData.purchaseDate || null,
-        last_service_date: busFormData.lastServiceDate || null,
-        traccar_device_id: busFormData.traccarDeviceId || null,
-        description: busFormData.description,
+        purchaseDate: busFormData.purchaseDate ? new Date(busFormData.purchaseDate).toISOString() : null,
+        lastServiceDate: busFormData.lastServiceDate ? new Date(busFormData.lastServiceDate).toISOString() : null,
+        traccarDeviceId: busFormData.traccarDeviceId,
+        description: busFormData.description
       }
 
       if (editingBusId) {
-        // Update existing bus
-        await transportAPI.updateBus(editingBusId, busData)
-        alert('Bus updated successfully!')
+        await transportAPI.updateBus(editingBusId, payload)
       } else {
-        // Create new bus
-        await transportAPI.createBus(busData)
-        alert('Bus created successfully!')
+        await transportAPI.createBus(payload)
       }
-
       setShowBusModal(false)
-      setBusFormData(DEFAULT_BUS_FORM)
-      setEditingBusId(null)
-
-      // Refresh the bus list from server
+      fetchData()
     } catch (error) {
-      console.error('Failed to save bus:', error)
-      alert('Failed to save bus. Please try again.')
+      alert('Failed to save bus.')
     }
   }
 
-  const handleDeleteBus = (id: string) => {
-    if (confirm('Are you sure you want to delete this bus?')) {
-      setBuses((prev) => prev.filter((bus) => bus.id !== id))
+  const handleDeleteBus = async (id: string) => {
+    if (confirm('Delete this bus?')) {
+      try {
+        await transportAPI.deleteBus(id)
+        fetchData()
+      } catch (error) {
+        alert('Failed to delete bus.')
+      }
     }
   }
 
-  // Driver Handlers
+  // CRUD Handlers - Driver
   const handleAddDriver = () => {
     setEditingDriverId(null)
     setDriverFormData(DEFAULT_DRIVER_FORM)
@@ -619,72 +506,52 @@ export default function SchoolBusesPage() {
       email: driver.email,
       phone: driver.phone,
       licenseNumber: driver.licenseNumber,
-      licenseExpiry: driver.licenseExpiry,
+      licenseExpiry: driver.licenseExpiry ? new Date(driver.licenseExpiry).toISOString().split('T')[0] : '',
       assignedBusId: driver.assignedBusId,
       status: driver.status,
-      joinDate: driver.joinDate,
+      joinDate: driver.joinDate ? new Date(driver.joinDate).toISOString().split('T')[0] : '',
       address: driver.address,
       emergencyContact: driver.emergencyContact,
     })
     setShowDriverModal(true)
   }
 
-  const handleSaveDriver = () => {
-    if (!driverFormData.name.trim() || !driverFormData.email.trim()) {
-      alert('Please fill in all required fields')
+  const handleSaveDriver = async () => {
+    if (!driverFormData.name.trim() || !driverFormData.phone.trim()) {
+      alert('Name and Phone are required')
       return
     }
-
-    if (editingDriverId) {
-      setDrivers((prev) =>
-        prev.map((driver) =>
-          driver.id === editingDriverId
-            ? {
-              ...driver,
-              name: driverFormData.name,
-              email: driverFormData.email,
-              phone: driverFormData.phone,
-              licenseNumber: driverFormData.licenseNumber,
-              licenseExpiry: driverFormData.licenseExpiry,
-              assignedBusId: driverFormData.assignedBusId,
-              assignedBusNumber: buses.find((b) => b.id === driverFormData.assignedBusId)?.busNumber || '',
-              status: driverFormData.status,
-              joinDate: driverFormData.joinDate,
-              address: driverFormData.address,
-              emergencyContact: driverFormData.emergencyContact,
-            }
-            : driver
-        )
-      )
-    } else {
-      const newDriver: Driver = {
-        id: Date.now().toString(),
-        name: driverFormData.name,
-        email: driverFormData.email,
-        phone: driverFormData.phone,
-        licenseNumber: driverFormData.licenseNumber,
-        licenseExpiry: driverFormData.licenseExpiry,
-        assignedBusId: driverFormData.assignedBusId,
-        assignedBusNumber: buses.find((b) => b.id === driverFormData.assignedBusId)?.busNumber || '',
-        status: driverFormData.status,
-        joinDate: driverFormData.joinDate,
-        address: driverFormData.address,
-        emergencyContact: driverFormData.emergencyContact,
+    try {
+      const payload = {
+        ...driverFormData,
+        licenseExpiry: driverFormData.licenseExpiry ? new Date(driverFormData.licenseExpiry).toISOString() : null,
+        joinDate: driverFormData.joinDate ? new Date(driverFormData.joinDate).toISOString() : null,
       }
-      setDrivers((prev) => [newDriver, ...prev])
-    }
 
-    setShowDriverModal(false)
-    setDriverFormData(DEFAULT_DRIVER_FORM)
+      if (editingDriverId) {
+        await transportAPI.updateDriver(editingDriverId, payload)
+      } else {
+        await transportAPI.createDriver(payload)
+      }
+      setShowDriverModal(false)
+      fetchData()
+    } catch (error) {
+      alert('Failed to save driver.')
+    }
   }
 
-  const handleDeleteDriver = (id: string) => {
-    if (confirm('Are you sure you want to delete this driver?')) {
-      setDrivers((prev) => prev.filter((driver) => driver.id !== id))
+  const handleDeleteDriver = async (id: string) => {
+    if (confirm('Delete this driver?')) {
+      try {
+        await transportAPI.deleteDriver(id)
+        fetchData()
+      } catch (error) {
+        alert('Failed to delete driver.')
+      }
     }
   }
 
-  // Route Handlers
+  // CRUD Handlers - Route
   const handleAddRoute = () => {
     setEditingRouteId(null)
     setRouteFormData(DEFAULT_ROUTE_FORM)
@@ -709,824 +576,619 @@ export default function SchoolBusesPage() {
     setShowRouteModal(true)
   }
 
-  const handleSaveRoute = () => {
+  const handleSaveRoute = async () => {
     if (!routeFormData.routeName.trim() || !routeFormData.routeNumber.trim()) {
-      alert('Please fill in all required fields')
+      alert('Route Name and Number are required')
       return
     }
-
-    if (editingRouteId) {
-      setRoutes((prev) =>
-        prev.map((route) =>
-          route.id === editingRouteId
-            ? {
-              ...route,
-              routeName: routeFormData.routeName,
-              routeNumber: routeFormData.routeNumber,
-              startPoint: routeFormData.startPoint,
-              endPoint: routeFormData.endPoint,
-              distance: routeFormData.distance,
-              stops: routeFormData.stops,
-              assignedBusId: routeFormData.assignedBusId,
-              assignedBusNumber: buses.find((b) => b.id === routeFormData.assignedBusId)?.busNumber || '',
-              departureTime: routeFormData.departureTime,
-              arrivalTime: routeFormData.arrivalTime,
-              status: routeFormData.status,
-              description: routeFormData.description,
-            }
-            : route
-        )
-      )
-    } else {
-      const newRoute: Route = {
-        id: Date.now().toString(),
-        routeName: routeFormData.routeName,
-        routeNumber: routeFormData.routeNumber,
-        startPoint: routeFormData.startPoint,
-        endPoint: routeFormData.endPoint,
-        distance: routeFormData.distance,
-        stops: routeFormData.stops,
-        assignedBusId: routeFormData.assignedBusId,
-        assignedBusNumber: buses.find((b) => b.id === routeFormData.assignedBusId)?.busNumber || '',
-        departureTime: routeFormData.departureTime,
-        arrivalTime: routeFormData.arrivalTime,
-        status: routeFormData.status,
-        description: routeFormData.description,
+    try {
+      if (editingRouteId) {
+        await transportAPI.updateRoute(editingRouteId, routeFormData)
+      } else {
+        await transportAPI.createRoute(routeFormData)
       }
-      setRoutes((prev) => [newRoute, ...prev])
-    }
-
-    setShowRouteModal(false)
-    setRouteFormData(DEFAULT_ROUTE_FORM)
-  }
-
-  const handleDeleteRoute = (id: string) => {
-    if (confirm('Are you sure you want to delete this route?')) {
-      setRoutes((prev) => prev.filter((route) => route.id !== id))
+      setShowRouteModal(false)
+      fetchData()
+    } catch (error) {
+      alert('Failed to save route.')
     }
   }
 
-  // Student Assignment Handlers
-  const handleAddStudent = () => {
+  const handleDeleteRoute = async (id: string) => {
+    if (confirm('Delete this route?')) {
+      try {
+        await transportAPI.deleteRoute(id)
+        fetchData()
+      } catch (error) {
+        alert('Failed to delete route.')
+      }
+    }
+  }
+
+  // CRUD Handlers - Assignment
+  const handleAddAssignment = () => {
     setEditingStudentId(null)
     setStudentFormData(DEFAULT_STUDENT_FORM)
     setShowStudentModal(true)
   }
 
-  const handleEditStudent = (assignment: StudentAssignment) => {
-    setEditingStudentId(assignment.id)
-    setStudentFormData({
-      studentName: assignment.studentName,
-      studentId: assignment.studentId,
-      busId: assignment.busId,
-      routeId: assignment.routeId,
-      pickupStop: assignment.pickupStop,
-      dropoffStop: assignment.dropoffStop,
-      status: assignment.status,
-    })
-    setShowStudentModal(true)
-  }
-
-  const handleSaveStudent = () => {
-    if (!studentFormData.studentName.trim() || !studentFormData.busId) {
-      alert('Please fill in all required fields')
+  const handleSaveAssignment = async () => {
+    if (!studentFormData.studentId || !studentFormData.busId) {
+      alert('Student and Bus are required')
       return
     }
-
-    if (editingStudentId) {
-      setStudentAssignments((prev) =>
-        prev.map((assignment) =>
-          assignment.id === editingStudentId
-            ? {
-              ...assignment,
-              studentName: studentFormData.studentName,
-              studentId: studentFormData.studentId,
-              busId: studentFormData.busId,
-              busNumber: buses.find((b) => b.id === studentFormData.busId)?.busNumber || '',
-              routeId: studentFormData.routeId,
-              routeName: routes.find((r) => r.id === studentFormData.routeId)?.routeName || '',
-              pickupStop: studentFormData.pickupStop,
-              dropoffStop: studentFormData.dropoffStop,
-              status: studentFormData.status,
-            }
-            : assignment
-        )
-      )
-    } else {
-      const newAssignment: StudentAssignment = {
-        id: Date.now().toString(),
-        studentName: studentFormData.studentName,
-        studentId: studentFormData.studentId,
-        busId: studentFormData.busId,
-        busNumber: buses.find((b) => b.id === studentFormData.busId)?.busNumber || '',
-        routeId: studentFormData.routeId,
-        routeName: routes.find((r) => r.id === studentFormData.routeId)?.routeName || '',
-        pickupStop: studentFormData.pickupStop,
-        dropoffStop: studentFormData.dropoffStop,
-        status: studentFormData.status,
-      }
-      setStudentAssignments((prev) => [newAssignment, ...prev])
-
-      // Update bus student count
-      setBuses((prev) =>
-        prev.map((bus) =>
-          bus.id === studentFormData.busId ? { ...bus, currentStudents: bus.currentStudents + 1 } : bus
-        )
-      )
-    }
-
-    setShowStudentModal(false)
-    setStudentFormData(DEFAULT_STUDENT_FORM)
-  }
-
-  const handleDeleteStudent = (id: string) => {
-    if (confirm('Are you sure you want to delete this assignment?')) {
-      const assignment = studentAssignments.find((a) => a.id === id)
-      if (assignment) {
-        setBuses((prev) =>
-          prev.map((bus) =>
-            bus.id === assignment.busId ? { ...bus, currentStudents: Math.max(0, bus.currentStudents - 1) } : bus
-          )
-        )
-      }
-      setStudentAssignments((prev) => prev.filter((a) => a.id !== id))
-    }
-  }
-
-  // Traccar Settings Handlers
-  const handleSaveTraccarSettings = () => {
-    if (!traccarUrl || !traccarUsername || !traccarPassword) {
-      alert('Please fill in all Traccar credentials')
-      return
-    }
-
-    localStorage.setItem('traccarUrl', traccarUrl)
-    localStorage.setItem('traccarUsername', traccarUsername)
-    localStorage.setItem('traccarPassword', traccarPassword)
-
-    setSettingsSaved(true)
-    setTestConnectionStatus('idle')
-    alert('Traccar settings saved successfully!')
-  }
-
-  const handleTestTraccarConnection = async () => {
-    if (!traccarUrl || !traccarUsername || !traccarPassword) {
-      alert('Please fill in all Traccar credentials first')
-      return
-    }
-
-    setTestConnectionStatus('testing')
-    setTestConnectionMessage('Testing connection...')
-
     try {
-      // Generate token using Basic auth
-      const credentials = btoa(`${traccarUsername}:${traccarPassword}`)
-
-      const response = await fetch(`${traccarUrl}/api/session/token`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Basic ${credentials}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-      })
-
-      if (response.ok) {
-        const token = await response.text()
-        setTraccarToken(token)
-        localStorage.setItem('traccarToken', token)
-        setTestConnectionStatus('success')
-        setTestConnectionMessage('✅ Connection successful! Token generated.')
-      } else {
-        setTestConnectionStatus('error')
-        setTestConnectionMessage(`❌ Connection failed: ${response.status} ${response.statusText}`)
-      }
+      await transportAPI.createAssignment(studentFormData)
+      setShowStudentModal(false)
+      fetchData()
     } catch (error) {
-      setTestConnectionStatus('error')
-      setTestConnectionMessage(`❌ Connection error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      alert('Failed to save assignment.')
     }
   }
 
-  // Filter functions
-  const filteredBuses = buses.filter(
-    (bus) =>
-      bus.busNumber.toLowerCase().includes(busSearchTerm.toLowerCase()) ||
-      bus.registrationNo.toLowerCase().includes(busSearchTerm.toLowerCase())
-  )
-
-  const filteredDrivers = drivers.filter(
-    (driver) =>
-      driver.name.toLowerCase().includes(driverSearchTerm.toLowerCase()) ||
-      driver.email.toLowerCase().includes(driverSearchTerm.toLowerCase())
-  )
-
-  const filteredRoutes = routes.filter(
-    (route) =>
-      route.routeName.toLowerCase().includes(routeSearchTerm.toLowerCase()) ||
-      route.routeNumber.toLowerCase().includes(routeSearchTerm.toLowerCase())
-  )
-
-  const filteredStudents = studentAssignments.filter(
-    (assignment) =>
-      assignment.studentName.toLowerCase().includes(studentSearchTerm.toLowerCase()) ||
-      assignment.studentId.toLowerCase().includes(studentSearchTerm.toLowerCase())
-  )
-
-  // Statistics
-  const activeBuses = buses.filter((b) => b.status === 'Active').length
-  const totalCapacity = buses.reduce((sum, b) => sum + b.capacity, 0)
-  const totalStudents = buses.reduce((sum, b) => sum + b.currentStudents, 0)
-  const activeDrivers = drivers.filter((d) => d.status === 'Active').length
-
-  if (!isHydrated || !user) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>
+  const handleDeleteAssignment = async (id: string) => {
+    if (confirm('Delete this assignment?')) {
+      try {
+        await transportAPI.deleteAssignment(id)
+        fetchData()
+      } catch (error) {
+        alert('Failed to delete assignment.')
+      }
+    }
   }
+
+  // CRUD Handlers - Maintenance
+  const handleAddMaintenance = (busId?: string) => {
+    setMaintenanceFormData({ ...DEFAULT_MAINTENANCE_FORM, busId: busId || '' })
+    setShowMaintenanceModal(true)
+  }
+
+  const handleSaveMaintenance = async () => {
+    if (!maintenanceFormData.busId || !maintenanceFormData.description) {
+      alert('Missing bus or description')
+      return
+    }
+    try {
+      await transportAPI.createMaintenance({
+        ...maintenanceFormData,
+        serviceDate: new Date(maintenanceFormData.serviceDate).toISOString(),
+        nextServiceDate: maintenanceFormData.nextServiceDate ? new Date(maintenanceFormData.nextServiceDate).toISOString() : null
+      })
+      setShowMaintenanceModal(false)
+      fetchData()
+    } catch (error) {
+      alert('Failed to record maintenance.')
+    }
+  }
+
+  const handleDeleteMaintenance = async (id: string) => {
+    if (confirm('Delete this record?')) {
+      try {
+        await transportAPI.deleteMaintenance(id)
+        fetchData()
+      } catch (error) {
+        alert('Failed to delete maintenance record.')
+      }
+    }
+  }
+
+  // CRUD Handlers - Fuel
+  const handleAddFuel = (busId?: string) => {
+    setFuelFormData({ ...DEFAULT_FUEL_FORM, busId: busId || '' })
+    setShowFuelModal(true)
+  }
+
+  const handleSaveFuel = async () => {
+    if (!fuelFormData.busId || fuelFormData.fuelQuantity <= 0) {
+      alert('Invalid data')
+      return
+    }
+    try {
+      await transportAPI.createFuelLog({
+        ...fuelFormData,
+        date: new Date(fuelFormData.date).toISOString()
+      })
+      setShowFuelModal(false)
+      fetchData()
+    } catch (error) {
+      alert('Failed to record fuel log.')
+    }
+  }
+
+  const handleDeleteFuel = async (id: string) => {
+    if (confirm('Delete this log?')) {
+      try {
+        await transportAPI.deleteFuelLog(id)
+        fetchData()
+      } catch (error) {
+        alert('Failed to delete fuel log.')
+      }
+    }
+  }
+
+  // Helper mapping
+  const getHelperData = (id: string, type: 'bus' | 'driver' | 'route') => {
+    if (type === 'bus') return buses.find(b => b.id === id)?.busNumber || 'None'
+    if (type === 'driver') return drivers.find(d => d.id === id)?.name || 'None'
+    if (type === 'route') return routes.find(r => r.id === id)?.routeName || 'None'
+    return 'None'
+  }
+
+  // Filtering
+  const filteredBuses = buses.filter(b => b.busNumber.toLowerCase().includes(busSearchTerm.toLowerCase()) || b.registrationNo.toLowerCase().includes(busSearchTerm.toLowerCase()))
+  const filteredDrivers = drivers.filter(d => d.name.toLowerCase().includes(driverSearchTerm.toLowerCase()))
+  const filteredRoutes = routes.filter(r => r.routeName.toLowerCase().includes(routeSearchTerm.toLowerCase()))
+  const filteredStudents = studentAssignments.filter(s => s.studentName.toLowerCase().includes(studentSearchTerm.toLowerCase()))
+  const filteredMaintenance = maintenanceRecords.filter(m => getHelperData(m.busId, 'bus').toLowerCase().includes(maintenanceSearchTerm.toLowerCase()))
+  const filteredFuel = fuelLogs.filter(f => getHelperData(f.busId, 'bus').toLowerCase().includes(fuelSearchTerm.toLowerCase()))
+
+  if (!isHydrated || !user) return <div className="min-h-screen flex items-center justify-center">Loading...</div>
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-indigo-100 flex flex-col">
       <Navbar showBackButton={true} backLink="/dashboard" />
-
-      {/* Main Content */}
       <div className="flex flex-1">
         <Sidebar />
+        <main className="flex-1 py-8 px-6 pb-64 overflow-auto">
+          <div className="">
+            <header className="mb-8">
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+                Advanced Transport Management
+              </h1>
+              <p className="text-gray-600">Enterprise fleet management with live GPS tracking and maintenance logs.</p>
+            </header>
 
-        {/* Main Content Area */}
-        <main className="flex-1 py-8 px-6">
-          <div className="w-full">
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">School Bus Management</h2>
-            <p className="text-gray-600 mb-8">Manage buses, drivers, routes, and student assignments with real-time GPS tracking</p>
+            {/* Quick Stats */}
+            <section className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+              {[
+                { label: 'Fleet Size', value: buses.length, icon: '🚌', color: 'blue' },
+                { label: 'Active Drivers', value: drivers.filter(d => d.status === 'Active').length, icon: '👨‍✈️', color: 'green' },
+                { label: 'Fuel Expense', value: `रू ${fuelLogs.reduce((s, f) => s + f.cost, 0).toLocaleString()}`, icon: '⛽', color: 'orange' },
+                { label: 'Active Routes', value: routes.length, icon: '🛣️', color: 'indigo' }
+              ].map((s, idx) => (
+                <div key={idx} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4 transition-all hover:shadow-md">
+                  <div className={`p-3 bg-${s.color}-50 rounded-xl text-2xl`}>
+                    {s.icon}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">{s.label}</p>
+                    <p className="text-2xl font-bold text-gray-900">{s.value}</p>
+                  </div>
+                </div>
+              ))}
+            </section>
 
-            {/* Statistics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-              <div className="bg-white p-6 rounded-lg shadow border-l-4 border-blue-600">
-                <h3 className="text-gray-500 text-sm font-medium">Total Buses</h3>
-                <p className="text-3xl font-bold text-blue-600 mt-2">{buses.length}</p>
-                <p className="text-xs text-gray-600 mt-1">Active: {activeBuses}</p>
-              </div>
-              <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-600">
-                <h3 className="text-gray-500 text-sm font-medium">Active Drivers</h3>
-                <p className="text-3xl font-bold text-green-600 mt-2">{activeDrivers}</p>
-                <p className="text-xs text-gray-600 mt-1">Total: {drivers.length}</p>
-              </div>
-              <div className="bg-white p-6 rounded-lg shadow border-l-4 border-orange-600">
-                <h3 className="text-gray-500 text-sm font-medium">Student Capacity</h3>
-                <p className="text-3xl font-bold text-orange-600 mt-2">{totalStudents}</p>
-                <p className="text-xs text-gray-600 mt-1">of {totalCapacity}</p>
-              </div>
-              <div className="bg-white p-6 rounded-lg shadow border-l-4 border-purple-600">
-                <h3 className="text-gray-500 text-sm font-medium">Total Routes</h3>
-                <p className="text-3xl font-bold text-purple-600 mt-2">{routes.length}</p>
-                <p className="text-xs text-gray-600 mt-1">Active: {routes.filter((r) => r.status === 'Active').length}</p>
-              </div>
-            </div>
-
-            {/* Tabs */}
-            <div className="bg-white rounded-lg shadow">
-              <div className="flex border-b border-gray-200 overflow-x-auto">
+            {/* Tab Navigation */}
+            <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100 mb-10">
+              <nav className="flex bg-gray-50/50 p-2 gap-1 overflow-x-auto border-b border-gray-100">
                 {[
-                  { key: 'buses', label: 'Buses', icon: '🚌' },
-                  { key: 'drivers', label: 'Drivers', icon: '👨‍💼' },
-                  { key: 'routes', label: 'Routes', icon: '🛣️' },
-                  { key: 'tracking', label: 'Live Tracking', icon: '📍' },
-                  { key: 'students', label: 'Student Assignments', icon: '👨‍🎓' },
-                  { key: 'settings', label: 'Traccar Settings', icon: '⚙️' },
-                ].map((tab) => (
+                  { id: 'buses', label: 'Buses', icon: '🚌' },
+                  { id: 'drivers', label: 'Drivers', icon: '👨‍💼' },
+                  { id: 'routes', label: 'Routes', icon: '🛣️' },
+                  { id: 'assignments', label: 'Students', icon: '👨‍🎓' },
+                  { id: 'maintenance', label: 'Maintenance', icon: '🛠️' },
+                  { id: 'fuel', label: 'Fuel Logs', icon: '⛽' },
+                  { id: 'map', label: 'Live Tracking', icon: '📍' },
+                  { id: 'settings', label: 'Settings', icon: '⚙️' }
+                ].map((t) => (
                   <button
-                    key={tab.key}
-                    onClick={() => setActiveTab(tab.key as any)}
-                    className={`px-6 py-4 font-semibold whitespace-nowrap transition-colors ${activeTab === tab.key
-                      ? 'border-b-2 border-blue-600 text-blue-600'
-                      : 'text-gray-600 hover:text-gray-900'
+                    key={t.id}
+                    onClick={() => setActiveTab(t.id as TabType)}
+                    className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold transition-all whitespace-nowrap ${activeTab === t.id ? 'bg-white shadow-md text-blue-600' : 'text-gray-500 hover:bg-white/50 hover:text-gray-900'
                       }`}
                   >
-                    {tab.icon} {tab.label}
+                    <span>{t.icon}</span> {t.label}
                   </button>
                 ))}
-              </div>
+              </nav>
 
-              {/* Buses Tab */}
-              {activeTab === 'buses' && (
-                <div className="p-6">
-                  <div className="flex justify-between items-center gap-4 mb-6">
-                    <input
-                      type="text"
-                      placeholder="Search buses..."
-                      value={busSearchTerm}
-                      onChange={(e) => setBusSearchTerm(e.target.value)}
-                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <button
-                      onClick={handleAddBus}
-                      className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 font-semibold transition"
-                    >
-                      + Add Bus
-                    </button>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b-2 border-gray-200">
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Bus No.</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Registration</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Driver</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Route</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Capacity</th>
-                          <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredBuses.map((bus) => (
-                          <tr key={bus.id} className="border-b border-gray-200 hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm font-semibold text-gray-900">{bus.busNumber}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{bus.registrationNo}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{bus.driverName}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{bus.routeName}</td>
-                            <td className="px-4 py-3">
-                              <span
-                                className={`px-3 py-1 rounded-full text-xs font-semibold ${bus.status === 'Active'
-                                  ? 'bg-green-100 text-green-700'
-                                  : bus.status === 'Maintenance'
-                                    ? 'bg-yellow-100 text-yellow-700'
-                                    : 'bg-gray-100 text-gray-700'
-                                  }`}
-                              >
-                                {bus.status}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">
-                              {bus.currentStudents}/{bus.capacity}
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <div className="flex justify-center gap-2">
-                                <button
-                                  onClick={() => handleEditBus(bus)}
-                                  className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs font-semibold transition"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteBus(bus.id)}
-                                  className="px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 text-xs font-semibold transition"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Drivers Tab */}
-              {activeTab === 'drivers' && (
-                <div className="p-6">
-                  <div className="flex justify-between items-center gap-4 mb-6">
-                    <input
-                      type="text"
-                      placeholder="Search drivers..."
-                      value={driverSearchTerm}
-                      onChange={(e) => setDriverSearchTerm(e.target.value)}
-                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <button
-                      onClick={handleAddDriver}
-                      className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 font-semibold transition"
-                    >
-                      + Add Driver
-                    </button>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b-2 border-gray-200">
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Name</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Email</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Phone</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">License No.</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Assigned Bus</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                          <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredDrivers.map((driver) => (
-                          <tr key={driver.id} className="border-b border-gray-200 hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm font-semibold text-gray-900">{driver.name}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{driver.email}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{driver.phone}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{driver.licenseNumber}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{driver.assignedBusNumber}</td>
-                            <td className="px-4 py-3">
-                              <span
-                                className={`px-3 py-1 rounded-full text-xs font-semibold ${driver.status === 'Active'
-                                  ? 'bg-green-100 text-green-700'
-                                  : driver.status === 'On Leave'
-                                    ? 'bg-yellow-100 text-yellow-700'
-                                    : 'bg-gray-100 text-gray-700'
-                                  }`}
-                              >
-                                {driver.status}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <div className="flex justify-center gap-2">
-                                <button
-                                  onClick={() => handleEditDriver(driver)}
-                                  className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs font-semibold transition"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteDriver(driver.id)}
-                                  className="px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 text-xs font-semibold transition"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Routes Tab */}
-              {activeTab === 'routes' && (
-                <div className="p-6">
-                  <div className="flex justify-between items-center gap-4 mb-6">
-                    <input
-                      type="text"
-                      placeholder="Search routes..."
-                      value={routeSearchTerm}
-                      onChange={(e) => setRouteSearchTerm(e.target.value)}
-                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <button
-                      onClick={handleAddRoute}
-                      className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 font-semibold transition"
-                    >
-                      + Add Route
-                    </button>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b-2 border-gray-200">
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Route Name</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">From - To</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Distance</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Stops</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Bus</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Time</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                          <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredRoutes.map((route) => (
-                          <tr key={route.id} className="border-b border-gray-200 hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm font-semibold text-gray-900">{route.routeName}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">
-                              {route.startPoint} → {route.endPoint}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{route.distance} km</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{route.stops}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{route.assignedBusNumber}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">
-                              {route.departureTime} - {route.arrivalTime}
-                            </td>
-                            <td className="px-4 py-3">
-                              <span
-                                className={`px-3 py-1 rounded-full text-xs font-semibold ${route.status === 'Active'
-                                  ? 'bg-green-100 text-green-700'
-                                  : 'bg-gray-100 text-gray-700'
-                                  }`}
-                              >
-                                {route.status}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <div className="flex justify-center gap-2">
-                                <button
-                                  onClick={() => handleEditRoute(route)}
-                                  className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs font-semibold transition"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteRoute(route.id)}
-                                  className="px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 text-xs font-semibold transition"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Live Tracking Tab */}
-              {activeTab === 'map' && (
-                <div className="p-6">
-                  <div className="mb-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Bus Live Tracking</h3>
-                    <p className="text-sm text-gray-600 mb-4">Integration with Traccar API for real-time GPS tracking</p>
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                      <p className="text-sm text-yellow-800">
-                        <strong>⚠️ Important:</strong> Make sure each bus has the correct <strong>Traccar Device ID</strong> (numeric ID like 123, NOT IMEI).
-                        Edit the bus to find devices and get the correct ID.
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
+              <div className="p-8">
+                {/* Buses View */}
+                {activeTab === 'buses' && (
+                  <div className="animate-in fade-in duration-500">
+                    <div className="flex justify-between items-center mb-8 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+                      <div className="relative group flex-1 max-w-md">
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-blue-500 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Search fleet by Number or Plate..."
+                          value={busSearchTerm}
+                          onChange={e => setBusSearchTerm(e.target.value)}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white outline-none transition-all font-medium"
+                        />
+                      </div>
                       <button
-                        onClick={() => fetchTraccarToken()}
-                        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold transition"
+                        onClick={handleAddBus}
+                        className="ml-4 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
                       >
-                        Connect to Traccar
-                      </button>
-                      <button
-                        onClick={() => {
-                          buses.forEach(bus => {
-                            if (bus.traccarDeviceId && bus.traccarDeviceId.trim()) {
-                              fetchTraccarDevicePosition(bus.traccarDeviceId)
-                            }
-                          })
-                        }}
-                        className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition"
-                      >
-                        Refresh All
+                        <span className="text-xl">+</span> Add Bus
                       </button>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {buses.map((bus) => {
-                        const position = traccarPositions.get(parseInt(bus.traccarDeviceId))
-                        return (
-                          <div key={bus.id} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                            <div className="flex justify-between items-start mb-4">
-                              <div>
-                                <h4 className="font-semibold text-gray-900">{bus.busNumber}</h4>
-                                <p className="text-sm text-gray-600">{bus.registrationNo}</p>
-                              </div>
-                              <span
-                                className={`px-2 py-1 rounded text-xs font-semibold ${position
-                                  ? 'bg-green-100 text-green-700'
-                                  : 'bg-red-100 text-red-700'
-                                  }`}
-                              >
-                                {position ? 'Online' : 'Offline'}
-                              </span>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {Array.isArray(filteredBuses) && filteredBuses.map(bus => (
+                        <div key={bus.id} className="bg-gray-50 rounded-3xl p-6 border border-gray-200 transition hover:shadow-lg">
+                          <div className="flex justify-between items-start mb-4">
+                            <div>
+                              <div className="text-xs font-black text-blue-600 uppercase mb-1">{bus.busNumber}</div>
+                              <div className="text-xl font-bold text-gray-900">{bus.registrationNo}</div>
                             </div>
+                            <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase ${bus.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                              }`}>{bus.status}</span>
+                          </div>
+                          <div className="space-y-3 mb-6">
+                            <div className="flex justify-between text-sm"><span className="text-gray-500 font-medium">Model</span> <span className="text-gray-900 font-bold">{bus.model}</span></div>
+                            <div className="flex justify-between text-sm"><span className="text-gray-500 font-medium">Driver</span> <span className="text-gray-900 font-bold">{getHelperData(bus.driverId, 'driver')}</span></div>
+                            <div className="flex justify-between text-sm"><span className="text-gray-500 font-medium">Route</span> <span className="text-gray-900 font-bold">{getHelperData(bus.routeId, 'route')}</span></div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={() => handleEditBus(bus)} className="flex-1 bg-white text-gray-700 border border-gray-200 py-2.5 rounded-xl font-bold text-xs hover:bg-gray-50 transition">Edit</button>
+                            <button onClick={() => handleDeleteBus(bus.id)} className="flex-1 bg-white text-red-600 border border-red-100 py-2.5 rounded-xl font-bold text-xs hover:bg-red-50 transition">Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-                            {position ? (
-                              <div className="space-y-2 text-sm">
-                                <p>
-                                  <span className="font-semibold">Location:</span> {position.latitude}, {position.longitude}
-                                </p>
-                                <p>
-                                  <span className="font-semibold">Speed:</span> {position.speed} knots
-                                </p>
-                                <p>
-                                  <span className="font-semibold">Address:</span> {position.address}
-                                </p>
-                                <p>
-                                  <span className="font-semibold">Last Update:</span> {position.serverTime}
-                                </p>
-                                {position.attributes?.battery && (
-                                  <p>
-                                    <span className="font-semibold">Battery:</span> {position.attributes.battery}%
-                                  </p>
-                                )}
+                {activeTab === 'maintenance' && (
+                  <div className="animate-in fade-in duration-500">
+                    <div className="flex justify-between items-center mb-8 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+                      <div className="relative group flex-1 max-w-md">
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-orange-500 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Search maintenance logs..."
+                          value={maintenanceSearchTerm}
+                          onChange={e => setMaintenanceSearchTerm(e.target.value)}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-4 py-3 text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 focus:bg-white outline-none transition-all font-medium"
+                        />
+                      </div>
+                      <button
+                        onClick={() => handleAddMaintenance()}
+                        className="ml-4 px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
+                      >
+                        <span className="text-xl">+</span> Log Service
+                      </button>
+                    </div>
+                    <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 table-container animate-in slide-in-from-bottom-4 duration-700">
+                      <table className="w-full text-left">
+                        <thead>
+                          <tr className="bg-gradient-to-r from-orange-500 to-orange-600 text-white">
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Bus</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Service Date</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Description</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Cost</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Performed By</th>
+                            <th className="px-6 py-4 font-bold text-center text-sm uppercase tracking-wider">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Array.isArray(filteredMaintenance) && filteredMaintenance.map(m => (
+                            <tr key={m.id} className="border-t border-gray-200 hover:bg-white transition">
+                              <td className="px-6 py-4 font-bold text-blue-600">{getHelperData(m.busId, 'bus')}</td>
+                              <td className="px-6 py-4 text-gray-900 font-medium">{new Date(m.serviceDate).toLocaleDateString()}</td>
+                              <td className="px-6 py-4 text-gray-600 max-w-xs truncate">{m.description}</td>
+                              <td className="px-6 py-4 font-black text-gray-900">रू {m.cost.toLocaleString()}</td>
+                              <td className="px-6 py-4 text-gray-600 font-medium">{m.performedBy}</td>
+                              <td className="px-6 py-4 text-center">
+                                <button onClick={() => handleDeleteMaintenance(m.id)} className="text-red-500 hover:text-red-700 font-bold text-xs uppercase tracking-tighter">Delete</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === 'fuel' && (
+                  <div className="animate-in fade-in duration-500">
+                    <div className="flex justify-between items-center mb-8 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+                      <div className="relative group flex-1 max-w-md">
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-green-500 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Search fuel records..."
+                          value={fuelSearchTerm}
+                          onChange={e => setFuelSearchTerm(e.target.value)}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-4 py-3 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 focus:bg-white outline-none transition-all font-medium"
+                        />
+                      </div>
+                      <button
+                        onClick={() => handleAddFuel()}
+                        className="ml-4 px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
+                      >
+                        <span className="text-xl">+</span> Log Fuel
+                      </button>
+                    </div>
+                    <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 table-container animate-in slide-in-from-bottom-4 duration-700">
+                      <table className="w-full text-left">
+                        <thead>
+                          <tr className="bg-gradient-to-r from-green-600 to-green-700 text-white">
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Bus</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Date</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Quantity (L)</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Cost</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Odometer</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Filled By</th>
+                            <th className="px-6 py-4 font-bold text-center text-sm uppercase tracking-wider">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Array.isArray(filteredFuel) && filteredFuel.map(f => (
+                            <tr key={f.id} className="border-t border-gray-200 hover:bg-white transition">
+                              <td className="px-6 py-4 font-bold text-blue-600">{getHelperData(f.busId, 'bus')}</td>
+                              <td className="px-6 py-4 text-gray-900 font-medium">{new Date(f.date).toLocaleDateString()}</td>
+                              <td className="px-6 py-4 font-black text-gray-900">{f.fuelQuantity} L</td>
+                              <td className="px-6 py-4 font-black text-green-700 font-mono">रू {f.cost.toLocaleString()}</td>
+                              <td className="px-6 py-4 text-gray-500 font-medium">{f.odometerReading} km</td>
+                              <td className="px-6 py-4 text-gray-600 font-medium">{f.filledBy}</td>
+                              <td className="px-6 py-4 text-center">
+                                <button onClick={() => handleDeleteFuel(f.id)} className="text-red-500 hover:text-red-700 font-bold text-xs uppercase tracking-tighter">Delete</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Drivers View */}
+                {activeTab === 'drivers' && (
+                  <div className="animate-in fade-in duration-500">
+                    <div className="flex justify-between items-center mb-8 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+                      <div className="relative group flex-1 max-w-md">
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-green-500 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Search drivers by name or phone..."
+                          value={driverSearchTerm}
+                          onChange={e => setDriverSearchTerm(e.target.value)}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-4 py-3 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 focus:bg-white outline-none transition-all font-medium"
+                        />
+                      </div>
+                      <button
+                        onClick={handleAddDriver}
+                        className="ml-4 px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
+                      >
+                        <span className="text-xl">+</span> Add Driver
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {Array.isArray(filteredDrivers) && filteredDrivers.map(driver => (
+                        <div key={driver.id} className="bg-white rounded-3xl p-6 shadow-xl shadow-gray-100 border border-gray-100 group hover:border-green-200 transition-all">
+                          <div className="flex justify-between items-start mb-4">
+                            <div className="p-4 bg-green-50 rounded-2xl text-3xl group-hover:scale-110 transition-transform">👨‍✈️</div>
+                            <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${driver.status === 'Active' ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'}`}>
+                              {driver.status}
+                            </div>
+                          </div>
+                          <h3 className="text-xl font-black text-gray-900 mb-1">{driver.name}</h3>
+                          <p className="text-gray-500 text-sm font-bold mb-4">{driver.phone}</p>
+                          <div className="space-y-2 mb-6">
+                            <div className="flex items-center gap-2 text-xs font-bold text-gray-600">
+                              <span className="text-gray-400">🪪</span> {driver.licenseNumber}
+                            </div>
+                            <div className="flex items-center gap-2 text-xs font-bold text-gray-600">
+                              <span className="text-gray-400">🚌</span> {getHelperData(driver.assignedBusId, 'bus')}
+                            </div>
+                          </div>
+                          <div className="flex gap-2 pt-4 border-t border-gray-50">
+                            <button onClick={() => handleEditDriver(driver)} className="flex-1 bg-gray-50 text-gray-600 py-2.5 rounded-xl font-bold text-xs hover:bg-gray-100 transition">Edit Details</button>
+                            <button onClick={() => handleDeleteDriver(driver.id)} className="px-4 text-red-400 hover:text-red-600 transition">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Assignments View */}
+                {activeTab === 'assignments' && (
+                  <div className="animate-in fade-in duration-500">
+                    <div className="flex justify-between items-center mb-8 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+                      <div className="relative group flex-1 max-w-md">
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-purple-500 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Search assignments by student name..."
+                          value={studentSearchTerm}
+                          onChange={e => setStudentSearchTerm(e.target.value)}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-4 py-3 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 focus:bg-white outline-none transition-all font-medium"
+                        />
+                      </div>
+                      <button
+                        onClick={handleAddAssignment}
+                        className="ml-4 px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
+                      >
+                        <span className="text-xl">+</span> Assign Student
+                      </button>
+                    </div>
+                    <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 table-container">
+                      <table className="w-full text-left">
+                        <thead>
+                          <tr className="bg-gradient-to-r from-purple-600 to-purple-700 text-white">
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Student Name</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Bus</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Route</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Pickup Stop</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Dropoff Stop</th>
+                            <th className="px-6 py-4 font-bold text-center text-sm uppercase tracking-wider">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Array.isArray(filteredStudents) && filteredStudents.map(asg => (
+                            <tr key={asg.id} className="border-t border-gray-200 hover:bg-gray-50/50 transition">
+                              <td className="px-6 py-4 font-bold text-gray-900">{asg.studentName}</td>
+                              <td className="px-6 py-4 text-blue-600 font-bold">{getHelperData(asg.busId, 'bus')}</td>
+                              <td className="px-6 py-4 text-indigo-600 font-bold">{getHelperData(asg.routeId, 'route')}</td>
+                              <td className="px-6 py-4 text-gray-600 font-medium">{asg.pickupStop}</td>
+                              <td className="px-6 py-4 text-gray-600 font-medium">{asg.dropoffStop}</td>
+                              <td className="px-6 py-4 text-center">
+                                <button onClick={() => handleDeleteAssignment(asg.id)} className="text-red-500 hover:text-red-700 font-bold text-[10px] uppercase">Remove</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+                {activeTab === 'routes' && (
+                  <div className="animate-in fade-in duration-500">
+                    <div className="flex justify-between items-center mb-8 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+                      <div className="relative group flex-1 max-w-md">
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-indigo-500 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Search routes by name or number..."
+                          value={routeSearchTerm}
+                          onChange={e => setRouteSearchTerm(e.target.value)}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-12 pr-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white outline-none transition-all font-medium"
+                        />
+                      </div>
+                      <button
+                        onClick={handleAddRoute}
+                        className="ml-4 px-6 py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
+                      >
+                        <span className="text-xl">+</span> Add Route
+                      </button>
+                    </div>
+                    <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 table-container">
+                      <table className="w-full text-left">
+                        <thead>
+                          <tr className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white">
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Number</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Route Name</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Path</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Stops</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Assigned Bus</th>
+                            <th className="px-6 py-4 font-bold text-center text-sm uppercase tracking-wider">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Array.isArray(filteredRoutes) && filteredRoutes.map(route => (
+                            <tr key={route.id} className="border-t border-gray-200 hover:bg-gray-50/50 transition">
+                              <td className="px-6 py-4 font-black text-indigo-600">{route.routeNumber}</td>
+                              <td className="px-6 py-4 font-bold text-gray-900">{route.routeName}</td>
+                              <td className="px-6 py-4 text-gray-600 text-xs font-bold">
+                                {route.startPoint} <span className="text-gray-300 mx-1">→</span> {route.endPoint}
+                              </td>
+                              <td className="px-6 py-4 font-black text-gray-500">{route.stops}</td>
+                              <td className="px-6 py-4 text-gray-700 font-bold">{getHelperData(route.assignedBusId, 'bus')}</td>
+                              <td className="px-6 py-4 text-center">
+                                <div className="flex justify-center gap-2">
+                                  <button onClick={() => handleEditRoute(route)} className="text-blue-500 hover:text-blue-700 font-bold text-[10px] uppercase">Edit</button>
+                                  <button onClick={() => handleDeleteRoute(route.id)} className="text-red-500 hover:text-red-700 font-bold text-[10px] uppercase">Delete</button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+                {activeTab === 'map' && (
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+                    <aside className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
+                      <h3 className="text-lg font-black text-gray-900 mb-6 flex items-center gap-2">🛰️ Fleet Status <span className="bg-blue-100 text-blue-600 text-[10px] px-2 py-0.5 rounded-full">{traccarPositions.size} online</span></h3>
+                      {Array.isArray(buses) && buses.map(bus => {
+                        const pos = traccarPositions.get(parseInt(bus.traccarDeviceId))
+                        return (
+                          <div key={bus.id} className={`p-4 rounded-2xl border transition cursor-pointer ${pos ? 'bg-green-50/50 border-green-100 hover:bg-green-50' : 'bg-gray-50 border-gray-100 hover:bg-gray-100'}`}>
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="font-bold text-gray-900">{bus.busNumber}</div>
+                              <div className={`w-2 h-2 rounded-full mt-1 ${pos ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}></div>
+                            </div>
+                            {pos ? (
+                              <div className="space-y-1 text-[11px] font-bold">
+                                <div className="text-green-700">⚡ {pos.speed} knots • {pos.course}°</div>
+                                <div className="text-gray-500 truncate">📍 {pos.address || 'Updating...'}</div>
                               </div>
                             ) : (
-                              <div className="text-sm text-gray-600">
-                                {!bus.traccarDeviceId || bus.traccarDeviceId.trim() === '' ? (
-                                  <div className="bg-red-50 p-3 rounded border border-red-200">
-                                    <p className="text-red-700 font-semibold">❌ No Device ID configured</p>
-                                    <p className="text-red-600 text-xs mt-1">
-                                      Edit this bus and add the Traccar Device ID (numeric ID, not IMEI)
-                                    </p>
-                                  </div>
-                                ) : (
-                                  <div className="bg-orange-50 p-3 rounded border border-orange-200">
-                                    <p className="text-orange-700 font-semibold">⚠️ No tracking data</p>
-                                    <p className="text-orange-600 text-xs mt-1">Device ID: {bus.traccarDeviceId}</p>
-                                    <p className="text-orange-600 text-xs mt-1">
-                                      This could mean: GPS is offline, wrong Device ID, or device hasn't reported yet.
-                                    </p>
-                                    <button
-                                      onClick={() => fetchTraccarDevicePosition(bus.traccarDeviceId)}
-                                      className="mt-2 px-3 py-1 bg-orange-200 text-orange-700 rounded hover:bg-orange-300 text-xs font-semibold transition"
-                                    >
-                                      Retry Refresh
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
+                              <div className="text-[11px] font-bold text-gray-400">Disconnected</div>
                             )}
                           </div>
                         )
                       })}
+                      <button onClick={() => {
+                        buses.forEach(b => b.traccarDeviceId && fetchTraccarDevicePosition(b.traccarDeviceId))
+                      }} className="w-full bg-blue-600 text-white rounded-2xl py-3 font-black text-sm hover:bg-blue-700 transition shadow-lg shadow-blue-100 mt-4">🔄 Refresh Positions</button>
+                    </aside>
+                    <div className="md:col-span-3 bg-gray-900 rounded-[40px] shadow-inner relative flex items-center justify-center min-h-[600px] text-white">
+                      <div className="text-center">
+                        <div className="text-4xl mb-4">🗺️</div>
+                        <div className="text-xl font-black mb-2">Interactive Map System Integration</div>
+                        <p className="text-gray-500 text-sm max-w-xs mx-auto">Real-time Mapbox/Google Maps overlay would be initialized here with device positions.</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Student Assignments Tab */}
-              {activeTab === 'assignments' && (
-                <div className="p-6">
-                  <div className="flex justify-between items-center gap-4 mb-6">
-                    <input
-                      type="text"
-                      placeholder="Search student assignments..."
-                      value={studentSearchTerm}
-                      onChange={(e) => setStudentSearchTerm(e.target.value)}
-                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <button
-                      onClick={handleAddStudent}
-                      className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 font-semibold transition"
-                    >
-                      + Assign Student
-                    </button>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b-2 border-gray-200">
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Student Name</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Student ID</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Bus</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Route</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Pickup - Dropoff</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                          <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredStudents.map((assignment) => (
-                          <tr key={assignment.id} className="border-b border-gray-200 hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm font-semibold text-gray-900">{assignment.studentName}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{assignment.studentId}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{assignment.busNumber}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{assignment.routeName}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">
-                              {assignment.pickupStop} → {assignment.dropoffStop}
-                            </td>
-                            <td className="px-4 py-3">
-                              <span
-                                className={`px-3 py-1 rounded-full text-xs font-semibold ${assignment.status === 'Active'
-                                  ? 'bg-green-100 text-green-700'
-                                  : 'bg-gray-100 text-gray-700'
-                                  }`}
-                              >
-                                {assignment.status}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <div className="flex justify-center gap-2">
-                                <button
-                                  onClick={() => handleEditStudent(assignment)}
-                                  className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs font-semibold transition"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteStudent(assignment.id)}
-                                  className="px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 text-xs font-semibold transition"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Settings Tab */}
-              {activeTab === 'settings' && (
-                <div className="p-6">
+                {/* Settings View */}
+                {activeTab === 'settings' && (
                   <div className="max-w-2xl">
-                    <h3 className="text-2xl font-bold text-gray-900 mb-2">Traccar GPS Tracking Settings</h3>
-                    <p className="text-gray-600 mb-6">Configure your Traccar server credentials to enable live GPS tracking for buses.</p>
+                    <h3 className="text-2xl font-black text-gray-900 mb-2">Fleet Provider Sync</h3>
+                    <p className="text-gray-500 font-medium mb-10">Configure external GPS provider (Traccar) to enable enterprise-grade tracking features.</p>
 
-                    {settingsSaved && (
-                      <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-                        <p className="text-green-800 font-semibold">✅ Settings Saved</p>
-                        <p className="text-green-700 text-sm mt-1">Your Traccar credentials have been saved locally.</p>
-                      </div>
-                    )}
-
-                    <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
+                    <div className="space-y-6 bg-gray-50 p-10 rounded-[40px] border border-gray-100">
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          Traccar Server URL *
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="https://system.geotrack.com.np"
-                          value={traccarUrl}
-                          onChange={(e) => setTraccarUrl(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                        />
-                        <p className="text-xs text-gray-500 mt-1">Default Traccar server URL (pre-filled)</p>
+                        <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3 ml-1">Provider URL</label>
+                        <input type="text" value={traccarUrl} onChange={e => setTraccarUrl(e.target.value)} className="w-full bg-white border-none rounded-2xl px-6 py-3 font-bold text-gray-900 focus:ring-2 focus:ring-blue-500 shadow-sm" />
                       </div>
-
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          Username (Email) *
-                        </label>
-                        <input
-                          type="email"
-                          placeholder="e.g., admin@example.com"
-                          value={traccarUsername}
-                          onChange={(e) => setTraccarUsername(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        <p className="text-xs text-gray-500 mt-1">Your Traccar account email</p>
+                      <div className="grid grid-cols-2 gap-6">
+                        <div>
+                          <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3 ml-1">Username</label>
+                          <input type="text" value={traccarUsername} onChange={e => setTraccarUsername(e.target.value)} className="w-full bg-white border-none rounded-2xl px-6 py-3 font-bold text-gray-900 focus:ring-2 focus:ring-blue-500 shadow-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3 ml-1">Password</label>
+                          <input type="password" value={traccarPassword} onChange={e => setTraccarPassword(e.target.value)} className="w-full bg-white border-none rounded-2xl px-6 py-3 font-bold text-gray-900 focus:ring-2 focus:ring-blue-500 shadow-sm" />
+                        </div>
                       </div>
-
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          Password *
-                        </label>
-                        <input
-                          type="password"
-                          placeholder="Enter your password"
-                          value={traccarPassword}
-                          onChange={(e) => setTraccarPassword(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        <p className="text-xs text-gray-500 mt-1">Your Traccar account password</p>
+                      <div className="flex gap-4 pt-4">
+                        <button onClick={handleSaveTraccarSettings} className="flex-1 bg-gray-900 text-white rounded-2xl py-4 font-black hover:bg-black transition shadow-xl">Apply Settings</button>
+                        <button onClick={handleTestTraccarConnection} className="bg-green-600 text-white rounded-2xl px-8 py-4 font-black hover:bg-green-700 transition shadow-xl">Test Connection</button>
                       </div>
-
-                      <div className="pt-4 border-t border-gray-200 flex gap-3">
-                        <button
-                          onClick={handleSaveTraccarSettings}
-                          className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold transition"
-                        >
-                          💾 Save Settings
-                        </button>
-                        <button
-                          onClick={handleTestTraccarConnection}
-                          disabled={testConnectionStatus === 'testing'}
-                          className={`flex-1 px-6 py-3 rounded-lg font-semibold transition ${testConnectionStatus === 'testing'
-                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                            : 'bg-green-600 text-white hover:bg-green-700'
-                            }`}
-                        >
-                          {testConnectionStatus === 'testing' ? '🔄 Testing...' : '🔌 Test Connection'}
-                        </button>
-                      </div>
-
                       {testConnectionMessage && (
-                        <div className={`p-4 rounded-lg ${testConnectionStatus === 'success'
-                          ? 'bg-green-50 border border-green-200'
-                          : testConnectionStatus === 'error'
-                            ? 'bg-red-50 border border-red-200'
-                            : 'bg-blue-50 border border-blue-200'
-                          }`}>
-                          <p className={`font-semibold ${testConnectionStatus === 'success'
-                            ? 'text-green-800'
-                            : testConnectionStatus === 'error'
-                              ? 'text-red-800'
-                              : 'text-blue-800'
-                            }`}>
-                            {testConnectionMessage}
-                          </p>
+                        <div className={`mt-6 p-4 rounded-2xl font-bold text-sm text-center ${testConnectionStatus === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          {testConnectionMessage}
                         </div>
                       )}
                     </div>
-
-                    <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                      <h4 className="font-semibold text-blue-900 mb-2">📚 API Documentation</h4>
-                      <p className="text-sm text-blue-800 mb-2">The system uses Traccar API with Bearer token authentication:</p>
-                      <ul className="text-sm text-blue-700 space-y-1 ml-4 list-disc">
-                        <li>Token is generated using your username and password</li>
-                        <li>Token is valid for 7 days by default</li>
-                        <li>All device and position data is fetched using the token</li>
-                        <li>Configure device IDs in the "Buses" tab to link buses to GPS trackers</li>
-                      </ul>
-                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </main>
@@ -1534,310 +1196,217 @@ export default function SchoolBusesPage() {
 
       {/* Bus Modal */}
       {showBusModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full my-8">
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {editingBusId ? 'Edit Bus' : 'Add New Bus'}
-              </h3>
-              <button
-                onClick={() => setShowBusModal(false)}
-                className="text-gray-500 hover:text-gray-700 text-2xl"
-              >
-                ×
-              </button>
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-[40px] shadow-2xl max-w-2xl w-full p-10 overflow-hidden">
+            <div className="flex justify-between items-center mb-10">
+              <h2 className="text-3xl font-black text-gray-900">{editingBusId ? 'Fleet Correction' : 'Commission New Bus'}</h2>
+              <button onClick={() => setShowBusModal(false)} className="text-gray-400 hover:text-gray-900 text-3xl font-black transition">×</button>
             </div>
-
-            <div className="px-6 py-4 space-y-4 max-h-96 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-8 mb-10">
+              <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Bus Number *</label>
-                  <input
-                    type="text"
-                    placeholder="e.g., BUS-001"
-                    value={busFormData.busNumber}
-                    onChange={(e) => setBusFormData({ ...busFormData, busNumber: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Bus Number</label>
+                  <input type="text" value={busFormData.busNumber} onChange={e => setBusFormData({ ...busFormData, busNumber: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-2.5 font-bold" />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Registration No. *</label>
-                  <input
-                    type="text"
-                    placeholder="e.g., MH01AB1234"
-                    value={busFormData.registrationNo}
-                    onChange={(e) => setBusFormData({ ...busFormData, registrationNo: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Registration</label>
+                  <input type="text" value={busFormData.registrationNo} onChange={e => setBusFormData({ ...busFormData, registrationNo: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-2.5 font-bold" />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Model</label>
-                  <input
-                    type="text"
-                    value={busFormData.model}
-                    onChange={(e) => setBusFormData({ ...busFormData, model: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Capacity</label>
+                  <input type="number" value={busFormData.capacity} onChange={e => setBusFormData({ ...busFormData, capacity: parseInt(e.target.value) })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-2.5 font-bold" />
                 </div>
+              </div>
+              <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Capacity</label>
-                  <input
-                    type="number"
-                    value={busFormData.capacity}
-                    onChange={(e) => setBusFormData({ ...busFormData, capacity: parseInt(e.target.value) })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Driver</label>
-                  <select
-                    value={busFormData.driverId}
-                    onChange={(e) => setBusFormData({ ...busFormData, driverId: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select Driver</option>
-                    {drivers.map((driver) => (
-                      <option key={driver.id} value={driver.id}>
-                        {driver.name}
-                      </option>
-                    ))}
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Status</label>
+                  <select value={busFormData.status} onChange={e => setBusFormData({ ...busFormData, status: e.target.value as any })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-2.5 font-bold">
+                    <option value="Active">Operational</option>
+                    <option value="Inactive">Decommissioned</option>
+                    <option value="Maintenance">Under Service</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Route</label>
-                  <select
-                    value={busFormData.routeId}
-                    onChange={(e) => setBusFormData({ ...busFormData, routeId: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select Route</option>
-                    {routes.map((route) => (
-                      <option key={route.id} value={route.id}>
-                        {route.routeName}
-                      </option>
-                    ))}
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Driver</label>
+                  <select value={busFormData.driverId} onChange={e => setBusFormData({ ...busFormData, driverId: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-2.5 font-bold">
+                    <option value="">No Driver</option>
+                    {drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Purchase Date</label>
-                  <NepaliDatePicker
-                    value={busFormData.purchaseDate}
-                    onChange={(date) => setBusFormData({ ...busFormData, purchaseDate: date })}
-                    className="w-full bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Last Service Date</label>
-                  <NepaliDatePicker
-                    value={busFormData.lastServiceDate}
-                    onChange={(date) => setBusFormData({ ...busFormData, lastServiceDate: date })}
-                    className="w-full bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Traccar Device ID (Numeric ID from Traccar, NOT IMEI)
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="e.g., 123"
-                      value={busFormData.traccarDeviceId}
-                      onChange={(e) => setBusFormData({ ...busFormData, traccarDeviceId: e.target.value })}
-                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const devices = await fetchTraccarDevices()
-                        if (devices.length > 0) {
-                          alert(`Found ${devices.length} devices. Check browser console for details:\n\n${devices.map((d: any) => `ID: ${d.id}, Name: ${d.name}, IMEI: ${d.uniqueId}`).join('\n')}`)
-                        } else {
-                          alert('No devices found or authentication failed. Make sure you\'re connected to Traccar.')
-                        }
-                      }}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition whitespace-nowrap"
-                    >
-                      Find Devices
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    💡 Click "Find Devices" to see all registered GPS devices with their IDs and IMEIs
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Status</label>
-                  <select
-                    value={busFormData.status}
-                    onChange={(e) => setBusFormData({ ...busFormData, status: e.target.value as any })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                    <option value="Maintenance">Maintenance</option>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Route</label>
+                  <select value={busFormData.routeId} onChange={e => setBusFormData({ ...busFormData, routeId: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-2.5 font-bold">
+                    <option value="">No Route</option>
+                    {routes.map(r => <option key={r.id} value={r.id}>{r.routeName}</option>)}
                   </select>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Description</label>
-                <textarea
-                  value={busFormData.description}
-                  onChange={(e) => setBusFormData({ ...busFormData, description: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 resize-none"
-                  rows={3}
-                />
-              </div>
             </div>
-
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
-              <button
-                onClick={() => setShowBusModal(false)}
-                className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 font-semibold transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveBus}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold transition"
-              >
-                Save Bus
-              </button>
+            <div>
+              <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Traccar Provider ID</label>
+              <input type="text" placeholder="Unique numeric ID from provider system" value={busFormData.traccarDeviceId} onChange={e => setBusFormData({ ...busFormData, traccarDeviceId: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-2.5 font-bold mb-10" />
+            </div>
+            <div className="flex gap-4">
+              <button onClick={() => setShowBusModal(false)} className="flex-1 bg-gray-100 text-gray-700 py-4 rounded-2xl font-black hover:bg-gray-200 transition">Discard</button>
+              <button onClick={handleSaveBus} className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl font-black hover:bg-blue-700 shadow-xl shadow-blue-100 transition">Save Fleet Entry</button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Maintenance Modal */}
+      {showMaintenanceModal && (
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-[40px] shadow-2xl max-w-xl w-full p-10 overflow-hidden">
+            <h2 className="text-3xl font-black text-gray-900 mb-8">Record Maintenance</h2>
+            <div className="space-y-5 mb-10">
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Target Bus</label>
+                <select value={maintenanceFormData.busId} onChange={e => setMaintenanceFormData({ ...maintenanceFormData, busId: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold">
+                  <option value="">Select Bus</option>
+                  {buses.map(b => <option key={b.id} value={b.id}>{b.busNumber} - {b.registrationNo}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Service Date</label>
+                  <input type="date" value={maintenanceFormData.serviceDate} onChange={e => setMaintenanceFormData({ ...maintenanceFormData, serviceDate: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Cost (NPR)</label>
+                  <input type="number" value={maintenanceFormData.cost} onChange={e => setMaintenanceFormData({ ...maintenanceFormData, cost: parseFloat(e.target.value) })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Service Description</label>
+                <textarea value={maintenanceFormData.description} onChange={e => setMaintenanceFormData({ ...maintenanceFormData, description: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold resize-none" rows={3}></textarea>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Performed By (Mechanic/Workshop)</label>
+                <input type="text" value={maintenanceFormData.performedBy} onChange={e => setMaintenanceFormData({ ...maintenanceFormData, performedBy: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+              </div>
+            </div>
+            <div className="flex gap-4">
+              <button onClick={() => setShowMaintenanceModal(false)} className="flex-1 bg-gray-100 text-gray-700 py-4 rounded-2xl font-black hover:bg-gray-200 transition">Cancel</button>
+              <button onClick={handleSaveMaintenance} className="flex-[2] bg-orange-500 text-white py-4 rounded-2xl font-black hover:bg-orange-600 shadow-xl transition">Submit Log</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fuel Modal */}
+      {showFuelModal && (
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-[40px] shadow-2xl max-w-xl w-full p-10 overflow-hidden">
+            <h2 className="text-3xl font-black text-gray-900 mb-8">Record Fuel Intake</h2>
+            <div className="space-y-5 mb-10">
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Target Bus</label>
+                <select value={fuelFormData.busId} onChange={e => setFuelFormData({ ...fuelFormData, busId: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold">
+                  <option value="">Select Bus</option>
+                  {buses.map(b => <option key={b.id} value={b.id}>{b.busNumber} - {b.registrationNo}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Fuel Date</label>
+                  <input type="date" value={fuelFormData.date} onChange={e => setFuelFormData({ ...fuelFormData, date: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Quantity (Liters)</label>
+                  <input type="number" value={fuelFormData.fuelQuantity} onChange={e => setFuelFormData({ ...fuelFormData, fuelQuantity: parseFloat(e.target.value) })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Total Cost (NPR)</label>
+                  <input type="number" value={fuelFormData.cost} onChange={e => setFuelFormData({ ...fuelFormData, cost: parseFloat(e.target.value) })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Odometer (KM)</label>
+                  <input type="number" value={fuelFormData.odometerReading} onChange={e => setFuelFormData({ ...fuelFormData, odometerReading: parseFloat(e.target.value) })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Recorded By</label>
+                <input type="text" value={fuelFormData.filledBy} onChange={e => setFuelFormData({ ...fuelFormData, filledBy: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+              </div>
+            </div>
+            <div className="flex gap-4">
+              <button onClick={() => setShowFuelModal(false)} className="flex-1 bg-gray-100 text-gray-700 py-4 rounded-2xl font-black hover:bg-gray-200 transition">Cancel</button>
+              <button onClick={handleSaveFuel} className="flex-[2] bg-green-600 text-white py-4 rounded-2xl font-black hover:bg-green-700 shadow-xl transition">Submit Log</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Driver Modal */}
       {showDriverModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full my-8">
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {editingDriverId ? 'Edit Driver' : 'Add New Driver'}
-              </h3>
-              <button
-                onClick={() => setShowDriverModal(false)}
-                className="text-gray-500 hover:text-gray-700 text-2xl"
-              >
-                ×
-              </button>
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-[40px] shadow-2xl max-w-3xl w-full p-10 overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center mb-10 shrink-0">
+              <h2 className="text-3xl font-black text-gray-900">{editingDriverId ? 'Update Driver Profile' : 'Onboard New Driver'}</h2>
+              <button onClick={() => setShowDriverModal(false)} className="text-gray-400 hover:text-gray-900 text-3xl font-black transition">×</button>
             </div>
-
-            <div className="px-6 py-4 space-y-4 max-h-96 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Name *</label>
-                  <input
-                    type="text"
-                    value={driverFormData.name}
-                    onChange={(e) => setDriverFormData({ ...driverFormData, name: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
+            <div className="flex-1 overflow-y-auto pr-2 space-y-8 scrollbar-hide mb-10">
+              <div className="grid grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Full Name</label>
+                    <input type="text" value={driverFormData.name} onChange={e => setDriverFormData({ ...driverFormData, name: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" placeholder="John Doe" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Phone Number</label>
+                    <input type="text" value={driverFormData.phone} onChange={e => setDriverFormData({ ...driverFormData, phone: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Email (Optional)</label>
+                    <input type="email" value={driverFormData.email} onChange={e => setDriverFormData({ ...driverFormData, email: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Email *</label>
-                  <input
-                    type="email"
-                    value={driverFormData.email}
-                    onChange={(e) => setDriverFormData({ ...driverFormData, email: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">License Number</label>
+                    <input type="text" value={driverFormData.licenseNumber} onChange={e => setDriverFormData({ ...driverFormData, licenseNumber: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">License Expiry</label>
+                    <input type="date" value={driverFormData.licenseExpiry} onChange={e => setDriverFormData({ ...driverFormData, licenseExpiry: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Driver Status</label>
+                    <select value={driverFormData.status} onChange={e => setDriverFormData({ ...driverFormData, status: e.target.value as any })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold">
+                      <option value="Active">Active & Ready</option>
+                      <option value="On Leave">Currently on Leave</option>
+                      <option value="Suspended">Suspended</option>
+                    </select>
+                  </div>
                 </div>
+              </div>
+              <div className="grid grid-cols-2 gap-8">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Phone</label>
-                  <input
-                    type="tel"
-                    value={driverFormData.phone}
-                    onChange={(e) => setDriverFormData({ ...driverFormData, phone: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">License Number</label>
-                  <input
-                    type="text"
-                    value={driverFormData.licenseNumber}
-                    onChange={(e) => setDriverFormData({ ...driverFormData, licenseNumber: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">License Expiry</label>
-                  <NepaliDatePicker
-                    value={driverFormData.licenseExpiry}
-                    onChange={(date) => setDriverFormData({ ...driverFormData, licenseExpiry: date })}
-                    className="w-full bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Assigned Bus</label>
-                  <select
-                    value={driverFormData.assignedBusId}
-                    onChange={(e) => setDriverFormData({ ...driverFormData, assignedBusId: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select Bus</option>
-                    {buses.map((bus) => (
-                      <option key={bus.id} value={bus.id}>
-                        {bus.busNumber}
-                      </option>
-                    ))}
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Assign to Bus</label>
+                  <select value={driverFormData.assignedBusId} onChange={e => setDriverFormData({ ...driverFormData, assignedBusId: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold">
+                    <option value="">Standby (No Bus)</option>
+                    {buses.map(b => <option key={b.id} value={b.id}>{b.busNumber}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Join Date</label>
-                  <NepaliDatePicker
-                    value={driverFormData.joinDate}
-                    onChange={(date) => setDriverFormData({ ...driverFormData, joinDate: date })}
-                    className="w-full bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Status</label>
-                  <select
-                    value={driverFormData.status}
-                    onChange={(e) => setDriverFormData({ ...driverFormData, status: e.target.value as any })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="Active">Active</option>
-                    <option value="On Leave">On Leave</option>
-                    <option value="Inactive">Inactive</option>
-                  </select>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Date Joined</label>
+                  <input type="date" value={driverFormData.joinDate} onChange={e => setDriverFormData({ ...driverFormData, joinDate: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Address</label>
-                <input
-                  type="text"
-                  value={driverFormData.address}
-                  onChange={(e) => setDriverFormData({ ...driverFormData, address: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
+                <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Residential Address</label>
+                <textarea value={driverFormData.address} onChange={e => setDriverFormData({ ...driverFormData, address: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold resize-none" rows={2}></textarea>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Emergency Contact</label>
-                <input
-                  type="tel"
-                  value={driverFormData.emergencyContact}
-                  onChange={(e) => setDriverFormData({ ...driverFormData, emergencyContact: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
+                <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Emergency Contact Info</label>
+                <input type="text" value={driverFormData.emergencyContact} onChange={e => setDriverFormData({ ...driverFormData, emergencyContact: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" placeholder="Relative Name & Phone" />
               </div>
             </div>
-
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
-              <button
-                onClick={() => setShowDriverModal(false)}
-                className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 font-semibold transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveDriver}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold transition"
-              >
-                Save Driver
-              </button>
+            <div className="flex gap-4 shrink-0">
+              <button onClick={() => setShowDriverModal(false)} className="flex-1 bg-gray-100 text-gray-700 py-4 rounded-2xl font-black hover:bg-gray-200 transition">Discard</button>
+              <button onClick={handleSaveDriver} className="flex-[2] bg-green-600 text-white py-4 rounded-2xl font-black hover:bg-green-700 shadow-xl shadow-green-100 transition">Save Profile</button>
             </div>
           </div>
         </div>
@@ -1845,148 +1414,73 @@ export default function SchoolBusesPage() {
 
       {/* Route Modal */}
       {showRouteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full my-8">
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {editingRouteId ? 'Edit Route' : 'Add New Route'}
-              </h3>
-              <button
-                onClick={() => setShowRouteModal(false)}
-                className="text-gray-500 hover:text-gray-700 text-2xl"
-              >
-                ×
-              </button>
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-[40px] shadow-2xl max-w-3xl w-full p-10 overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center mb-10 shrink-0">
+              <h2 className="text-3xl font-black text-gray-900">{editingRouteId ? 'Update Route Path' : 'Define New Route'}</h2>
+              <button onClick={() => setShowRouteModal(false)} className="text-gray-400 hover:text-gray-900 text-3xl font-black transition">×</button>
             </div>
-
-            <div className="px-6 py-4 space-y-4 max-h-96 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Route Name *</label>
-                  <input
-                    type="text"
-                    placeholder="e.g., Morning Route A"
-                    value={routeFormData.routeName}
-                    onChange={(e) => setRouteFormData({ ...routeFormData, routeName: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
+            <div className="flex-1 overflow-y-auto pr-2 space-y-8 scrollbar-hide mb-10">
+              <div className="grid grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Route Name</label>
+                    <input type="text" value={routeFormData.routeName} onChange={e => setRouteFormData({ ...routeFormData, routeName: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" placeholder="Main City Route" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Route Number/Code</label>
+                    <input type="text" value={routeFormData.routeNumber} onChange={e => setRouteFormData({ ...routeFormData, routeNumber: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" placeholder="R-101" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Distance (KM)</label>
+                    <input type="number" value={routeFormData.distance} onChange={e => setRouteFormData({ ...routeFormData, distance: parseFloat(e.target.value) || 0 })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Route Number *</label>
-                  <input
-                    type="text"
-                    placeholder="e.g., R001"
-                    value={routeFormData.routeNumber}
-                    onChange={(e) => setRouteFormData({ ...routeFormData, routeNumber: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Start Point</label>
-                  <input
-                    type="text"
-                    value={routeFormData.startPoint}
-                    onChange={(e) => setRouteFormData({ ...routeFormData, startPoint: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">End Point</label>
-                  <input
-                    type="text"
-                    value={routeFormData.endPoint}
-                    onChange={(e) => setRouteFormData({ ...routeFormData, endPoint: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Distance (km)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={routeFormData.distance}
-                    onChange={(e) => setRouteFormData({ ...routeFormData, distance: parseFloat(e.target.value) })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Stops</label>
-                  <input
-                    type="number"
-                    value={routeFormData.stops}
-                    onChange={(e) => setRouteFormData({ ...routeFormData, stops: parseInt(e.target.value) })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Assigned Bus</label>
-                  <select
-                    value={routeFormData.assignedBusId}
-                    onChange={(e) => setRouteFormData({ ...routeFormData, assignedBusId: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select Bus</option>
-                    {buses.map((bus) => (
-                      <option key={bus.id} value={bus.id}>
-                        {bus.busNumber}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Departure Time</label>
-                  <input
-                    type="time"
-                    value={routeFormData.departureTime}
-                    onChange={(e) => setRouteFormData({ ...routeFormData, departureTime: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Arrival Time</label>
-                  <input
-                    type="time"
-                    value={routeFormData.arrivalTime}
-                    onChange={(e) => setRouteFormData({ ...routeFormData, arrivalTime: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Status</label>
-                  <select
-                    value={routeFormData.status}
-                    onChange={(e) => setRouteFormData({ ...routeFormData, status: e.target.value as any })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                  </select>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Start Point</label>
+                    <input type="text" value={routeFormData.startPoint} onChange={e => setRouteFormData({ ...routeFormData, startPoint: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">End Point</label>
+                    <input type="text" value={routeFormData.endPoint} onChange={e => setRouteFormData({ ...routeFormData, endPoint: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Route Status</label>
+                    <select value={routeFormData.status} onChange={e => setRouteFormData({ ...routeFormData, status: e.target.value as any })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold">
+                      <option value="Active">Active Route</option>
+                      <option value="Inactive">Temporary Inactive</option>
+                    </select>
+                  </div>
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Description</label>
-                <textarea
-                  value={routeFormData.description}
-                  onChange={(e) => setRouteFormData({ ...routeFormData, description: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 resize-none"
-                  rows={3}
-                />
+                <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Number of Stops</label>
+                <input type="number" value={routeFormData.stops} onChange={e => setRouteFormData({ ...routeFormData, stops: parseInt(e.target.value) || 0 })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+              </div>
+              <div className="grid grid-cols-2 gap-8">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Primary Bus</label>
+                  <select value={routeFormData.assignedBusId} onChange={e => setRouteFormData({ ...routeFormData, assignedBusId: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold">
+                    <option value="">Unassigned</option>
+                    {buses.map(b => <option key={b.id} value={b.id}>{b.busNumber}</option>)}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Departure</label>
+                    <input type="time" value={routeFormData.departureTime} onChange={e => setRouteFormData({ ...routeFormData, departureTime: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Arrival</label>
+                    <input type="time" value={routeFormData.arrivalTime} onChange={e => setRouteFormData({ ...routeFormData, arrivalTime: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3 font-bold" />
+                  </div>
+                </div>
               </div>
             </div>
-
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
-              <button
-                onClick={() => setShowRouteModal(false)}
-                className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 font-semibold transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveRoute}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold transition"
-              >
-                Save Route
-              </button>
+            <div className="flex gap-4 shrink-0">
+              <button onClick={() => setShowRouteModal(false)} className="flex-1 bg-gray-100 text-gray-700 py-4 rounded-2xl font-black hover:bg-gray-200 transition">Cancel</button>
+              <button onClick={handleSaveRoute} className="flex-[2] bg-indigo-600 text-white py-4 rounded-2xl font-black hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition">Save Route</button>
             </div>
           </div>
         </div>
@@ -1994,115 +1488,53 @@ export default function SchoolBusesPage() {
 
       {/* Student Assignment Modal */}
       {showStudentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full my-8">
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {editingStudentId ? 'Edit Assignment' : 'Assign Student to Bus'}
-              </h3>
-              <button
-                onClick={() => setShowStudentModal(false)}
-                className="text-gray-500 hover:text-gray-700 text-2xl"
-              >
-                ×
-              </button>
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-[40px] shadow-2xl max-w-xl w-full p-10 overflow-hidden">
+            <div className="flex justify-between items-center mb-10 shrink-0">
+              <h2 className="text-3xl font-black text-gray-900">Assign Student to Transport</h2>
+              <button onClick={() => setShowStudentModal(false)} className="text-gray-400 hover:text-gray-900 text-3xl font-black transition">×</button>
             </div>
-
-            <div className="px-6 py-4 space-y-4 max-h-96 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-6 mb-10">
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Search/Select Student</label>
+                <input type="text" list="students-list" value={studentFormData.studentId} onChange={e => setStudentFormData({ ...studentFormData, studentId: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3.5 font-bold" placeholder="Paste Student ID or Search..." />
+                <datalist id="students-list">
+                  {Array.isArray(allStudents) && allStudents.map(student => (
+                    <option key={student.id} value={student.id}>{student.name || `${student.first_name} ${student.last_name}`} ({student.studentId || student.student_id_number || student.rollNo})</option>
+                  ))}
+                </datalist>
+                <p className="text-[10px] text-gray-400 mt-2 px-1 font-bold">Please select a valid student from the database.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Student Name *</label>
-                  <input
-                    type="text"
-                    value={studentFormData.studentName}
-                    onChange={(e) => setStudentFormData({ ...studentFormData, studentName: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Student ID</label>
-                  <input
-                    type="text"
-                    value={studentFormData.studentId}
-                    onChange={(e) => setStudentFormData({ ...studentFormData, studentId: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Bus *</label>
-                  <select
-                    value={studentFormData.busId}
-                    onChange={(e) => setStudentFormData({ ...studentFormData, busId: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Assigned Bus</label>
+                  <select value={studentFormData.busId} onChange={e => setStudentFormData({ ...studentFormData, busId: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3.5 font-bold">
                     <option value="">Select Bus</option>
-                    {buses.map((bus) => (
-                      <option key={bus.id} value={bus.id}>
-                        {bus.busNumber} ({bus.currentStudents}/{bus.capacity})
-                      </option>
-                    ))}
+                    {buses.map(b => <option key={b.id} value={b.id}>{b.busNumber}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Route</label>
-                  <select
-                    value={studentFormData.routeId}
-                    onChange={(e) => setStudentFormData({ ...studentFormData, routeId: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Route Path</label>
+                  <select value={studentFormData.routeId} onChange={e => setStudentFormData({ ...studentFormData, routeId: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3.5 font-bold">
                     <option value="">Select Route</option>
-                    {routes.map((route) => (
-                      <option key={route.id} value={route.id}>
-                        {route.routeName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Pickup Stop</label>
-                  <input
-                    type="text"
-                    value={studentFormData.pickupStop}
-                    onChange={(e) => setStudentFormData({ ...studentFormData, pickupStop: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Dropoff Stop</label>
-                  <input
-                    type="text"
-                    value={studentFormData.dropoffStop}
-                    onChange={(e) => setStudentFormData({ ...studentFormData, dropoffStop: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Status</label>
-                  <select
-                    value={studentFormData.status}
-                    onChange={(e) => setStudentFormData({ ...studentFormData, status: e.target.value as any })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
+                    {routes.map(r => <option key={r.id} value={r.id}>{r.routeName}</option>)}
                   </select>
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Morning Pickup Stop</label>
+                  <input type="text" value={studentFormData.pickupStop} onChange={e => setStudentFormData({ ...studentFormData, pickupStop: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3.5 font-bold" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase ml-1 mb-1">Evening Dropoff Stop</label>
+                  <input type="text" value={studentFormData.dropoffStop} onChange={e => setStudentFormData({ ...studentFormData, dropoffStop: e.target.value })} className="w-full bg-gray-100 border-none rounded-2xl px-5 py-3.5 font-bold" />
+                </div>
+              </div>
             </div>
-
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
-              <button
-                onClick={() => setShowStudentModal(false)}
-                className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 font-semibold transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveStudent}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold transition"
-              >
-                Save Assignment
-              </button>
+            <div className="flex gap-4">
+              <button onClick={() => setShowStudentModal(false)} className="flex-1 bg-gray-100 text-gray-700 py-4 rounded-2xl font-black hover:bg-gray-200 transition">Discard</button>
+              <button onClick={handleSaveAssignment} className="flex-[2] bg-purple-600 text-white py-4 rounded-2xl font-black hover:bg-purple-700 shadow-xl shadow-purple-100 transition">Create Assignment</button>
             </div>
           </div>
         </div>

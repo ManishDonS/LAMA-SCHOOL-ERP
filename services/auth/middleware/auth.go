@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"school-erp/auth/config"
+	"school-erp/auth/pkg/casbin"
 	"school-erp/auth/utils"
 )
 
@@ -46,8 +47,17 @@ func JWTMiddleware(cfg *config.Config) fiber.Handler {
 	}
 }
 
+// RoleMiddleware is DEPRECATED. Use CasbinMiddleware instead.
+// It remains for temporary backward compatibility during migration.
 func RoleMiddleware(allowedRoles ...string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		userID, ok := c.Locals("user_id").(string)
+		if !ok {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "User not authenticated",
+			})
+		}
+
 		userRole, ok := c.Locals("role").(string)
 		if !ok {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
@@ -55,6 +65,19 @@ func RoleMiddleware(allowedRoles ...string) fiber.Handler {
 			})
 		}
 
+		schoolID, ok := c.Locals("school_id").(string)
+		if !ok || schoolID == "" {
+			schoolID = "system"
+		}
+
+		// First, try direct Casbin check for 'access' act on 'system' obj
+		// This follows the new granular model
+		allowed, err := casbin.Enforcer.Enforce(userID, schoolID, "system", "access")
+		if err == nil && allowed {
+			return c.Next()
+		}
+
+		// Fallback to legacy role behavior for backward compatibility
 		for _, role := range allowedRoles {
 			if userRole == role {
 				return c.Next()

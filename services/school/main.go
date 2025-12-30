@@ -15,6 +15,7 @@ import (
 	"school-erp/school/config"
 	"school-erp/school/database"
 	"school-erp/school/middleware"
+	"school-erp/school/pkg/messaging"
 	"school-erp/school/pkg/tenant"
 	"school-erp/school/routes"
 )
@@ -22,6 +23,9 @@ import (
 func main() {
 	// Load configuration
 	cfg := config.LoadConfig()
+
+	// Connect to NATS
+	messaging.ConnectNATS()
 
 	// Initialize main database connection pool
 	mainDB, err := database.InitDB(cfg)

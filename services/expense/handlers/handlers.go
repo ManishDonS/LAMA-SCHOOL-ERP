@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"school-erp/expense/middleware"
 	"school-erp/expense/models"
 
 	"github.com/gofiber/fiber/v2"
@@ -29,7 +30,11 @@ func (h *Handler) Health(c *fiber.Ctx) error {
 
 // GetCategories retrieves all expense categories
 func (h *Handler) GetCategories(c *fiber.Ctx) error {
-	schoolID := c.Query("schoolId", "1")
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
+	schoolID := middleware.GetTenantCode(c)
 
 	query := `
 		SELECT id, school_id, name, description, parent_category_id, 
@@ -40,7 +45,7 @@ func (h *Handler) GetCategories(c *fiber.Ctx) error {
 		ORDER BY name ASC
 	`
 
-	rows, err := h.DB.Query(context.Background(), query, schoolID)
+	rows, err := db.Query(context.Background(), query, schoolID)
 	if err != nil {
 		log.Printf("Error fetching categories: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch categories"})
@@ -67,12 +72,16 @@ func (h *Handler) GetCategories(c *fiber.Ctx) error {
 
 // CreateCategory creates a new expense category
 func (h *Handler) CreateCategory(c *fiber.Ctx) error {
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
+	schoolID := middleware.GetTenantCode(c)
+
 	var req models.CreateCategoryRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
-
-	schoolID := c.Query("schoolId", "1")
 
 	query := `
 		INSERT INTO expense_categories 
@@ -83,7 +92,7 @@ func (h *Handler) CreateCategory(c *fiber.Ctx) error {
 	`
 
 	var category models.ExpenseCategory
-	err := h.DB.QueryRow(
+	err := db.QueryRow(
 		context.Background(), query,
 		schoolID, req.Name, req.Description, req.BudgetMonthly,
 		req.BudgetYearly, req.Color, req.Icon,
@@ -103,6 +112,10 @@ func (h *Handler) CreateCategory(c *fiber.Ctx) error {
 
 // UpdateCategory updates an existing category
 func (h *Handler) UpdateCategory(c *fiber.Ctx) error {
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
 	id := c.Params("id")
 	var req models.CreateCategoryRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -119,7 +132,7 @@ func (h *Handler) UpdateCategory(c *fiber.Ctx) error {
 	`
 
 	var category models.ExpenseCategory
-	err := h.DB.QueryRow(
+	err := db.QueryRow(
 		context.Background(), query,
 		req.Name, req.Description, req.BudgetMonthly, req.BudgetYearly,
 		req.Color, req.Icon, id,
@@ -139,10 +152,14 @@ func (h *Handler) UpdateCategory(c *fiber.Ctx) error {
 
 // DeleteCategory soft deletes a category
 func (h *Handler) DeleteCategory(c *fiber.Ctx) error {
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
 	id := c.Params("id")
 
 	query := `UPDATE expense_categories SET is_active = false WHERE id = $1`
-	_, err := h.DB.Exec(context.Background(), query, id)
+	_, err := db.Exec(context.Background(), query, id)
 	if err != nil {
 		log.Printf("Error deleting category: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to delete category"})
@@ -155,7 +172,11 @@ func (h *Handler) DeleteCategory(c *fiber.Ctx) error {
 
 // GetExpenses retrieves expenses with filters
 func (h *Handler) GetExpenses(c *fiber.Ctx) error {
-	schoolID := c.Query("schoolId", "1")
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
+	schoolID := middleware.GetTenantCode(c)
 
 	query := `
 		SELECT e.id, e.school_id, e.category_id, e.department_id, e.expense_date,
@@ -168,7 +189,7 @@ func (h *Handler) GetExpenses(c *fiber.Ctx) error {
 		LIMIT 100
 	`
 
-	rows, err := h.DB.Query(context.Background(), query, schoolID)
+	rows, err := db.Query(context.Background(), query, schoolID)
 	if err != nil {
 		log.Printf("Error fetching expenses: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch expenses"})
@@ -196,6 +217,10 @@ func (h *Handler) GetExpenses(c *fiber.Ctx) error {
 
 // GetExpense retrieves a single expense by ID
 func (h *Handler) GetExpense(c *fiber.Ctx) error {
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
 	id := c.Params("id")
 
 	query := `
@@ -208,7 +233,7 @@ func (h *Handler) GetExpense(c *fiber.Ctx) error {
 	`
 
 	var exp models.Expense
-	err := h.DB.QueryRow(context.Background(), query, id).Scan(
+	err := db.QueryRow(context.Background(), query, id).Scan(
 		&exp.ID, &exp.SchoolID, &exp.CategoryID, &exp.DepartmentID, &exp.ExpenseDate,
 		&exp.Description, &exp.Amount, &exp.Currency, &exp.VendorName, &exp.PaymentMethod,
 		&exp.ReferenceNumber, &exp.Notes, &exp.Status, &exp.IsRecurring, &exp.RecurringFrequency,
@@ -225,15 +250,28 @@ func (h *Handler) GetExpense(c *fiber.Ctx) error {
 
 // CreateExpense creates a new expense
 func (h *Handler) CreateExpense(c *fiber.Ctx) error {
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
+	schoolID := middleware.GetTenantCode(c)
+
 	var req models.CreateExpenseRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	schoolID := c.Query("schoolId", "1")
-	userID := c.Locals("userId")
+	expenseDate, _ := time.Parse("2006-01-02", req.ExpenseDate)
+	if expenseDate.IsZero() {
+		expenseDate, _ = time.Parse(time.RFC3339, req.ExpenseDate)
+	}
+	if expenseDate.IsZero() {
+		expenseDate = time.Now()
+	}
+
+	userID := c.Locals("user_id")
 	if userID == nil {
-		userID = int64(1) // Default for testing
+		userID = "00000000-0000-0000-0000-000000000000" // Default for testing
 	}
 
 	query := `
@@ -247,9 +285,9 @@ func (h *Handler) CreateExpense(c *fiber.Ctx) error {
 	`
 
 	var expense models.Expense
-	err := h.DB.QueryRow(
+	err := db.QueryRow(
 		context.Background(), query,
-		schoolID, req.CategoryID, req.ExpenseDate, req.Description, req.Amount,
+		schoolID, req.CategoryID, expenseDate, req.Description, req.Amount,
 		req.VendorName, req.PaymentMethod, req.ReferenceNumber, req.Notes,
 		req.Status, req.IsRecurring, req.RecurringFrequency, userID,
 	).Scan(
@@ -270,10 +308,19 @@ func (h *Handler) CreateExpense(c *fiber.Ctx) error {
 
 // UpdateExpense updates an existing expense
 func (h *Handler) UpdateExpense(c *fiber.Ctx) error {
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
 	id := c.Params("id")
 	var req models.CreateExpenseRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	expenseDate, _ := time.Parse("2006-01-02", req.ExpenseDate)
+	if expenseDate.IsZero() {
+		expenseDate, _ = time.Parse(time.RFC3339, req.ExpenseDate)
 	}
 
 	query := `
@@ -288,9 +335,9 @@ func (h *Handler) UpdateExpense(c *fiber.Ctx) error {
 	`
 
 	var expense models.Expense
-	err := h.DB.QueryRow(
+	err := db.QueryRow(
 		context.Background(), query,
-		req.CategoryID, req.ExpenseDate, req.Description, req.Amount,
+		req.CategoryID, expenseDate, req.Description, req.Amount,
 		req.VendorName, req.PaymentMethod, req.ReferenceNumber, req.Notes,
 		req.Status, req.IsRecurring, req.RecurringFrequency, id,
 	).Scan(
@@ -311,10 +358,14 @@ func (h *Handler) UpdateExpense(c *fiber.Ctx) error {
 
 // DeleteExpense deletes an expense
 func (h *Handler) DeleteExpense(c *fiber.Ctx) error {
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
 	id := c.Params("id")
 
 	query := `DELETE FROM expenses WHERE id = $1`
-	_, err := h.DB.Exec(context.Background(), query, id)
+	_, err := db.Exec(context.Background(), query, id)
 	if err != nil {
 		log.Printf("Error deleting expense: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to delete expense"})
@@ -325,10 +376,14 @@ func (h *Handler) DeleteExpense(c *fiber.Ctx) error {
 
 // ApproveExpense approves an expense
 func (h *Handler) ApproveExpense(c *fiber.Ctx) error {
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
 	id := c.Params("id")
-	userID := c.Locals("userId")
+	userID := c.Locals("user_id")
 	if userID == nil {
-		userID = int64(1) // Default for testing
+		userID = "00000000-0000-0000-0000-000000000000" // Default for testing
 	}
 
 	now := time.Now()
@@ -338,7 +393,7 @@ func (h *Handler) ApproveExpense(c *fiber.Ctx) error {
 		WHERE id = $3
 	`
 
-	_, err := h.DB.Exec(context.Background(), query, userID, now, id)
+	_, err := db.Exec(context.Background(), query, userID, now, id)
 	if err != nil {
 		log.Printf("Error approving expense: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to approve expense"})
@@ -349,10 +404,14 @@ func (h *Handler) ApproveExpense(c *fiber.Ctx) error {
 
 // RejectExpense rejects an expense
 func (h *Handler) RejectExpense(c *fiber.Ctx) error {
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
 	id := c.Params("id")
 
 	query := `UPDATE expenses SET status = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = $1`
-	_, err := h.DB.Exec(context.Background(), query, id)
+	_, err := db.Exec(context.Background(), query, id)
 	if err != nil {
 		log.Printf("Error rejecting expense: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to reject expense"})

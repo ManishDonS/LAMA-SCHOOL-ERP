@@ -2,7 +2,9 @@ import React, { useEffect, useState, useRef } from 'react'
 import NepaliDate from 'nepali-date-converter'
 import { useAuthStore } from '../store/authStore'
 import { NepaliDatePicker as NDP } from 'nepali-datepicker-reactjs'
+import DatePicker from 'react-datepicker'
 import 'nepali-datepicker-reactjs/dist/index.css'
+import 'react-datepicker/dist/react-datepicker.css'
 
 interface NepaliDatePickerProps {
   value: string // AD date in YYYY-MM-DD
@@ -74,10 +76,40 @@ const NepaliDatePicker: React.FC<NepaliDatePickerProps> = ({
     }
   }
 
-  const handleADChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const adDateString = e.target.value
-    onChange(adDateString)
+  const handleADChange = (date: Date | null) => {
+    if (date) {
+      const adDateString = date.toISOString().split('T')[0]
+      onChange(adDateString)
+    }
   }
+
+  // Format date for display
+  const getFormattedDate = () => {
+    if (!value) return null
+
+    try {
+      const adDate = new Date(value)
+
+      if (calendarType === 'BS' && bsDate) {
+        // Display BS date in Nepali format
+        const [year, month, day] = bsDate.split('-')
+        const bsMonths = ['बैशाख', 'जेठ', 'असार', 'साउन', 'भदौ', 'असोज', 'कार्तिक', 'मंसिर', 'पुष', 'माघ', 'फागुन', 'चैत']
+        const monthName = bsMonths[parseInt(month) - 1]
+        return `${day} ${monthName} ${year}`
+      } else {
+        // Display AD date in English format
+        const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' }
+        return adDate.toLocaleDateString('en-US', options)
+      }
+    } catch (e) {
+      return null
+    }
+  }
+
+  const formattedDate = getFormattedDate()
+
+  // Convert string date to Date object for react-datepicker
+  const selectedDate = value ? new Date(value) : null
 
   return (
     <div className={className}>
@@ -100,14 +132,21 @@ const NepaliDatePicker: React.FC<NepaliDatePickerProps> = ({
               />
             </div>
           ) : (
-            <input
-              type="date"
-              value={value}
-              onChange={handleADChange}
-              disabled={disabled}
-              className={`w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''
-                }`}
-            />
+            <div className="ad-calendar-wrapper">
+              <DatePicker
+                selected={selectedDate}
+                onChange={handleADChange}
+                dateFormat="yyyy-MM-dd"
+                disabled={disabled}
+                className={`w-full px-4 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''
+                  }`}
+                calendarClassName="ad-calendar-popup"
+                showYearDropdown
+                showMonthDropdown
+                dropdownMode="select"
+                placeholderText="Select date"
+              />
+            </div>
           )}
 
           {/* Integrated Toggle Badge */}
@@ -122,6 +161,19 @@ const NepaliDatePicker: React.FC<NepaliDatePickerProps> = ({
             </button>
           )}
         </div>
+
+        {/* Display formatted date below input */}
+        {formattedDate && (
+          <div className="mt-1 px-2 py-1 text-xs text-gray-600 bg-blue-50 rounded border border-blue-100">
+            <span className="font-medium">Selected: </span>
+            <span className="font-semibold text-blue-700">{formattedDate}</span>
+            {calendarType === 'BS' && value && (
+              <span className="ml-2 text-gray-500">
+                (AD: {new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })})
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <style jsx global>{`
@@ -152,12 +204,113 @@ const NepaliDatePicker: React.FC<NepaliDatePickerProps> = ({
           position: relative;
           z-index: 1;
         }
+
+        /* AD Calendar Styles */
+        .ad-calendar-wrapper {
+          position: relative;
+          z-index: 10;
+        }
+
+        .ad-calendar-wrapper .react-datepicker-wrapper {
+          width: 100%;
+        }
+
+        .ad-calendar-wrapper .react-datepicker__input-container {
+          width: 100%;
+        }
+
+        .ad-calendar-popup {
+          font-family: inherit;
+          border: 1px solid #e5e7eb;
+          border-radius: 12px;
+          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+          z-index: 9999 !important;
+        }
+
+        .react-datepicker-popper {
+          z-index: 9999 !important;
+        }
+
+        .react-datepicker__header {
+          background-color: #3b82f6;
+          border-bottom: none;
+          border-radius: 12px 12px 0 0;
+          padding: 12px 0;
+        }
+
+        .react-datepicker__current-month {
+          color: white;
+          font-weight: 600;
+          font-size: 14px;
+        }
+
+        .react-datepicker__day-name {
+          color: white;
+          font-weight: 500;
+          width: 2rem;
+          line-height: 2rem;
+          margin: 0.2rem;
+        }
+
+        .react-datepicker__day {
+          width: 2rem;
+          line-height: 2rem;
+          margin: 0.2rem;
+          border-radius: 8px;
+          transition: all 0.2s;
+        }
+
+        .react-datepicker__day:hover {
+          background-color: #dbeafe;
+          border-radius: 8px;
+        }
+
+        .react-datepicker__day--selected {
+          background-color: #3b82f6;
+          color: white;
+          font-weight: 600;
+        }
+
+        .react-datepicker__day--keyboard-selected {
+          background-color: #93c5fd;
+        }
+
+        .react-datepicker__day--today {
+          font-weight: 600;
+          color: #3b82f6;
+          background-color: #eff6ff;
+        }
+
+        .react-datepicker__month-dropdown,
+        .react-datepicker__year-dropdown {
+          background-color: white;
+          border: 1px solid #e5e7eb;
+          border-radius: 8px;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .react-datepicker__month-option:hover,
+        .react-datepicker__year-option:hover {
+          background-color: #dbeafe;
+        }
+
+        .react-datepicker__navigation {
+          top: 14px;
+        }
+
+        .react-datepicker__navigation-icon::before {
+          border-color: white;
+        }
         
         /* Responsive adjustments for smaller screens */
         @media (max-width: 640px) {
           .nepali-calendar-wrapper .calendar-container {
             max-width: 280px !important;
             max-height: 350px !important;
+          }
+
+          .ad-calendar-popup {
+            font-size: 14px;
           }
         }
       `}</style>
@@ -166,4 +319,3 @@ const NepaliDatePicker: React.FC<NepaliDatePickerProps> = ({
 }
 
 export default NepaliDatePicker
-

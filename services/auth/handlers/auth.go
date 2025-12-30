@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -14,6 +15,7 @@ import (
 	"school-erp/auth/database"
 	"school-erp/auth/messaging"
 	"school-erp/auth/middleware"
+	"school-erp/auth/pkg/casbin"
 	"school-erp/auth/pkg/logger"
 	"school-erp/auth/pkg/monitoring"
 	"school-erp/auth/utils"
@@ -123,6 +125,21 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 			if errRoleAssign != nil {
 				logger.ErrorLog("handlers", errRoleAssign, "Failed to assign role to user")
 				// Non-fatal, but user won't have permissions via RBAC until fixed/migrated
+			} else {
+				// Successfully assigned in DB, now sync to Casbin
+				if casbin.Enforcer != nil {
+					// Add user-role grouping policy: g(sub, role, dom)
+					_, err := casbin.Enforcer.AddNamedGroupingPolicy("g", userID, req.Role, req.SchoolID)
+					if err != nil {
+						logger.ErrorLog("handlers", err, "Failed to add Casbin grouping policy")
+					}
+					// If super_admin, also add to system domain
+					if req.Role == "super_admin" {
+						casbin.Enforcer.AddNamedGroupingPolicy("g", userID, req.Role, "system")
+					}
+					// Auto-save is likely enabled, but we can explicitly save if needed or just rely on LoadPolicy on restart
+					casbin.Enforcer.SavePolicy()
+				}
 			}
 		} else {
 			logger.ErrorLog("handlers", errRole, "Failed to find role for assignment: "+req.Role)
@@ -132,8 +149,10 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	if err != nil {
 		logger.ErrorLog("handlers", err, "Failed to register user to database")
 		if err.Error() == "duplicate key value violates unique constraint \"users_school_id_email_key\"" {
-			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
-				"error": "Email already registered",
+			// To prevent user enumeration, we return a success message even if the user exists.
+			// In a full production system, we would then trigger a "you tried to register" email.
+			return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+				"message": "User registration successful. If this email is not already registered, you will receive a confirmation.",
 			})
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -206,7 +225,7 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	monitoring.GetMetrics().RecordRegistration()
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"message": "User registered successfully",
+		"message": "User registration successful. If this email is not already registered, you will receive a confirmation.",
 		"data": fiber.Map{
 			"user_id": userID,
 			"email":   req.Email,
@@ -249,12 +268,14 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 
 	err := tenantDB.QueryRow(
 		c.Context(),
-		`SELECT id, COALESCE(school_id::text, ''), email, password_hash, first_name, last_name, role, status
+		`SELECT id, COALESCE(school_id::text, ''), email, password_hash, first_name, last_name, role, status, 
+		        failed_login_attempts, locked_until
 		 FROM users WHERE email = $1`,
 		req.Email,
 	).Scan(
 		&user.ID, &user.SchoolID, &user.Email, &user.PasswordHash,
 		&user.FirstName, &user.LastName, &user.Role, &user.Status,
+		&user.FailedLoginAttempts, &user.LockedUntil,
 	)
 
 	if err != nil {
@@ -268,6 +289,13 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		})
 	}
 
+	// Check lockout
+	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": fmt.Sprintf("Account is locked due to multiple failed attempts. Please try again after %v", user.LockedUntil.Format("15:04:05")),
+		})
+	}
+
 	// Check status
 	if user.Status != "active" {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
@@ -277,13 +305,37 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 
 	// Verify password
 	if err := utils.VerifyPassword(user.PasswordHash, req.Password); err != nil {
+		// Increment failed attempts
+		failedAttempts := user.FailedLoginAttempts + 1
+		var lockedUntil *time.Time
+
+		if failedAttempts >= 5 {
+			// Lock for 15 minutes
+			t := time.Now().Add(15 * time.Minute)
+			lockedUntil = &t
+		}
+
+		_, updateErr := tenantDB.Exec(c.Context(),
+			"UPDATE users SET failed_login_attempts = $1, locked_until = $2 WHERE id = $3",
+			failedAttempts, lockedUntil, user.ID)
+		if updateErr != nil {
+			logger.ErrorLog("handlers", updateErr, "Failed to update login attempts")
+		}
+
 		monitoring.GetMetrics().RecordLoginAttempt(false)
 		logger.SecurityLog("failed_login", user.ID, c.IP(), map[string]interface{}{
-			"email": req.Email,
+			"email":    req.Email,
+			"attempts": failedAttempts,
 		})
+
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"error": "Invalid email or password",
 		})
+	}
+
+	// Reset failed attempts on success
+	if user.FailedLoginAttempts > 0 {
+		_, _ = tenantDB.Exec(c.Context(), "UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = $1", user.ID)
 	}
 
 	// Generate tokens
@@ -312,28 +364,12 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		Path:     "/api/v1/auth/refresh",
 	})
 
-	// Fetch permissions
-	var permissions []string
-	permRows, err := tenantDB.Query(c.Context(), `
-		SELECT DISTINCT p.slug
-		FROM permissions p
-		JOIN role_permissions rp ON p.id = rp.permission_id
-		JOIN roles r ON rp.role_id = r.id
-		LEFT JOIN user_roles ur ON r.id = ur.role_id
-		WHERE ur.user_id = $1 OR r.name = $2
-	`, user.ID, user.Role)
-
-	if err == nil {
-		defer permRows.Close()
-		for permRows.Next() {
-			var slug string
-			if err := permRows.Scan(&slug); err == nil {
-				permissions = append(permissions, slug)
-			}
-		}
-	} else {
-		logger.ErrorLog("handlers", err, "Failed to fetch permissions")
+	// Fetch permissions using Casbin
+	domain := user.SchoolID
+	if domain == "" {
+		domain = "system"
 	}
+	permissions := casbin.GetUserPermissions(user.ID, domain)
 
 	// Log audit
 	if err := h.logAudit(c.Context(), user.ID, "LOGIN", "user", c.IP(), tenantDB); err != nil {
@@ -397,12 +433,13 @@ func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
 	claims, err := utils.VerifyRefreshToken(h.cfg, refreshToken)
 	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Invalid refresh token",
+			"error": "Session expired or invalid. Please login again.",
 		})
 	}
 
 	// Get user from database to get fresh data
 	var user database.User
+	var revokedAt *time.Time
 	tenantDB := middleware.GetTenantDB(c)
 	if tenantDB == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -412,15 +449,40 @@ func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
 
 	err = tenantDB.QueryRow(
 		c.Context(),
-		`SELECT id, COALESCE(school_id::text, ''), email, first_name, last_name, role, status FROM users WHERE id = $1`,
-		claims.Subject,
+		`SELECT u.id, COALESCE(u.school_id::text, ''), u.email, u.first_name, u.last_name, u.role, u.status,
+		        rt.revoked_at
+		 FROM users u
+		 LEFT JOIN refresh_tokens rt ON u.id = rt.user_id AND rt.token = $2
+		 WHERE u.id = $1`,
+		claims.Subject, refreshToken,
 	).Scan(
 		&user.ID, &user.SchoolID, &user.Email, &user.FirstName, &user.LastName, &user.Role, &user.Status,
+		&revokedAt,
 	)
 
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "User session no longer valid",
+			})
+		}
+		logger.ErrorLog("handlers", err, "Database error during token refresh")
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Internal server error",
+		})
+	}
+
+	// Check if token was revoked
+	if revokedAt != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "User not found",
+			"error": "This session has been revoked. Please login again.",
+		})
+	}
+
+	// Check status
+	if user.Status != "active" {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "User account is no longer active",
 		})
 	}
 
@@ -501,26 +563,12 @@ func (h *AuthHandler) GetMe(c *fiber.Ctx) error {
 		})
 	}
 
-	// Fetch permissions
-	var permissions []string
-	permRows, err := tenantDB.Query(c.Context(), `
-		SELECT DISTINCT p.slug
-		FROM permissions p
-		JOIN role_permissions rp ON p.id = rp.permission_id
-		JOIN roles r ON rp.role_id = r.id
-		LEFT JOIN user_roles ur ON r.id = ur.role_id
-		WHERE ur.user_id = $1 OR r.name = $2
-	`, user.ID, user.Role)
-
-	if err == nil {
-		defer permRows.Close()
-		for permRows.Next() {
-			var slug string
-			if err := permRows.Scan(&slug); err == nil {
-				permissions = append(permissions, slug)
-			}
-		}
+	// Fetch permissions using Casbin
+	domain := user.SchoolID
+	if domain == "" {
+		domain = "system"
 	}
+	permissions := casbin.GetUserPermissions(user.ID, domain)
 
 	return c.JSON(fiber.Map{
 		"message": "User retrieved successfully",

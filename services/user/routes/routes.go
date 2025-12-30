@@ -33,7 +33,7 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config, tm *tenan
 	usersProtected.Delete("/:id", h.DeleteUser)
 
 	// Teacher routes
-	teachers := api.Group("/teachers")
+	teachers := api.Group("/teachers", middleware.ModuleAccessMiddleware("teachers"))
 	teachers.Get("", h.GetTeachers)
 	teachers.Get("/:id", h.GetTeacher)
 	teachersProtected := teachers.Group("")
@@ -43,7 +43,7 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config, tm *tenan
 	teachersProtected.Delete("/:id", h.DeleteTeacher)
 
 	// Parent routes
-	parents := api.Group("/parents")
+	parents := api.Group("/parents", middleware.ModuleAccessMiddleware("parents"))
 	parents.Get("", h.GetParents)
 	parents.Get("/:id", h.GetParent)
 	parentsProtected := parents.Group("")
@@ -53,11 +53,21 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config, tm *tenan
 	parentsProtected.Delete("/:id", h.DeleteParent)
 
 	// Staff routes
-	staff := api.Group("/staff")
+	staff := api.Group("/staff", middleware.ModuleAccessMiddleware("staff"))
 	staff.Get("", h.GetStaff)
 	staff.Get("/:id", h.GetStaffMember)
 	staffProtected := staff.Group("")
 	staffProtected.Use(middleware.AuthMiddleware)
 	staffProtected.Post("", h.CreateStaff)
 	staffProtected.Put("/:id", h.UpdateStaff)
+	staffProtected.Delete("/:id", h.DeleteStaff)
+
+	// Department routes
+	departments := api.Group("/departments")
+	departments.Get("", h.GetDepartments)
+	departmentsProtected := departments.Group("")
+	departmentsProtected.Use(middleware.AuthMiddleware)
+	departmentsProtected.Post("", h.CreateDepartment)
+	departmentsProtected.Put("/:id", h.UpdateDepartment)
+	departmentsProtected.Delete("/:id", h.DeleteDepartment)
 }

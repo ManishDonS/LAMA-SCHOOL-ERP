@@ -280,6 +280,41 @@ func RunMigrations(db *pgxpool.Pool) error {
 			ON CONFLICT DO NOTHING;
 			`,
 		},
+		{
+			name: "alter_casbin_rule_add_id_default",
+			sql: `
+			DO $$
+			BEGIN
+				-- Check if casbin_rule table exists
+				IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'casbin_rule') THEN
+					-- Check if 'id' column exists in casbin_rule and if it doesn't have a default value
+					IF EXISTS (
+						SELECT 1
+						FROM information_schema.columns
+						WHERE table_name = 'casbin_rule'
+						AND column_name = 'id'
+						AND column_default IS NULL
+					) THEN
+						ALTER TABLE casbin_rule ALTER COLUMN id SET DEFAULT gen_random_uuid();
+						-- Also make sure it's NOT NULL, as it's a primary key candidate.
+						-- This might be redundant if it was already PRIMARY KEY, but safe to ensure.
+						ALTER TABLE casbin_rule ALTER COLUMN id SET NOT NULL;
+					END IF;
+					-- Also ensure the primary key is set correctly to id if it's not already
+					IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'casbin_rule'::regclass AND contype = 'p') THEN
+						ALTER TABLE casbin_rule ADD PRIMARY KEY (id);
+					END IF;
+				END IF;
+			END $$;
+			`,
+		},
+		{
+			name: "add_account_lockout_to_users",
+			sql: `
+			ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER DEFAULT 0;
+			ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP;
+			`,
+		},
 	}
 
 	for _, migration := range migrations {

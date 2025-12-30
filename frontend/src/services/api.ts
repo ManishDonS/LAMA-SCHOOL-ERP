@@ -3,9 +3,11 @@ import { AuthResponse, LoginRequest, RegisterRequest } from '../types'
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 export const SCHOOL_API_URL = process.env.NEXT_PUBLIC_SCHOOL_API_URL || 'http://localhost:3011'
+export const EXPENSE_API_URL = process.env.NEXT_PUBLIC_EXPENSE_API_URL || 'http://localhost:3010'
 
 const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -118,7 +120,7 @@ const createResponseInterceptor = (client: AxiosInstance) => {
       const originalRequest = error.config as any
 
       // Handle 401 Unauthorized
-      if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+      if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !originalRequest.skipAuthRefresh) {
         originalRequest._retry = true
 
         if (!isRefreshing) {
@@ -299,6 +301,21 @@ export const guardianAPI = {
   delete: (id: string) => userApiClient.delete(`/api/v1/parents/${id}`),
 }
 
+export const staffAPI = {
+  list: (params?: any) => userApiClient.get('/api/v1/staff', { params }),
+  get: (id: string) => userApiClient.get(`/api/v1/staff/${id}`),
+  create: (data: any) => userApiClient.post('/api/v1/staff', data),
+  update: (id: string, data: any) => userApiClient.put(`/api/v1/staff/${id}`, data),
+  delete: (id: string) => userApiClient.delete(`/api/v1/staff/${id}`),
+}
+
+export const departmentAPI = {
+  list: (params?: any) => userApiClient.get('/api/v1/departments', { params }),
+  create: (data: any) => userApiClient.post('/api/v1/departments', data),
+  update: (id: string, data: any) => userApiClient.put(`/api/v1/departments/${id}`, data),
+  delete: (id: string) => userApiClient.delete(`/api/v1/departments/${id}`),
+}
+
 // Separate API client for attendance service
 export const ATTENDANCE_API_URL = process.env.NEXT_PUBLIC_ATTENDANCE_API_URL || 'http://localhost:3004'
 
@@ -403,6 +420,7 @@ export const userAPI = {
 
 export const schoolAPI = {
   list: (params?: any) => schoolApiClient.get('/api/v1/schools', { params }),
+  listPublic: () => schoolApiClient.get('/api/v1/schools/public'),
   get: (id: string) => schoolApiClient.get(`/api/v1/schools/${id}`),
   create: (data: any) => schoolApiClient.post('/api/v1/schools', data),
   update: (id: string, data: any) => schoolApiClient.put(`/api/v1/schools/${id}`, data),
@@ -484,17 +502,148 @@ export const transportAPI = {
   deleteAssignment: (id: string) => transportApiClient.delete(`/api/v1/transport/assignments/${id}`),
 
   // Traccar
-  getTraccarToken: () => transportApiClient.get('/api/v1/transport/traccar/token'),
+  getTraccarToken: () => transportApiClient.get('/api/v1/transport/traccar/token', { skipAuthRefresh: true } as any),
   proxyTraccar: (method: string, path: string, data?: any) =>
     transportApiClient.request({
       method,
       url: `/api/v1/transport/traccar${path}`,
       data,
-    }),
+      skipAuthRefresh: true,
+    } as any),
 
   // Settings
   getSettings: () => transportApiClient.get('/api/v1/transport/settings'),
   updateSettings: (data: any) => transportApiClient.put('/api/v1/transport/settings', data),
+
+  // Maintenance
+  listMaintenance: (busId?: string) => transportApiClient.get('/api/v1/transport/maintenance', { params: { busId } }),
+  createMaintenance: (data: any) => transportApiClient.post('/api/v1/transport/maintenance', data),
+  deleteMaintenance: (id: string) => transportApiClient.delete(`/api/v1/transport/maintenance/${id}`),
+
+  // Fuel Logs
+  listFuelLogs: (busId?: string) => transportApiClient.get('/api/v1/transport/fuel-logs', { params: { busId } }),
+  createFuelLog: (data: any) => transportApiClient.post('/api/v1/transport/fuel-logs', data),
+  deleteFuelLog: (id: string) => transportApiClient.delete(`/api/v1/transport/fuel-logs/${id}`),
+}
+
+// Separate API client for expense service
+const expenseApiClient: AxiosInstance = axios.create({
+  baseURL: EXPENSE_API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Add request interceptor to expense API client
+expenseApiClient.interceptors.request.use(
+  (config) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    if (typeof window !== 'undefined') {
+      const selectedSchoolStr = localStorage.getItem('selected_school')
+      if (selectedSchoolStr) {
+        try {
+          const selectedSchool = JSON.parse(selectedSchoolStr)
+          if (selectedSchool && selectedSchool.code) {
+            config.headers['X-Tenant-Code'] = selectedSchool.code
+          }
+        } catch (e) {
+          console.error('Failed to parse selected_school from localStorage', e)
+        }
+      }
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
+export const expenseAPI = {
+  // Categories
+  listCategories: () => expenseApiClient.get('/api/v1/categories'),
+  createCategory: (data: any) => expenseApiClient.post('/api/v1/categories', data),
+  updateCategory: (id: string, data: any) => expenseApiClient.put(`/api/v1/categories/${id}`, data),
+  deleteCategory: (id: string) => expenseApiClient.delete(`/api/v1/categories/${id}`),
+
+  // Expenses
+  list: (params?: any) => expenseApiClient.get('/api/v1/expenses', { params }),
+  get: (id: string) => expenseApiClient.get(`/api/v1/expenses/${id}`),
+  create: (data: any) => expenseApiClient.post('/api/v1/expenses', data),
+  update: (id: string, data: any) => expenseApiClient.put(`/api/v1/expenses/${id}`, data),
+  delete: (id: string) => expenseApiClient.delete(`/api/v1/expenses/${id}`),
+  approve: (id: string) => expenseApiClient.post(`/api/v1/expenses/${id}/approve`),
+  reject: (id: string) => expenseApiClient.post(`/api/v1/expenses/${id}/reject`),
+
+  // Receipts
+  listReceipts: (expenseId: string) => expenseApiClient.get(`/api/v1/expenses/${expenseId}/receipts`),
+  uploadReceipt: (expenseId: string, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return expenseApiClient.post(`/api/v1/expenses/${expenseId}/receipts`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  deleteReceipt: (expenseId: string, receiptId: string) =>
+    expenseApiClient.delete(`/api/v1/expenses/${expenseId}/receipts/${receiptId}`),
+
+  // Analytics & Budget
+  getAnalytics: (params?: any) => expenseApiClient.get('/api/v1/analytics', { params }),
+  getBudgetStatus: (params?: any) => expenseApiClient.get('/api/v1/budget/status', { params }),
+}
+
+// Separate API client for library service
+export const LIBRARY_API_URL = process.env.NEXT_PUBLIC_LIBRARY_API_URL || 'http://localhost:3015'
+
+const libraryApiClient: AxiosInstance = axios.create({
+  baseURL: LIBRARY_API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Add request interceptor to library API client to include token and tenant code
+libraryApiClient.interceptors.request.use(
+  (config) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    if (typeof window !== 'undefined') {
+      const selectedSchoolStr = localStorage.getItem('selected_school')
+      if (selectedSchoolStr) {
+        try {
+          const selectedSchool = JSON.parse(selectedSchoolStr)
+          if (selectedSchool && selectedSchool.code) {
+            config.headers['X-Tenant-Code'] = selectedSchool.code
+          }
+        } catch (e) {
+          console.error('Failed to parse selected_school from localStorage', e)
+        }
+      }
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
+export const libraryAPI = {
+  // Books
+  listBooks: (params?: any) => libraryApiClient.get('/api/v1/library/books', { params }),
+  getBook: (id: string) => libraryApiClient.get(`/api/v1/library/books/${id}`),
+  createBook: (data: any) => libraryApiClient.post('/api/v1/library/books', data),
+  updateBook: (id: string, data: any) => libraryApiClient.put(`/api/v1/library/books/${id}`, data),
+  deleteBook: (id: string) => libraryApiClient.delete(`/api/v1/library/books/${id}`),
+
+  // Issues
+  listIssues: (params?: any) => libraryApiClient.get('/api/v1/library/issues', { params }),
+  issueBook: (data: any) => libraryApiClient.post('/api/v1/library/issues', data),
+  returnBook: (id: string) => libraryApiClient.put(`/api/v1/library/issues/${id}/return`),
+
+  // Bookings
+  listBookings: () => libraryApiClient.get('/api/v1/library/bookings'),
+  createBooking: (data: any) => libraryApiClient.post('/api/v1/library/bookings', data),
+  updateBookingStatus: (id: string, status: string) => libraryApiClient.put(`/api/v1/library/bookings/${id}/status`, { status }),
 }
 
 // Apply refresh interceptors to other clients NOW that they are defined
@@ -505,10 +654,15 @@ createResponseInterceptor(studentApiClient)
 createResponseInterceptor(userApiClient)
 createResponseInterceptor(transportApiClient)
 createResponseInterceptor(classApiClient)
+createResponseInterceptor(expenseApiClient)
+createResponseInterceptor(libraryApiClient)
+createResponseInterceptor(attendanceApiClient)
 
 // Set timeout for other clients
 studentApiClient.defaults.timeout = 30000
 userApiClient.defaults.timeout = 30000
 transportApiClient.defaults.timeout = 30000
+libraryApiClient.defaults.timeout = 30000
+expenseApiClient.defaults.timeout = 30000
 
 export default api

@@ -16,6 +16,7 @@ import (
 	"github.com/school-erp/transport-service/internal/handlers"
 	"github.com/school-erp/transport-service/internal/repository"
 	"github.com/school-erp/transport-service/internal/service"
+	transport_database "github.com/school-erp/transport-service/database"
 )
 
 func main() {
@@ -53,6 +54,11 @@ func main() {
 		log.Fatalf("Unable to ping database: %v\n", err)
 	}
 	log.Println("Connected to database")
+
+	// Run migrations
+	if err := transport_database.RunMigrations(pool); err != nil {
+		log.Fatalf("Error running migrations: %v", err)
+	}
 
 	// Initialize layers
 	repo := repository.NewPostgresRepository(pool)
@@ -95,6 +101,17 @@ func main() {
 	// Settings Routes
 	api.Get("/settings", handler.GetSettings)
 	api.Put("/settings", handler.UpdateSettings)
+	api.Get("/validate-traccar", handler.ValidateTraccarCredentials)
+
+	// Maintenance Routes
+	api.Post("/maintenance", handler.CreateMaintenance)
+	api.Get("/maintenance", handler.ListMaintenance)
+	api.Delete("/maintenance/:id", handler.DeleteMaintenance)
+
+	// Fuel Log Routes
+	api.Post("/fuel-logs", handler.CreateFuelLog)
+	api.Get("/fuel-logs", handler.ListFuelLogs)
+	api.Delete("/fuel-logs/:id", handler.DeleteFuelLog)
 
 	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {

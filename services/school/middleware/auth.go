@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"encoding/json"
+	"log"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -152,15 +153,59 @@ func PermissionMiddleware(requiredPermission string) fiber.Handler {
 	}
 }
 
-// ModuleMiddleware checks if the module is enabled for the school
-// This assumes 'active_modules' is in the School struct in MainDB,
-// OR we can check Tenant DB if we store it there.
-// Currently MainDB `schools` table has `active_modules`.
-// However, the `School` object is not easily available in Context unless we put it there in TenantResolver.
-// In `TenantResolver`, we fetched `dbUser`, `dbPassword` etc but didn't store the full School object.
-// BUT, we can query `active_modules` from `schools` table using `TenantCode`.
-// Optimized: Store `active_modules` in Locals in TenantResolver?
-// For now, let's query MainDB or skip if too complex for this step.
-// The user request was about RBAC (Roles/Permissions), not just Module Flagging,
-// but Module Flagging is part of it.
-// Let's stick to RBAC PermissionMiddleware first.
+// SuperAdminMiddleware restricts access to users with 'super_admin' role
+func SuperAdminMiddleware() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		role, ok := c.Locals("role").(string)
+		if !ok || role != "super_admin" {
+			params := c.AllParams()
+			log.Printf("Authorization denied: Role=%v, Path=%s, Params=%v", role, c.Path(), params)
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "Access denied. Super Admin privileges required.",
+			})
+		}
+		return c.Next()
+	}
+}
+
+// ModuleAccessMiddleware prevents access to a module if not active for the school
+func ModuleAccessMiddleware(moduleKey string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		// 1. Super admin bypasses module activation checks (they can see everything)
+		role, _ := c.Locals("role").(string)
+		if role == "super_admin" {
+			return c.Next()
+		}
+
+		// 2. Get active modules (set by TenantResolver)
+		activeModulesJSON, ok := c.Locals("active_modules_json").([]byte)
+		if !ok || len(activeModulesJSON) == 0 {
+			// If no active modules list exists, we don't block by default
+			// (or we could choose to block everything if we want strict security)
+			return c.Next()
+		}
+
+		var activeModules []string
+		if err := json.Unmarshal(activeModulesJSON, &activeModules); err != nil {
+			return c.Next()
+		}
+
+		isActive := false
+		for _, m := range activeModules {
+			if m == moduleKey {
+				isActive = true
+				break
+			}
+		}
+
+		if !isActive {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error":   "Module not active for this school",
+				"module":  moduleKey,
+				"message": "Please activate this module in the Apps dashboard or contact support.",
+			})
+		}
+
+		return c.Next()
+	}
+}

@@ -6,7 +6,7 @@ import (
 
 type ExpenseCategory struct {
 	ID               string    `json:"id"`
-	SchoolID         int64     `json:"schoolId"`
+	SchoolID         string    `json:"schoolId"`
 	Name             string    `json:"name"`
 	Description      *string   `json:"description"`
 	ParentCategoryID *string   `json:"parentCategoryId"`
@@ -21,10 +21,10 @@ type ExpenseCategory struct {
 
 type Expense struct {
 	ID                 string     `json:"id"`
-	SchoolID           int64      `json:"schoolId"`
+	SchoolID           string     `json:"schoolId"`
 	CategoryID         *string    `json:"categoryId"`
-	DepartmentID       *int64     `json:"departmentId"`
-	ExpenseDate        string     `json:"expenseDate"`
+	DepartmentID       *string    `json:"departmentId"`
+	ExpenseDate        time.Time  `json:"expenseDate"`
 	Description        string     `json:"description"`
 	Amount             float64    `json:"amount"`
 	Currency           string     `json:"currency"`
@@ -35,8 +35,8 @@ type Expense struct {
 	Status             string     `json:"status"`
 	IsRecurring        bool       `json:"isRecurring"`
 	RecurringFrequency *string    `json:"recurringFrequency"`
-	CreatedBy          int64      `json:"createdBy"`
-	ApprovedBy         *int64     `json:"approvedBy"`
+	CreatedBy          string     `json:"createdBy"`
+	ApprovedBy         *string    `json:"approvedBy"`
 	ApprovedAt         *time.Time `json:"approvedAt"`
 	PaidAt             *time.Time `json:"paidAt"`
 	CreatedAt          time.Time  `json:"createdAt"`
@@ -55,14 +55,14 @@ type ExpenseReceipt struct {
 	FilePath   string    `json:"filePath"`
 	FileType   string    `json:"fileType"`
 	FileSize   int       `json:"fileSize"`
-	UploadedBy int64     `json:"uploadedBy"`
+	UploadedBy string    `json:"uploadedBy"`
 	UploadedAt time.Time `json:"uploadedAt"`
 }
 
 type ExpenseApproval struct {
 	ID            string     `json:"id"`
 	ExpenseID     string     `json:"expenseId"`
-	ApproverID    int64      `json:"approverId"`
+	ApproverID    string     `json:"approverId"`
 	ApprovalLevel int        `json:"approvalLevel"`
 	Status        string     `json:"status"`
 	Comments      *string    `json:"comments"`
@@ -72,9 +72,9 @@ type ExpenseApproval struct {
 
 type BudgetAllocation struct {
 	ID              string    `json:"id"`
-	SchoolID        int64     `json:"schoolId"`
+	SchoolID        string    `json:"schoolId"`
 	CategoryID      string    `json:"categoryId"`
-	DepartmentID    *int64    `json:"departmentId"`
+	DepartmentID    *string   `json:"departmentId"`
 	FiscalYear      int       `json:"fiscalYear"`
 	Month           int       `json:"month"`
 	AllocatedAmount float64   `json:"allocatedAmount"`
@@ -86,7 +86,7 @@ type BudgetAllocation struct {
 type ExpenseComment struct {
 	ID        string    `json:"id"`
 	ExpenseID string    `json:"expenseId"`
-	UserID    int64     `json:"userId"`
+	UserID    string    `json:"userId"`
 	Comment   string    `json:"comment"`
 	CreatedAt time.Time `json:"createdAt"`
 }

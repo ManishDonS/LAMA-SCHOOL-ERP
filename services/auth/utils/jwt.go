@@ -32,7 +32,7 @@ func GenerateTokens(cfg *config.Config, userID string, email, role string, schoo
 	}
 
 	// Generate Refresh Token
-	refreshToken, err := generateRefreshToken(cfg, userID)
+	refreshToken, err := generateRefreshToken(cfg, userID, schoolID)
 	if err != nil {
 		return nil, err
 	}
@@ -62,12 +62,16 @@ func generateAccessToken(cfg *config.Config, userID string, email, role string, 
 	return token.SignedString([]byte(cfg.JWTSecret))
 }
 
-func generateRefreshToken(cfg *config.Config, userID string) (string, error) {
-	claims := jwt.RegisteredClaims{
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(cfg.RefreshTokenExpiry)),
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		Subject:   userID,
-		Issuer:    "school-erp-auth",
+func generateRefreshToken(cfg *config.Config, userID string, schoolID string) (string, error) {
+	claims := JWTClaims{
+		UserID:   userID,
+		SchoolID: schoolID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(cfg.RefreshTokenExpiry)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Subject:   userID,
+			Issuer:    "school-erp-auth",
+		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -94,8 +98,8 @@ func VerifyToken(cfg *config.Config, tokenString string) (*JWTClaims, error) {
 	return claims, nil
 }
 
-func VerifyRefreshToken(cfg *config.Config, tokenString string) (*jwt.RegisteredClaims, error) {
-	claims := &jwt.RegisteredClaims{}
+func VerifyRefreshToken(cfg *config.Config, tokenString string) (*JWTClaims, error) {
+	claims := &JWTClaims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])

@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"school-erp/class/database"
+	"school-erp/class/middleware"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5"
@@ -21,6 +23,11 @@ func NewAcademicYearHandler(db *pgxpool.Pool) *AcademicYearHandler {
 
 // CreateAcademicYear creates a new academic year
 func (h *AcademicYearHandler) CreateAcademicYear(c *fiber.Ctx) error {
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
+
 	var req struct {
 		Name        string `json:"name"`
 		StartDate   string `json:"start_date"`
@@ -33,7 +40,7 @@ func (h *AcademicYearHandler) CreateAcademicYear(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	schoolID := c.Get("X-Tenant-ID")
+	schoolID := middleware.GetTenantCode(c)
 	if schoolID == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "School ID is required"})
 	}
@@ -42,7 +49,7 @@ func (h *AcademicYearHandler) CreateAcademicYear(c *fiber.Ctx) error {
 
 	// If setting as current, unset others
 	if req.IsCurrent {
-		_, err := h.DB.Exec(context.Background(), `
+		_, err := db.Exec(context.Background(), `
 			UPDATE academic_years SET is_current = false WHERE school_id = $1
 		`, schoolID)
 		if err != nil {
@@ -57,7 +64,7 @@ func (h *AcademicYearHandler) CreateAcademicYear(c *fiber.Ctx) error {
 	`
 
 	var ay database.AcademicYear
-	err := h.DB.QueryRow(context.Background(), query,
+	err := db.QueryRow(context.Background(), query,
 		id, schoolID, req.Name, req.StartDate, req.EndDate, req.Description, req.IsCurrent,
 	).Scan(&ay.ID, &ay.CreatedAt, &ay.UpdatedAt)
 
@@ -78,18 +85,24 @@ func (h *AcademicYearHandler) CreateAcademicYear(c *fiber.Ctx) error {
 
 // GetAcademicYears returns all academic years for a school
 func (h *AcademicYearHandler) GetAcademicYears(c *fiber.Ctx) error {
-	schoolID := c.Get("X-Tenant-ID")
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
+
+	schoolID := middleware.GetTenantCode(c)
 	if schoolID == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "School ID is required"})
 	}
 
-	rows, err := h.DB.Query(context.Background(), `
-		SELECT id, name, start_date, end_date, status, description, is_current, created_at 
+	rows, err := db.Query(context.Background(), `
+		SELECT id, school_id, name, start_date::text, end_date::text, status, description, is_current, created_at, updated_at 
 		FROM academic_years 
 		WHERE school_id = $1 
 		ORDER BY created_at DESC
 	`, schoolID)
 	if err != nil {
+		log.Printf("Error fetching academic years: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch academic years"})
 	}
 	defer rows.Close()
@@ -97,19 +110,25 @@ func (h *AcademicYearHandler) GetAcademicYears(c *fiber.Ctx) error {
 	years := []database.AcademicYear{}
 	for rows.Next() {
 		var ay database.AcademicYear
-		if err := rows.Scan(&ay.ID, &ay.Name, &ay.StartDate, &ay.EndDate, &ay.Status, &ay.Description, &ay.IsCurrent, &ay.CreatedAt); err != nil {
+		if err := rows.Scan(&ay.ID, &ay.SchoolID, &ay.Name, &ay.StartDate, &ay.EndDate, &ay.Status, &ay.Description, &ay.IsCurrent, &ay.CreatedAt, &ay.UpdatedAt); err != nil {
+			log.Printf("Error scanning academic year row: %v", err)
 			continue
 		}
 		years = append(years, ay)
 	}
 
-	return c.JSON(years)
+	return c.JSON(fiber.Map{"data": years})
 }
 
 // UpdateAcademicYear updates an existing academic year
 func (h *AcademicYearHandler) UpdateAcademicYear(c *fiber.Ctx) error {
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
+
 	id := c.Params("id")
-	schoolID := c.Get("X-Tenant-ID")
+	schoolID := middleware.GetTenantCode(c)
 
 	var req struct {
 		Name        string `json:"name"`
@@ -126,7 +145,7 @@ func (h *AcademicYearHandler) UpdateAcademicYear(c *fiber.Ctx) error {
 
 	// If setting as current, unset others
 	if req.IsCurrent {
-		_, err := h.DB.Exec(context.Background(), `
+		_, err := db.Exec(context.Background(), `
 			UPDATE academic_years SET is_current = false WHERE school_id = $1 AND id != $2
 		`, schoolID, id)
 		if err != nil {
@@ -142,7 +161,7 @@ func (h *AcademicYearHandler) UpdateAcademicYear(c *fiber.Ctx) error {
 	`
 
 	var updatedID string
-	err := h.DB.QueryRow(context.Background(), query,
+	err := db.QueryRow(context.Background(), query,
 		req.Name, req.StartDate, req.EndDate, req.Status, req.Description, req.IsCurrent, id, schoolID,
 	).Scan(&updatedID)
 
@@ -158,13 +177,18 @@ func (h *AcademicYearHandler) UpdateAcademicYear(c *fiber.Ctx) error {
 
 // DeleteAcademicYear deletes an academic year
 func (h *AcademicYearHandler) DeleteAcademicYear(c *fiber.Ctx) error {
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
+
 	id := c.Params("id")
-	schoolID := c.Get("X-Tenant-ID")
+	schoolID := middleware.GetTenantCode(c)
 
 	query := `DELETE FROM academic_years WHERE id = $1 AND school_id = $2 RETURNING id`
 
 	var deletedID string
-	err := h.DB.QueryRow(context.Background(), query, id, schoolID).Scan(&deletedID)
+	err := db.QueryRow(context.Background(), query, id, schoolID).Scan(&deletedID)
 
 	if err == pgx.ErrNoRows {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Academic year not found"})

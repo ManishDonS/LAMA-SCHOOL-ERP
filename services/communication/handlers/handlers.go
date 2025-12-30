@@ -133,8 +133,8 @@ func SendMessage(c *fiber.Ctx) error {
 // GetUsers returns all users for the school
 func GetUsers(c *fiber.Ctx) error {
 	var users []models.User
-	// Default SchoolID 1 for now
-	if err := database.DB.Where("school_id = ?", 1).Find(&users).Error; err != nil {
+	// Default SchoolID for now
+	if err := database.DB.Where("school_id = ?", "00000000-0000-0000-0000-000000000000").Find(&users).Error; err != nil {
 		// Just log error and continue? Or return partial?
 		// Let's return error if users fail.
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})

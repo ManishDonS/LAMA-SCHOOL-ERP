@@ -9,17 +9,23 @@ import (
 	"strings"
 	"time"
 
+	"school-erp/expense/middleware"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 )
 
 // UploadReceipt handles file upload for expense receipts
 func (h *Handler) UploadReceipt(c *fiber.Ctx) error {
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
 	expenseID := c.Params("id")
 
 	// Verify expense exists
 	var exists bool
-	err := h.DB.QueryRow(context.Background(),
+	err := db.QueryRow(context.Background(),
 		"SELECT EXISTS(SELECT 1 FROM expenses WHERE id = $1)", expenseID).Scan(&exists)
 	if err != nil || !exists {
 		return c.Status(404).JSON(fiber.Map{"error": "Expense not found"})
@@ -72,9 +78,9 @@ func (h *Handler) UploadReceipt(c *fiber.Ctx) error {
 	}
 
 	// Get user ID (from auth token in production)
-	userID := c.Locals("userId")
+	userID := c.Locals("user_id")
 	if userID == nil {
-		userID = int64(1)
+		userID = "00000000-0000-0000-0000-000000000000"
 	}
 
 	// Save receipt record to database
@@ -92,11 +98,11 @@ func (h *Handler) UploadReceipt(c *fiber.Ctx) error {
 		FilePath   string    `json:"filePath"`
 		FileType   string    `json:"fileType"`
 		FileSize   int64     `json:"fileSize"`
-		UploadedBy int64     `json:"uploadedBy"`
+		UploadedBy string    `json:"uploadedBy"`
 		UploadedAt time.Time `json:"uploadedAt"`
 	}
 
-	err = h.DB.QueryRow(
+	err = db.QueryRow(
 		context.Background(), query,
 		expenseID, file.Filename, filePath, ext, file.Size, userID,
 	).Scan(
@@ -116,6 +122,10 @@ func (h *Handler) UploadReceipt(c *fiber.Ctx) error {
 
 // GetReceipts retrieves all receipts for an expense
 func (h *Handler) GetReceipts(c *fiber.Ctx) error {
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
 	expenseID := c.Params("id")
 
 	query := `
@@ -125,7 +135,7 @@ func (h *Handler) GetReceipts(c *fiber.Ctx) error {
 		ORDER BY uploaded_at DESC
 	`
 
-	rows, err := h.DB.Query(context.Background(), query, expenseID)
+	rows, err := db.Query(context.Background(), query, expenseID)
 	if err != nil {
 		log.Printf("Error fetching receipts: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch receipts"})
@@ -141,7 +151,7 @@ func (h *Handler) GetReceipts(c *fiber.Ctx) error {
 			FilePath   string    `json:"filePath"`
 			FileType   string    `json:"fileType"`
 			FileSize   int64     `json:"fileSize"`
-			UploadedBy int64     `json:"uploadedBy"`
+			UploadedBy string    `json:"uploadedBy"`
 			UploadedAt time.Time `json:"uploadedAt"`
 		}
 
@@ -171,13 +181,17 @@ func (h *Handler) GetReceipts(c *fiber.Ctx) error {
 
 // DownloadReceipt serves a receipt file
 func (h *Handler) DownloadReceipt(c *fiber.Ctx) error {
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
 	expenseID := c.Params("id")
 	receiptID := c.Params("receiptId")
 
 	query := `SELECT file_name, file_path FROM expense_receipts WHERE id = $1 AND expense_id = $2`
 
 	var fileName, filePath string
-	err := h.DB.QueryRow(context.Background(), query, receiptID, expenseID).Scan(&fileName, &filePath)
+	err := db.QueryRow(context.Background(), query, receiptID, expenseID).Scan(&fileName, &filePath)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Receipt not found"})
 	}
@@ -193,19 +207,23 @@ func (h *Handler) DownloadReceipt(c *fiber.Ctx) error {
 
 // DeleteReceipt deletes a receipt file and record
 func (h *Handler) DeleteReceipt(c *fiber.Ctx) error {
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
 	expenseID := c.Params("id")
 	receiptID := c.Params("receiptId")
 
 	query := `SELECT file_path FROM expense_receipts WHERE id = $1 AND expense_id = $2`
 
 	var filePath string
-	err := h.DB.QueryRow(context.Background(), query, receiptID, expenseID).Scan(&filePath)
+	err := db.QueryRow(context.Background(), query, receiptID, expenseID).Scan(&filePath)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Receipt not found"})
 	}
 
 	// Delete from database
-	_, err = h.DB.Exec(context.Background(),
+	_, err = db.Exec(context.Background(),
 		"DELETE FROM expense_receipts WHERE id = $1", receiptID)
 	if err != nil {
 		log.Printf("Error deleting receipt record: %v", err)
@@ -222,7 +240,11 @@ func (h *Handler) DeleteReceipt(c *fiber.Ctx) error {
 
 // GetAnalytics returns expense analytics
 func (h *Handler) GetAnalytics(c *fiber.Ctx) error {
-	schoolID := c.Query("schoolId", "1")
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
+	schoolID := middleware.GetTenantCode(c)
 
 	// Get date range (default: current month)
 	now := time.Now()
@@ -238,7 +260,7 @@ func (h *Handler) GetAnalytics(c *fiber.Ctx) error {
 		WHERE school_id = $1 AND expense_date >= $2 AND expense_date <= $3
 		GROUP BY status
 	`
-	rows, err := h.DB.Query(context.Background(), statusQuery, schoolID, startDate, endDate)
+	rows, err := db.Query(context.Background(), statusQuery, schoolID, startDate, endDate)
 	if err == nil {
 		defer rows.Close()
 		byStatus := make(map[string]fiber.Map)
@@ -262,7 +284,7 @@ func (h *Handler) GetAnalytics(c *fiber.Ctx) error {
 		ORDER BY SUM(e.amount) DESC
 		LIMIT 10
 	`
-	rows, err = h.DB.Query(context.Background(), categoryQuery, schoolID, startDate, endDate)
+	rows, err = db.Query(context.Background(), categoryQuery, schoolID, startDate, endDate)
 	if err == nil {
 		defer rows.Close()
 		byCategory := []fiber.Map{}
@@ -292,7 +314,7 @@ func (h *Handler) GetAnalytics(c *fiber.Ctx) error {
 		GROUP BY month
 		ORDER BY month ASC
 	`
-	rows, err = h.DB.Query(context.Background(), trendQuery, schoolID)
+	rows, err = db.Query(context.Background(), trendQuery, schoolID)
 	if err == nil {
 		defer rows.Close()
 		trend := []fiber.Map{}
@@ -315,7 +337,11 @@ func (h *Handler) GetAnalytics(c *fiber.Ctx) error {
 
 // GetBudgetStatus returns budget tracking information
 func (h *Handler) GetBudgetStatus(c *fiber.Ctx) error {
-	schoolID := c.Query("schoolId", "1")
+	db := middleware.GetTenantDB(c)
+	if db == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
+	schoolID := middleware.GetTenantCode(c)
 	year := c.QueryInt("year", time.Now().Year())
 	month := c.QueryInt("month", int(time.Now().Month()))
 
@@ -337,7 +363,7 @@ func (h *Handler) GetBudgetStatus(c *fiber.Ctx) error {
 		ORDER BY c.name
 	`
 
-	rows, err := h.DB.Query(context.Background(), query, schoolID, year, month)
+	rows, err := db.Query(context.Background(), query, schoolID, year, month)
 	if err != nil {
 		log.Printf("Error fetching budget status: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch budget status"})

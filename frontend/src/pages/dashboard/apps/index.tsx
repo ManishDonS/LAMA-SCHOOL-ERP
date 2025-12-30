@@ -1,299 +1,288 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
-import { useAuthStore } from '@/store/authStore'
+import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import Navbar from '@/components/Navbar'
-import { schoolService } from '@/services/schoolService'
-import { Module } from '@/types'
-import { Toaster, toast } from 'react-hot-toast'
-import Head from 'next/head'
+import { useAuthStore } from '@/store/authStore'
+import { ALL_MODULES, isModuleActive, isModuleLicensed } from '@/constants/modules'
+import { schoolAPI } from '@/services/api'
 
-export default function AppsPage() {
-    const { user, activeModules, setActiveModules } = useAuthStore()
+export default function AppsDashboard() {
     const router = useRouter()
-    const [mounted, setMounted] = useState(false)
-
-    // State
-    const [modules, setModules] = useState<Module[]>([])
-    // activeModules comes from store now
+    const { user, modulePermissions: storePermissions } = useAuthStore()
+    const [modulePermissions, setModulePermissions] = useState<Record<string, any>>({})
+    const [activeModules, setActiveModules] = useState<string[]>([])
     const [loading, setLoading] = useState(true)
-    const [searchQuery, setSearchQuery] = useState('')
-    const [selectedCategory, setSelectedCategory] = useState<string>('All')
-    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
+    const [currentSchoolId, setCurrentSchoolId] = useState<string | null>(null)
     const [toggling, setToggling] = useState<string | null>(null)
+    const [selectedCategory, setSelectedCategory] = useState<string>('All')
 
     useEffect(() => {
-        setMounted(true)
-    }, [])
-
-    useEffect(() => {
-        if (!mounted) return
-        if (!user) {
-            router.push('/auth/login')
-            return
-        }
-
-        // Only Super Admin can access
-        if (user.role !== 'super_admin') {
-            router.push('/dashboard')
-            return
-        }
-
-        const fetchData = async () => {
-            try {
-                // If we don't have active modules in store, fetch them
-                if (activeModules.length === 0) {
-                    const school = await schoolService.getSchool(user.schoolId.toString())
-                    setActiveModules(school.active_modules || [])
+        // Load module permissions and active modules from selected school
+        if (typeof window !== 'undefined') {
+            const schoolData = localStorage.getItem('selected_school')
+            if (schoolData) {
+                try {
+                    const school = JSON.parse(schoolData)
+                    if (school.id) {
+                        setCurrentSchoolId(school.id)
+                    }
+                    if (school.module_permissions) {
+                        setModulePermissions(school.module_permissions)
+                    }
+                    if (school.active_modules) {
+                        setActiveModules(school.active_modules)
+                    }
+                } catch (error) {
+                    console.error('Failed to parse school data:', error)
+                    setModulePermissions(storePermissions)
                 }
-
-                const allModules = await schoolService.getModules()
-                setModules(allModules)
-            } catch (error) {
-                console.error('Failed to load apps', error)
-                toast.error('Failed to load applications')
-            } finally {
-                setLoading(false)
+            } else {
+                setModulePermissions(storePermissions)
+                if (user?.schoolId) {
+                    setCurrentSchoolId(String(user.schoolId))
+                }
             }
+            setLoading(false)
+        }
+    }, [storePermissions, user])
+
+    // Use permissions from selected school (super admin view) or from logged in user (store)
+    const effectivePermissions = Object.keys(modulePermissions).length > 0 ? modulePermissions : storePermissions
+
+    // Get all unique categories
+    const categories = ['All', ...Array.from(new Set(ALL_MODULES.map(m => m.category || 'Other')))]
+
+    // Group apps by category, but filter if a specific category is selected
+    const categorizedModules = ALL_MODULES.reduce((acc, module) => {
+        const category = module.category || 'Other'
+        if (selectedCategory !== 'All' && category !== selectedCategory) {
+            return acc
+        }
+        if (!acc[category]) {
+            acc[category] = []
+        }
+        acc[category].push(module)
+        return acc
+    }, {} as Record<string, typeof ALL_MODULES>)
+
+    const handleToggle = async (moduleKey: string, currentStatus: boolean) => {
+        if (!currentSchoolId || toggling) return
+
+        // Check if licensed before allowing toggle
+        if (!isModuleLicensed(effectivePermissions, moduleKey)) {
+            alert('This module is not licensed for your school. Please contact support.')
+            return
         }
 
-        fetchData()
-    }, [user, mounted, router])
+        // Optimistic update
+        const newStatus = !currentStatus
+        setToggling(moduleKey)
 
-    const handleToggle = async (moduleId: string, isActive: boolean) => {
-        if (!user?.schoolId) return
+        // Update local activeModules state immediately
+        const newActiveModules = newStatus
+            ? [...activeModules, moduleKey]
+            : activeModules.filter(m => m !== moduleKey)
 
-        setToggling(moduleId)
+        setActiveModules(newActiveModules)
+
         try {
-            const updatedSchool = await schoolService.toggleModule(
-                user.schoolId.toString(),
-                moduleId,
-                !isActive
-            )
-            setActiveModules(updatedSchool.active_modules || [])
-            toast.success(
-                isActive ? 'Module deactivated successfully' : 'Module activated successfully'
-            )
+            await schoolAPI.toggleModule(currentSchoolId, moduleKey, newStatus)
+
+            // Update local storage to persist change
+            if (typeof window !== 'undefined') {
+                const schoolData = localStorage.getItem('selected_school')
+                if (schoolData) {
+                    const school = JSON.parse(schoolData)
+                    school.active_modules = newActiveModules
+                    localStorage.setItem('selected_school', JSON.stringify(school))
+                }
+            }
         } catch (error) {
-            console.error('Failed to toggle module', error)
-            toast.error('Failed to update module status')
+            console.error('Failed to toggle module:', error)
+            // Revert on error
+            setActiveModules(activeModules)
+            alert('Failed to update module status. Please try again.')
         } finally {
             setToggling(null)
         }
     }
 
-    // Get unique categories
-    const categories = ['All', ...Array.from(new Set(modules.map(m => m.category)))]
-
-    // Filter logic
-    const filteredModules = modules.filter((m) => {
-        const isActive = activeModules.includes(m.id)
-        const matchesSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            m.description.toLowerCase().includes(searchQuery.toLowerCase())
-        const matchesCategory = selectedCategory === 'All' || m.category === selectedCategory
-        const matchesStatus = statusFilter === 'all' ||
-            (statusFilter === 'active' && isActive) ||
-            (statusFilter === 'inactive' && !isActive)
-        return matchesSearch && matchesCategory && matchesStatus
-    })
-
-    if (!mounted || !user) return null
+    const getCategoryIcon = (category: string) => {
+        switch (category) {
+            case 'Core Modules': return '📦'
+            case 'Communication & Engagement': return '💬'
+            case 'Finance': return '💰'
+            case 'Operations': return '⚙️'
+            case 'Apps & Integrations': return '🧩'
+            case 'System': return '🛠️'
+            default: return '📁'
+        }
+    }
 
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col">
-            <Head>
-                <title>Apps | LAMA School ERP</title>
-            </Head>
             <Navbar />
 
             <div className="flex flex-1">
                 <Sidebar />
 
-                <main className="flex-1 overflow-y-auto bg-gradient-to-br from-gray-50 to-gray-100">
-                    <div className="h-full flex">
-                        {/* Left Sidebar - Categories */}
-                        <div className="w-56 bg-white border-r border-gray-200 flex-shrink-0">
-                            <div className="p-4 sticky top-0">
-                                <div className="mb-6">
-                                    <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 px-3">
-                                        Filter by Category
-                                    </h2>
-                                    <div className="space-y-0.5">
-                                        {categories.map((category) => {
-                                            const count = category === 'All'
-                                                ? modules.length
-                                                : modules.filter(m => m.category === category).length
-                                            const isActive = selectedCategory === category
+                <main className="flex-1 p-8 flex flex-col lg:flex-row gap-8">
+                    {/* Category Sidebar (Localized) */}
+                    <aside className="w-full lg:w-64 flex-shrink-0">
+                        <div className="sticky top-24 space-y-1">
+                            <h3 className="text-[11px] font-black text-gray-500/70 uppercase tracking-[0.2em] px-4 mb-4">
+                                Categories
+                            </h3>
+                            <nav className="space-y-1">
+                                {categories.map((cat) => (
+                                    <button
+                                        key={cat}
+                                        onClick={() => setSelectedCategory(cat)}
+                                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all duration-200 group ${selectedCategory === cat
+                                            ? 'bg-white shadow-[0_2px_8px_rgba(0,0,0,0.04)] text-blue-600 border border-gray-100 ring-4 ring-blue-50/50'
+                                            : 'text-gray-500 hover:bg-white hover:shadow-sm hover:text-gray-900 border border-transparent'
+                                            }`}
+                                    >
+                                        <span className={`text-lg transition-all duration-300 ${selectedCategory === cat ? 'scale-110' : 'grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100'
+                                            }`}>
+                                            {cat === 'All' ? '🌈' : getCategoryIcon(cat)}
+                                        </span>
+                                        <span className="truncate">{cat}</span>
+                                        {selectedCategory === cat && (
+                                            <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
+                                        )}
+                                    </button>
+                                ))}
+                            </nav>
+                        </div>
+                    </aside>
 
-                                            return (
-                                                <button
-                                                    key={category}
-                                                    onClick={() => setSelectedCategory(category)}
-                                                    className={`w-full group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${isActive
-                                                        ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-500/30'
-                                                        : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-                                                        }`}
-                                                >
-                                                    <span className="flex items-center gap-2">
-                                                        <span className={`w-1.5 h-1.5 rounded-full transition-all ${isActive ? 'bg-white' : 'bg-gray-300 group-hover:bg-blue-500'
-                                                            }`} />
-                                                        {category}
-                                                    </span>
-                                                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold transition-all ${isActive
-                                                        ? 'bg-white/20 text-white'
-                                                        : 'bg-gray-100 text-gray-600 group-hover:bg-blue-50 group-hover:text-blue-600'
-                                                        }`}>
-                                                        {count}
-                                                    </span>
-                                                </button>
-                                            )
-                                        })}
-                                    </div>
-                                </div>
-                            </div>
+                    <div className="flex-1">
+                        <div className="mb-8">
+                            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                                <span className="text-3xl">🚀</span> Apps & Integrations
+                            </h1>
+                            <p className="text-gray-600 mt-2">
+                                Manage all available modules and premium applications for your school.
+                            </p>
                         </div>
 
-                        {/* Main Content */}
-                        <div className="flex-1 p-8">
-                            <div className="max-w-7xl mx-auto">
-                                {/* Header */}
-                                <div className="flex items-center justify-between mb-8">
-                                    <div>
-                                        <h1 className="text-3xl font-bold text-gray-900 mb-1">App Marketplace</h1>
-                                        <p className="text-gray-600">
-                                            Discover and manage {filteredModules.length} powerful modules for your school
-                                        </p>
-                                    </div>
+                        {loading ? (
+                            <div className="flex justify-center py-12">
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+                            </div>
+                        ) : (
+                            <div className="space-y-12">
+                                {Object.entries(categorizedModules).map(([category, modules]) => (
+                                    <div key={category} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                        <h2 className="text-xl font-bold text-gray-800 mb-6 border-b pb-2 flex items-center gap-2">
+                                            {getCategoryIcon(category)}
+                                            <span>{category}</span>
+                                            <span className="ml-2 text-xs font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                                                {modules.length}
+                                            </span>
+                                        </h2>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                                            {modules.map((module) => {
+                                                const licensed = isModuleLicensed(effectivePermissions, module.key)
+                                                const active = isModuleActive(effectivePermissions, activeModules, module.key)
+                                                const isToggling = toggling === module.key
 
-                                    <div className="flex items-center gap-3">
-                                        {/* Status Filter Dropdown */}
-                                        <div className="relative">
-                                            <select
-                                                value={statusFilter}
-                                                onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
-                                                className="pl-4 pr-10 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm bg-white text-sm font-medium text-gray-700 cursor-pointer appearance-none"
-                                                style={{ backgroundImage: "url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 fill=%27none%27 viewBox=%270 0 20 20%27%3E%3Cpath stroke=%27%236b7280%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 stroke-width=%271.5%27 d=%27M6 8l4 4 4-4%27/%3E%3C/svg%3E')", backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em' }}
-                                            >
-                                                <option value="all">All Apps ({modules.length})</option>
-                                                <option value="active">Active ({modules.filter(m => activeModules.includes(m.id)).length})</option>
-                                                <option value="inactive">Inactive ({modules.filter(m => !activeModules.includes(m.id)).length})</option>
-                                            </select>
-                                        </div>
-
-                                        {/* Search Input */}
-                                        <div className="relative">
-                                            <input
-                                                type="text"
-                                                placeholder="Search apps..."
-                                                value={searchQuery}
-                                                onChange={(e) => setSearchQuery(e.target.value)}
-                                                className="pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-80 shadow-sm"
-                                            />
-                                            <span className="absolute left-3 top-3 text-gray-400">🔍</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Content */}
-                                {loading ? (
-                                    <div className="flex justify-center items-center h-96">
-                                        <div className="relative">
-                                            <div className="animate-spin rounded-full h-16 w-16 border-4 border-gray-200 border-t-blue-500"></div>
-                                            <div className="absolute inset-0 flex items-center justify-center">
-                                                <div className="w-8 h-8 bg-blue-500 rounded-full opacity-20 animate-pulse"></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <>
-                                        {filteredModules.length === 0 ? (
-                                            <div className="text-center py-20">
-                                                <div className="text-7xl mb-4 opacity-50">📦</div>
-                                                <h3 className="text-xl font-semibold text-gray-900 mb-2">No apps found</h3>
-                                                <p className="text-gray-500 max-w-md mx-auto">
-                                                    {searchQuery
-                                                        ? 'Try adjusting your search query or select a different category'
-                                                        : 'No apps available in this category'}
-                                                </p>
-                                            </div>
-                                        ) : (
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                                {filteredModules.map((module) => {
-                                                    const isActive = activeModules.includes(module.id)
-                                                    const isProcessing = toggling === module.id
-
-                                                    return (
-                                                        <div
-                                                            key={module.id}
-                                                            className="group bg-white rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-lg transition-all duration-200 overflow-hidden"
-                                                        >
-                                                            <div className="p-4">
-                                                                {/* Header */}
-                                                                <div className="flex items-start justify-between mb-3">
-                                                                    <div className="text-3xl group-hover:scale-110 transition-transform duration-200">
-                                                                        {module.icon}
-                                                                    </div>
-                                                                    <div
-                                                                        className={`px-2 py-1 text-xs font-semibold rounded-full ${isActive
-                                                                            ? 'bg-gradient-to-r from-green-400 to-green-500 text-white shadow-sm'
-                                                                            : 'bg-gray-100 text-gray-600'
-                                                                            }`}
-                                                                    >
-                                                                        {isActive ? '✓ Active' : 'Inactive'}
-                                                                    </div>
+                                                return (
+                                                    <div
+                                                        key={module.key}
+                                                        className={`group relative bg-white rounded-2xl p-6 shadow-sm border transition-all duration-300 ${!licensed
+                                                            ? 'border-gray-200 bg-gray-50 opacity-75'
+                                                            : active
+                                                                ? 'border-blue-100 hover:shadow-xl hover:shadow-blue-500/5 hover:border-blue-200'
+                                                                : 'border-gray-100 border-dashed bg-gray-50/30'
+                                                            }`}
+                                                    >
+                                                        {/* Toggle Switch or Locked Icon */}
+                                                        <div className="absolute top-4 right-4 z-20">
+                                                            {!licensed ? (
+                                                                <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-200 rounded-lg text-[10px] font-black uppercase tracking-wider text-gray-500">
+                                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                                                    </svg>
+                                                                    Locked
                                                                 </div>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        handleToggle(module.key, active);
+                                                                    }}
+                                                                    disabled={isToggling}
+                                                                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${active ? 'bg-blue-600' : 'bg-gray-200'
+                                                                        } ${isToggling ? 'opacity-50 cursor-wait' : ''}`}
+                                                                >
+                                                                    <span className="sr-only">Toggle Module</span>
+                                                                    <span
+                                                                        aria-hidden="true"
+                                                                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${active ? 'translate-x-5' : 'translate-x-0'
+                                                                            }`}
+                                                                    />
+                                                                </button>
+                                                            )}
+                                                        </div>
 
-                                                                {/* Title & Category */}
-                                                                <h3 className="text-base font-bold text-gray-900 mb-1 line-clamp-1">
-                                                                    {module.name}
-                                                                </h3>
-                                                                <div className="mb-2">
-                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-700">
-                                                                        {module.category}
+                                                        <div className={`relative z-10 ${(!active || !licensed) && 'opacity-60 grayscale-[0.8]'}`}>
+                                                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl mb-5 transition-all duration-300 ${active && licensed
+                                                                ? 'bg-blue-50 text-blue-600 shadow-inner'
+                                                                : 'bg-gray-100 text-gray-400'
+                                                                }`}>
+                                                                {module.icon}
+                                                            </div>
+
+                                                            <h3 className={`text-lg font-bold mb-2 transition-colors ${active && licensed ? 'text-gray-900 group-hover:text-blue-600' : 'text-gray-500'
+                                                                }`}>
+                                                                {module.label}
+                                                            </h3>
+
+                                                            <p className="text-sm text-gray-500 mb-6 line-clamp-2 min-h-[40px] leading-relaxed">
+                                                                {module.description}
+                                                            </p>
+
+                                                            {active && licensed && module.href ? (
+                                                                <Link
+                                                                    href={module.href}
+                                                                    className="inline-flex items-center gap-2 text-blue-600 text-sm font-bold group/link"
+                                                                >
+                                                                    <span>Open Module</span>
+                                                                    <svg className="w-4 h-4 transition-transform group-hover/link:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                                                                    </svg>
+                                                                </Link>
+                                                            ) : (
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className={`w-2 h-2 rounded-full ${!licensed ? 'bg-red-400' : active ? 'bg-green-500' : 'bg-gray-300'}`} />
+                                                                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                                                                        {!licensed ? 'Unlicensed' : active ? 'Subscribed' : 'Not Active'}
                                                                     </span>
                                                                 </div>
-
-                                                                {/* Description */}
-                                                                <p className="text-xs text-gray-600 mb-4 line-clamp-2 leading-relaxed">
-                                                                    {module.description}
-                                                                </p>
-
-                                                                {/* Actions */}
-                                                                <div className="flex gap-2">
-                                                                    <button
-                                                                        onClick={() => handleToggle(module.id, isActive)}
-                                                                        disabled={isProcessing}
-                                                                        className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 ${isActive
-                                                                            ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                                                            : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 shadow-sm hover:shadow-md'
-                                                                            } ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                                                    >
-                                                                        {isProcessing
-                                                                            ? '⏳ Processing...'
-                                                                            : isActive
-                                                                                ? 'Deactivate'
-                                                                                : 'Activate'}
-                                                                    </button>
-                                                                    {isActive && (
-                                                                        <button className="px-3 py-2 text-xs font-semibold text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                                                                            ⚙️
-                                                                        </button>
-                                                                    )}
-                                                                </div>
-                                                            </div>
+                                                            )}
                                                         </div>
-                                                    )
-                                                })}
-                                            </div>
-                                        )}
-                                    </>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
+                                {Object.keys(categorizedModules).length === 0 && (
+                                    <div className="flex flex-col items-center justify-center py-24 text-gray-400">
+                                        <span className="text-6xl mb-4">🔍</span>
+                                        <p className="text-lg font-medium">No modules found in this category.</p>
+                                    </div>
                                 )}
                             </div>
-                        </div>
+                        )}
                     </div>
                 </main>
             </div>
-            <Toaster position="top-right" />
         </div>
     )
 }
+

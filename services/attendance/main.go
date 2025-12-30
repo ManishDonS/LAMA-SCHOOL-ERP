@@ -1,11 +1,12 @@
 package main
 
 import (
-	"fmt"
-	"log"
+	"context"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -15,15 +16,20 @@ import (
 	"school-erp/attendance/database"
 	"school-erp/attendance/messaging"
 	"school-erp/attendance/middleware"
+	"school-erp/attendance/pkg/casbin"
+	"school-erp/attendance/pkg/logger"
 	"school-erp/attendance/pkg/tenant"
 	"school-erp/attendance/routes"
 )
 
 // Helper function to check if an origin is in the allowed list
 func contains(allowedOrigins string, origin string) bool {
+	if origin == "" {
+		return false
+	}
 	origins := strings.Split(allowedOrigins, ",")
 	for _, allowed := range origins {
-		if strings.TrimSpace(allowed) == origin {
+		if strings.TrimSpace(allowed) == strings.TrimSuffix(origin, "/") {
 			return true
 		}
 	}
@@ -34,12 +40,23 @@ func main() {
 	godotenv.Load()
 	cfg := config.LoadConfig()
 
+	// Initialize Logger
+	logger.InitLogger()
+	log := logger.GetLogger()
+
+	log.Info().Msg("Initializing Attendance Service")
+
 	// Initialize Main Database (for school metadata)
 	mainDB, err := database.InitDB(cfg)
 	if err != nil {
-		log.Fatalf("Failed to initialize main database: %v", err)
+		log.Fatal().Err(err).Msg("Failed to initialize main database")
 	}
 	defer mainDB.Close()
+
+	// Initialize Casbin Enforcer
+	if err := casbin.InitEnforcer(mainDB); err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize Casbin enforcer")
+	}
 
 	// Initialize Tenant Manager
 	dbPort, _ := strconv.Atoi(cfg.DBPort)
@@ -51,13 +68,32 @@ func main() {
 		cfg.DBPassword,
 	)
 	if err != nil {
-		log.Fatalf("Failed to create tenant manager: %v", err)
+		log.Fatal().Err(err).Msg("Failed to create tenant manager")
 	}
 
 	messaging.ConnectNATS()
-	defer messaging.NatsConnection.Close()
+	if messaging.NatsConnection != nil {
+		messaging.SubscribeModuleUpdates()
+		defer messaging.NatsConnection.Close()
+	}
 
-	app := fiber.New(fiber.Config{AppName: "School ERP Attendance Service"})
+	app := fiber.New(fiber.Config{
+		AppName: "School ERP Attendance Service",
+		// Use custom errorHandler for structured logging of errors
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			code := fiber.StatusInternalServerError
+			if e, ok := err.(*fiber.Error); ok {
+				code = e.Code
+			}
+			log.Error().Err(err).
+				Str("path", c.Path()).
+				Str("method", c.Method()).
+				Int("status", code).
+				Msg("Request failed")
+			return c.Status(code).JSON(fiber.Map{"error": err.Error()})
+		},
+	})
+
 	setupMiddleware(app)
 
 	// Setup Tenant Resolver Middleware
@@ -73,11 +109,6 @@ func main() {
 			"service": "School ERP Attendance Service",
 			"version": "v1.0.0",
 			"status":  "running",
-			"endpoints": fiber.Map{
-				"health":     "/health",
-				"metrics":    "/metrics",
-				"attendance": "/api/v1/attendance",
-			},
 		})
 	})
 
@@ -87,22 +118,58 @@ func main() {
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "healthy", "service": "attendance"})
 	})
-	app.Get("/metrics", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"uptime": "N/A", "status": "operational"})
-	})
 
-	port := cfg.Port
-	log.Printf("Starting Attendance Service on port %s\n", port)
-	if err := app.Listen(":" + port); err != nil {
-		log.Fatalf("Error starting server: %v", err)
+	// Start server in a goroutine
+	go func() {
+		port := cfg.Port
+		log.Info().Str("port", port).Msg("Starting Attendance Service")
+		if err := app.Listen(":" + port); err != nil {
+			log.Fatal().Err(err).Msg("Error starting server")
+		}
+	}()
+
+	// Graceful Shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+
+	<-quit
+	log.Info().Msg("Shutting down Attendance Service...")
+
+	// Create a context with a timeout for shutdown
+	_, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := app.Shutdown(); err != nil {
+		log.Error().Err(err).Msg("Fiber shutdown error")
 	}
+
+	log.Info().Msg("Attendance Service gracefully stopped")
 }
 
 func setupMiddleware(app *fiber.App) {
+	// Request ID Middleware
+	app.Use(middleware.RequestIDMiddleware())
+
+	// Logging middleware
 	app.Use(func(c *fiber.Ctx) error {
-		fmt.Printf("[%s] %s %s\n", c.Method(), c.Path(), c.IP())
-		return c.Next()
+		start := time.Now()
+		err := c.Next()
+		duration := time.Since(start)
+
+		log := logger.GetLogger()
+		log.Info().
+			Str("request_id", c.Locals("request_id").(string)).
+			Str("method", c.Method()).
+			Str("path", c.Path()).
+			Str("ip", c.IP()).
+			Int("status", c.Response().StatusCode()).
+			Dur("duration", duration).
+			Msg("HTTP Request")
+
+		return err
 	})
+
+	// CORS middleware
 	app.Use(func(c *fiber.Ctx) error {
 		origin := c.Get("Origin")
 		allowedOrigins := os.Getenv("CORS_ALLOW_ORIGINS")
@@ -110,7 +177,6 @@ func setupMiddleware(app *fiber.App) {
 			allowedOrigins = "http://localhost:3000,http://localhost:3001"
 		}
 
-		// Check if origin is allowed
 		if origin != "" && contains(allowedOrigins, origin) {
 			c.Set("Access-Control-Allow-Origin", origin)
 		}

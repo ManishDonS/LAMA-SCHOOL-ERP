@@ -22,6 +22,7 @@ type Student struct {
 	Email           *string    `json:"email"`
 	Phone           *string    `json:"phone"`
 	Address         *string    `json:"address"`
+	Notes           *string    `json:"notes"`
 	Status          string     `json:"status"` // active, inactive, graduated
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`

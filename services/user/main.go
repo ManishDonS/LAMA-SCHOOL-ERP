@@ -50,7 +50,10 @@ func main() {
 
 	// Connect to NATS
 	messaging.ConnectNATS()
-	defer messaging.NatsConnection.Close()
+	if messaging.NatsConnection != nil {
+		messaging.SubscribeModuleUpdates()
+		defer messaging.NatsConnection.Close()
+	}
 
 	// Create Fiber app
 	app := fiber.New(fiber.Config{

@@ -12,6 +12,7 @@ func RunMigrations(pool *pgxpool.Pool) error {
 		createTeachersTable,
 		createParentsTable,
 		createStaffTable,
+		createDepartmentsTable,
 	}
 
 	for _, migration := range migrations {
@@ -132,12 +133,51 @@ CREATE TABLE IF NOT EXISTS staff (
 	department VARCHAR(255),
 	position VARCHAR(255),
 	employee_id VARCHAR(50) UNIQUE NOT NULL,
+	phone VARCHAR(20),
+	address TEXT,
+	city VARCHAR(100),
+	state VARCHAR(100),
+	zip_code VARCHAR(20),
+	qualification VARCHAR(255),
+	experience DECIMAL(5,2),
+	salary DECIMAL(12,2),
+	notes TEXT,
 	join_date TIMESTAMP NOT NULL,
 	status VARCHAR(50) DEFAULT 'active',
 	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 	updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Ensure all columns exist for existing tables
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS city VARCHAR(100);
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS state VARCHAR(100);
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS zip_code VARCHAR(20);
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS qualification VARCHAR(255);
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS experience DECIMAL(5,2);
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS salary DECIMAL(12,2);
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS notes TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_staff_school_id ON staff(school_id);
 CREATE INDEX IF NOT EXISTS idx_staff_user_id ON staff(user_id);
+
+`
+
+const createDepartmentsTable = `
+CREATE TABLE IF NOT EXISTS departments (
+	id BIGSERIAL PRIMARY KEY,
+	school_id VARCHAR(255) NOT NULL,
+	name VARCHAR(255) NOT NULL,
+	code VARCHAR(50) NOT NULL,
+	description TEXT,
+	head_of_department VARCHAR(255),
+	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+	updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Ensure all columns exist for existing tables
+ALTER TABLE departments ADD COLUMN IF NOT EXISTS code VARCHAR(50);
+
+CREATE INDEX IF NOT EXISTS idx_departments_school_id ON departments(school_id);
 `

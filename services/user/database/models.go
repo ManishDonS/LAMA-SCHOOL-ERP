@@ -70,19 +70,40 @@ type Parent struct {
 
 // Staff represents a staff user
 type Staff struct {
-	ID         int64     `json:"id"`
-	SchoolID   string    `json:"school_id"`
-	UserID     string    `json:"user_id"`
-	Department string    `json:"department"`
-	Position   string    `json:"position"`
-	EmployeeID string    `json:"employee_id"`
-	JoinDate   time.Time `json:"join_date"`
-	Status     string    `json:"status"` // active, inactive
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID            int64     `json:"id"`
+	SchoolID      string    `json:"school_id"`
+	UserID        string    `json:"user_id"`
+	Department    string    `json:"department"`
+	Position      string    `json:"position"`
+	EmployeeID    string    `json:"employee_id"`
+	Phone         string    `json:"phone"`
+	Address       string    `json:"address"`
+	City          string    `json:"city"`
+	State         string    `json:"state"`
+	ZipCode       string    `json:"zip_code"`
+	Qualification string    `json:"qualification"`
+	Experience    float64   `json:"experience"`
+	Salary        float64   `json:"salary"`
+	Notes         string    `json:"notes"`
+	JoinDate      time.Time `json:"join_date"`
+	Status        string    `json:"status"` // active, inactive, on_leave
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 
 	// Joined fields from users table
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 	Email     string `json:"email"`
+}
+
+// Department represents a school department
+type Department struct {
+	ID               int64     `json:"id"`
+	SchoolID         string    `json:"school_id"`
+	Name             string    `json:"name"`
+	Code             string    `json:"code"`
+	Description      string    `json:"description"`
+	HeadOfDepartment string    `json:"head_of_department"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }

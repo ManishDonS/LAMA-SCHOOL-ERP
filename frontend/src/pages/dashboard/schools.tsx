@@ -6,6 +6,7 @@ import { useAuthStore } from '@/store/authStore'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import Sidebar from '@/components/Sidebar'
 import Navbar from '@/components/Navbar'
+import { MODULE_CATEGORIES, MODULE_DETAILS as MODULE_INFO } from '@/constants/modules'
 
 interface School {
   id: string
@@ -76,31 +77,57 @@ function SchoolsPage() {
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [activeTab, setActiveTab] = useState<'basic' | 'admin' | 'permissions'>('basic')
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string; name: string } | null>(null)
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [logoPreview, setLogoPreview] = useState<string | null>(null)
+
+
+
 
   const DEFAULT_PERMISSIONS = {
+    // Core Modules
     students: { create: true, read: true, update: true, delete: false },
     teachers: { create: true, read: true, update: true, delete: false },
     guardians: { create: true, read: true, update: true, delete: false },
     staff: { create: true, read: true, update: true, delete: false },
     classes: { create: true, read: true, update: true, delete: false },
-    attendance: { create: true, read: true, update: false, delete: false },
+    subjects: { create: true, read: true, update: true, delete: false },
+    departments: { create: true, read: true, update: true, delete: false },
+    academic_years: { create: true, read: true, update: true, delete: false },
+    attendance: { create: true, read: true, update: true, delete: false },
     exams: { create: true, read: true, update: true, delete: false },
     grades: { create: true, read: true, update: true, delete: false },
+    timetable: { create: true, read: true, update: true, delete: false },
+    homework: { create: true, read: true, update: true, delete: false },
     library: { create: true, read: true, update: true, delete: false },
     transport: { create: true, read: true, update: true, delete: false },
-    finance: { create: false, read: true, update: false, delete: false },
-    accounting: { create: false, read: true, update: false, delete: false },
     fees: { create: true, read: true, update: true, delete: false },
-    payroll: { create: false, read: true, update: false, delete: false },
     expenses: { create: true, read: true, update: true, delete: false },
+    payroll: { create: false, read: true, update: false, delete: false },
+    accounting: { create: false, read: true, update: false, delete: false },
+    finance: { create: false, read: true, update: false, delete: false },
+    // Communication & Engagement
+    announcements: { create: true, read: true, update: true, delete: false },
+    events: { create: true, read: true, update: true, delete: false },
+    communication: { create: true, read: true, update: true, delete: false },
     notifications: { create: true, read: true, update: false, delete: false },
-    reports: { create: false, read: true, update: false, delete: false },
+    // Apps & Integrations
+    sms: { create: false, read: true, update: false, delete: false },
+    email: { create: false, read: true, update: false, delete: false },
+    biometric: { create: false, read: true, update: false, delete: false },
+    gps_tracking: { create: false, read: true, update: false, delete: false },
+    online_classes: { create: false, read: true, update: false, delete: false },
+    payment_gateway: { create: false, read: true, update: false, delete: false },
+    mobile_app: { create: false, read: true, update: false, delete: false },
+    analytics: { create: false, read: true, update: false, delete: false },
+    ai_insights: { create: false, read: true, update: false, delete: false },
     website: { create: true, read: true, update: true, delete: false },
+    // System
     settings: { create: false, read: true, update: true, delete: false },
+    reports: { create: false, read: true, update: false, delete: false },
     nepali_date: { create: true, read: true, update: true, delete: true },
   }
 
-  const [permissions, setPermissions] = useState(DEFAULT_PERMISSIONS)
+  const [permissions, setPermissions] = useState<Record<string, any>>(DEFAULT_PERMISSIONS)
 
   const getImageUrl = (path: string) => {
     if (!path) return ''
@@ -293,9 +320,27 @@ function SchoolsPage() {
           ...formData,
           module_permissions: permissions
         }
-        await schoolAPI.create(createData)
+        const response = await schoolAPI.create(createData)
+        const newSchool = response.data
+
+        // If there's a pending logo file, upload it now
+        if (logoFile && newSchool.id) {
+          try {
+            setUploadingLogo(true)
+            await schoolAPI.uploadLogo(newSchool.id, logoFile)
+          } catch (uploadErr) {
+            console.error("Failed to upload logo after creation:", uploadErr)
+            // We don't fail the whole creation for a logo upload error, 
+            // but we might want to inform the user
+          } finally {
+            setUploadingLogo(false)
+          }
+        }
+
         setSuccess('School created successfully')
         setFormData(DEFAULT_FORM_STATE)
+        setLogoFile(null)
+        setLogoPreview(null)
         setShowForm(false)
         fetchSchools()
       }
@@ -360,6 +405,8 @@ function SchoolsPage() {
     setEditingId(null)
     setFormData(DEFAULT_FORM_STATE)
     setPermissions(DEFAULT_PERMISSIONS) // Reset permissions on close
+    setLogoFile(null)
+    setLogoPreview(null)
     setError(null)
     setActiveTab('basic')
   }
@@ -419,14 +466,21 @@ function SchoolsPage() {
       return
     }
 
+    if (!editingId) {
+      // For new school, store file and show preview locally
+      setLogoFile(file)
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setLogoPreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+      return
+    }
+
     setUploadingLogo(true)
     setError(null)
 
     try {
-      if (!editingId) {
-        setError('Editing ID is required for logo upload')
-        return
-      }
       const response = await schoolAPI.uploadLogo(editingId, file)
       setFormData((prev) => ({ ...prev, logo_url: response.data.url }))
       setSuccess('Logo uploaded successfully')
@@ -527,7 +581,7 @@ function SchoolsPage() {
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                         }`}
                     >
-                      Module Activation
+                      Master Licenses
                     </button>
                   </div>
                 </div>
@@ -593,10 +647,10 @@ function SchoolsPage() {
                         </label>
 
                         {/* Logo Preview */}
-                        {formData.logo_url && (
+                        {(formData.logo_url || logoPreview) && (
                           <div className="mb-3 p-4 bg-gray-50 rounded-lg border border-gray-300 inline-block">
                             <img
-                              src={getImageUrl(formData.logo_url)}
+                              src={logoPreview || getImageUrl(formData.logo_url)}
                               alt="School logo preview"
                               className="max-h-40 w-auto object-contain"
                             />
@@ -816,34 +870,90 @@ function SchoolsPage() {
                   {/* Permissions Tab */}
                   {activeTab === 'permissions' && (
                     <div className="space-y-6">
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                        <p className="text-sm text-blue-800">
-                          Manage active modules and features for this school. Disabling a module here hides it for ALL users.
-                        </p>
+                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
+                        <div className="flex gap-2 text-purple-800">
+                          <span className="text-xl">⚖️</span>
+                          <p className="text-sm">
+                            <strong>Master License Management:</strong> These settings represent the master permissions granted to this school.
+                            Removing permissions here will <strong>completely disable</strong> and lock the module for the school, even if they had previously activated it.
+                          </p>
+                        </div>
                       </div>
 
-                      <div className="space-y-4">
-                        {Object.entries(permissions).map(([module, actions]) => (
-                          <div key={module} className="border border-gray-200 rounded-lg p-4">
-                            <h4 className="text-lg font-semibold text-gray-900 mb-3 capitalize flex items-center gap-2">
-                              <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                              </svg>
-                              {module}
-                            </h4>
+                      {/* Module Categories */}
+                      <div className="space-y-8">
+                        {Object.entries(MODULE_CATEGORIES).map(([category, moduleList]) => (
+                          <div key={category}>
+                            <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2 pb-2 border-b-2 border-blue-600">
+                              {category === 'Core Modules' && '🎯'}
+                              {category === 'Communication & Engagement' && '💬'}
+                              {category === 'Apps & Integrations' && '🚀'}
+                              {category === 'System' && '⚙️'}
+                              <span>{category}</span>
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {moduleList.map((module) => {
+                                const modulePerms = permissions[module]
+                                const moduleInfo = MODULE_INFO[module]
+                                if (!modulePerms || !moduleInfo) return null
 
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                              {Object.entries(actions).map(([action, value]) => (
-                                <label key={action} className="flex items-center space-x-2 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={value as boolean}
-                                    onChange={(e) => handlePermissionChange(module, action, e.target.checked)}
-                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                  />
-                                  <span className="text-sm text-gray-700 capitalize">{action}</span>
-                                </label>
-                              ))}
+                                const isPremium = category === 'Apps & Integrations'
+
+                                return (
+                                  <div
+                                    key={module}
+                                    className={`border rounded-xl p-4 hover:shadow-md transition-all relative ${isPremium
+                                      ? 'border-purple-300 bg-gradient-to-br from-purple-50 to-pink-50'
+                                      : 'border-gray-200 bg-white'
+                                      }`}
+                                  >
+                                    {/* Premium Badge */}
+                                    {isPremium && (
+                                      <div className="absolute top-2 right-2">
+                                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-bold rounded-full shadow-sm">
+                                          ⭐ Premium
+                                        </span>
+                                      </div>
+                                    )}
+
+                                    <div className="flex items-start gap-3 mb-3">
+                                      <span className="text-3xl">{moduleInfo.icon}</span>
+                                      <div className="flex-1">
+                                        <h4 className="text-base font-bold text-gray-900 capitalize pr-20">
+                                          {module.replace(/_/g, ' ')}
+                                        </h4>
+                                        <p className="text-xs text-gray-600 mt-1">
+                                          {moduleInfo.description}
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {Object.entries(modulePerms).map(([action, value]) => (
+                                        <label
+                                          key={action}
+                                          className="flex items-center space-x-2 cursor-pointer p-2 rounded-lg hover:bg-white/50 transition-colors"
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={value as boolean}
+                                            onChange={(e) =>
+                                              handlePermissionChange(module, action, e.target.checked)
+                                            }
+                                            className={`w-4 h-4 border-gray-300 rounded focus:ring-2 ${isPremium
+                                              ? 'text-purple-600 focus:ring-purple-500'
+                                              : 'text-blue-600 focus:ring-blue-500'
+                                              }`}
+                                          />
+                                          <span className="text-xs text-gray-700 capitalize font-medium">
+                                            {action}
+                                          </span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )
+                              })}
                             </div>
                           </div>
                         ))}

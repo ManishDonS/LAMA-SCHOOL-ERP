@@ -5,56 +5,38 @@ import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import Navbar from '@/components/Navbar'
 import NepaliDatePicker from '@/components/NepaliDatePicker'
+import { classAPI } from '@/services/api'
+import { toast } from 'react-hot-toast'
 
 interface AcademicYear {
   id: string
-  academicYear: string
-  startDate: string
-  endDate: string
+  name: string
+  start_date: string
+  end_date: string
   status: 'Active' | 'Inactive'
-  createdBy: string
-  createdDate: string
   description: string
+  is_current: boolean
+  created_at: string
 }
 
 interface FormData {
-  academicYear: string
-  startDate: string
-  endDate: string
+  name: string
+  start_date: string
+  end_date: string
   status: 'Active' | 'Inactive'
   description: string
+  is_current: boolean
 }
 
 const DEFAULT_FORM_STATE: FormData = {
-  academicYear: '',
-  startDate: '',
-  endDate: '',
+  name: '',
+  start_date: '',
+  end_date: '',
   status: 'Active',
   description: '',
+  is_current: false,
 }
 
-const DEFAULT_ACADEMIC_YEARS: AcademicYear[] = [
-  {
-    id: '1',
-    academicYear: '2024-2025',
-    startDate: '2024-04-01',
-    endDate: '2025-03-31',
-    status: 'Active',
-    createdBy: 'Admin',
-    createdDate: '2024-04-01',
-    description: 'Current Academic Year',
-  },
-  {
-    id: '2',
-    academicYear: '2023-2024',
-    startDate: '2023-04-01',
-    endDate: '2024-03-31',
-    status: 'Inactive',
-    createdBy: 'Admin',
-    createdDate: '2023-04-01',
-    description: 'Previous Academic Year',
-  },
-]
 
 export default function AcademicYearsPage() {
   const router = useRouter()
@@ -82,30 +64,24 @@ export default function AcademicYearsPage() {
     { href: '/dashboard/reports', label: 'Reports', icon: '📈' },
   ]
 
-  // Load from localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('academicYears')
-      if (saved) {
-        try {
-          setAcademicYears(JSON.parse(saved))
-        } catch (error) {
-          console.error('Failed to load academic years:', error)
-          setAcademicYears(DEFAULT_ACADEMIC_YEARS)
-        }
-      } else {
-        setAcademicYears(DEFAULT_ACADEMIC_YEARS)
+  const fetchAcademicYears = async () => {
+    try {
+      const response = await classAPI.listAY()
+      if (response.data && response.data.data) {
+        setAcademicYears(response.data.data)
       }
-      setIsHydrated(true)
+    } catch (error: any) {
+      console.error('Failed to fetch academic years:', error)
+      toast.error(error.response?.data?.error || 'Failed to load academic years')
     }
-  }, [])
+  }
 
-  // Save to localStorage
   useEffect(() => {
-    if (isHydrated && typeof window !== 'undefined') {
-      localStorage.setItem('academicYears', JSON.stringify(academicYears))
+    if (user) {
+      fetchAcademicYears()
     }
-  }, [academicYears, isHydrated])
+    setIsHydrated(true)
+  }, [user])
 
   useEffect(() => {
     if (isHydrated && !user) {
@@ -122,91 +98,83 @@ export default function AcademicYearsPage() {
   const handleEdit = (item: AcademicYear) => {
     setEditingId(item.id)
     setFormData({
-      academicYear: item.academicYear,
-      startDate: item.startDate,
-      endDate: item.endDate,
+      name: item.name,
+      start_date: item.start_date,
+      end_date: item.end_date,
       status: item.status,
       description: item.description,
+      is_current: item.is_current,
     })
     setShowModal(true)
   }
 
-  const handleSave = () => {
-    if (!formData.academicYear.trim() || !formData.startDate || !formData.endDate) {
-      alert('Please fill in all required fields')
+  const handleSave = async () => {
+    if (!formData.name.trim() || !formData.start_date || !formData.end_date) {
+      toast.error('Please fill in all required fields')
       return
     }
 
     // Validate date format
-    const startDate = new Date(formData.startDate)
-    const endDate = new Date(formData.endDate)
+    const startDate = new Date(formData.start_date)
+    const endDate = new Date(formData.end_date)
 
     if (startDate >= endDate) {
-      alert('Start date must be before end date')
+      toast.error('Start date must be before end date')
       return
     }
 
-    if (editingId) {
-      // Update existing
-      setAcademicYears((prev) =>
-        prev.map((item) =>
-          item.id === editingId
-            ? {
-              ...item,
-              academicYear: formData.academicYear,
-              startDate: formData.startDate,
-              endDate: formData.endDate,
-              status: formData.status,
-              description: formData.description,
-            }
-            : item
-        )
-      )
-    } else {
-      // Add new
-      const newAcademicYear: AcademicYear = {
-        id: Date.now().toString(),
-        academicYear: formData.academicYear,
-        startDate: formData.startDate,
-        endDate: formData.endDate,
-        status: formData.status,
-        createdBy: user?.email || 'Unknown',
-        createdDate: new Date().toISOString().split('T')[0],
-        description: formData.description,
+    try {
+      if (editingId) {
+        await classAPI.updateAY(editingId, formData)
+        toast.success('Academic year updated successfully')
+      } else {
+        await classAPI.createAY(formData)
+        toast.success('Academic year created successfully')
       }
-      setAcademicYears((prev) => [newAcademicYear, ...prev])
+      fetchAcademicYears()
+      setShowModal(false)
+      setFormData(DEFAULT_FORM_STATE)
+    } catch (error: any) {
+      console.error('Failed to save academic year:', error)
+      toast.error(error.response?.data?.error || 'Failed to save academic year')
     }
-
-    setShowModal(false)
-    setFormData(DEFAULT_FORM_STATE)
   }
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this academic year?')) {
-      setAcademicYears((prev) => prev.filter((item) => item.id !== id))
+      try {
+        await classAPI.deleteAY(id)
+        toast.success('Academic year deleted successfully')
+        fetchAcademicYears()
+      } catch (error: any) {
+        console.error('Failed to delete academic year:', error)
+        toast.error(error.response?.data?.error || 'Failed to delete academic year')
+      }
     }
   }
 
-  const handleActivate = (id: string) => {
-    setAcademicYears((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? { ...item, status: 'Active' }
-          : item.status === 'Active'
-            ? { ...item, status: 'Inactive' }
-            : item
-      )
-    )
+  const handleActivate = async (id: string) => {
+    try {
+      const ay = academicYears.find(a => a.id === id)
+      if (ay) {
+        await classAPI.updateAY(id, { ...ay, is_current: true, status: 'Active' })
+        toast.success('Academic year activated successfully')
+        fetchAcademicYears()
+      }
+    } catch (error: any) {
+      console.error('Failed to activate academic year:', error)
+      toast.error(error.response?.data?.error || 'Failed to activate academic year')
+    }
   }
 
   const filteredYears = academicYears.filter((item) =>
-    item.academicYear.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.description.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   const activeYears = academicYears.filter((item) => item.status === 'Active').length
   const totalYears = academicYears.length
-  const currentYear = academicYears.find((item) => item.status === 'Active')
+  const currentYear = academicYears.find((item) => item.is_current)
 
   if (!isHydrated || !user) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>
@@ -238,7 +206,7 @@ export default function AcademicYearsPage() {
               </div>
               <div className="bg-white p-6 rounded-lg shadow">
                 <h3 className="text-gray-500 text-sm font-medium">Current Year</h3>
-                <p className="text-2xl font-bold text-blue-600 mt-2">{currentYear?.academicYear || 'N/A'}</p>
+                <p className="text-2xl font-bold text-blue-600 mt-2">{currentYear?.name || 'N/A'}</p>
               </div>
             </div>
 
@@ -283,9 +251,9 @@ export default function AcademicYearsPage() {
                     ) : (
                       filteredYears.map((item) => (
                         <tr key={item.id} className="border-b border-gray-200 hover:bg-gray-50">
-                          <td className="px-4 py-3 text-sm font-semibold text-gray-900">{item.academicYear}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{item.startDate}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{item.endDate}</td>
+                          <td className="px-4 py-3 text-sm font-semibold text-gray-900">{item.name}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{item.start_date}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{item.end_date}</td>
                           <td className="px-4 py-3">
                             <span
                               className={`px-3 py-1 rounded-full text-xs font-semibold ${item.status === 'Active'
@@ -305,20 +273,12 @@ export default function AcademicYearsPage() {
                               >
                                 Edit
                               </button>
-                              {item.status !== 'Active' && (
+                              {!item.is_current && (
                                 <button
                                   onClick={() => handleActivate(item.id)}
                                   className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 text-xs font-semibold transition"
                                 >
-                                  Activate
-                                </button>
-                              )}
-                              {item.status === 'Active' && academicYears.filter((a) => a.status === 'Active').length > 1 && (
-                                <button
-                                  onClick={() => handleActivate(item.id)}
-                                  className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 text-xs font-semibold transition"
-                                >
-                                  Deactivate
+                                  Set Current
                                 </button>
                               )}
                               <button
@@ -364,8 +324,8 @@ export default function AcademicYearsPage() {
                 <input
                   type="text"
                   placeholder="e.g., 2024-2025"
-                  value={formData.academicYear}
-                  onChange={(e) => setFormData({ ...formData, academicYear: e.target.value })}
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -373,8 +333,8 @@ export default function AcademicYearsPage() {
               <div>
                 <NepaliDatePicker
                   label="Start Date"
-                  value={formData.startDate}
-                  onChange={(date: string) => setFormData({ ...formData, startDate: date })}
+                  value={formData.start_date}
+                  onChange={(date: string) => setFormData({ ...formData, start_date: date })}
                   required
                 />
               </div>
@@ -382,8 +342,8 @@ export default function AcademicYearsPage() {
               <div>
                 <NepaliDatePicker
                   label="End Date"
-                  value={formData.endDate}
-                  onChange={(date: string) => setFormData({ ...formData, endDate: date })}
+                  value={formData.end_date}
+                  onChange={(date: string) => setFormData({ ...formData, end_date: date })}
                   required
                 />
               </div>

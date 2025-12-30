@@ -57,7 +57,8 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool) {
 	// Admin routes
 	admin := api.Group("/admin")
 	admin.Use(middleware.JWTMiddleware(cfg))
-	admin.Use(middleware.RoleMiddleware("admin"))
+	// Use Casbin to check for system-level access
+	admin.Use(middleware.CasbinMiddleware("system", "access"))
 
 	// Admin endpoints can be added here
 	admin.Get("/users", func(c *fiber.Ctx) error {

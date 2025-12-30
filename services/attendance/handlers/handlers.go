@@ -3,7 +3,7 @@ package handlers
 import (
 	"context"
 	"fmt"
-	"log"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -11,6 +11,8 @@ import (
 
 	"school-erp/attendance/database"
 	"school-erp/attendance/middleware"
+	"school-erp/attendance/pkg/logger"
+	"school-erp/attendance/pkg/validation"
 )
 
 type Handler struct {
@@ -25,11 +27,28 @@ func (h *Handler) Health(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "healthy"})
 }
 
+// getSchoolID retrieves the school_id from context
+func (h *Handler) getSchoolID(c *fiber.Ctx) (string, error) {
+	schoolIDStr, ok := c.Locals("school_id").(string)
+	if !ok || schoolIDStr == "" {
+		return "", fmt.Errorf("school_id not found in context")
+	}
+
+	return schoolIDStr, nil
+}
+
 // ListAttendance handles GET /api/v1/attendance
 func (h *Handler) ListAttendance(c *fiber.Ctx) error {
+	log := logger.GetLogger()
 	db := middleware.GetTenantDB(c)
 	if db == nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
+	}
+
+	schoolID, err := h.getSchoolID(c)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to get school_id from claims")
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid authentication claims"})
 	}
 
 	class := c.Query("class")
@@ -37,37 +56,40 @@ func (h *Handler) ListAttendance(c *fiber.Ctx) error {
 	status := c.Query("status")
 	studentID := c.Query("student_id")
 
-	query := `SELECT id, school_id, student_id, class, date, status, remarks, marked_by, created_at, updated_at FROM attendance WHERE 1=1`
-	args := []interface{}{}
-	argIdx := 1
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("SELECT id, school_id, student_id, class, date, status, remarks, marked_by, created_at, updated_at FROM attendance WHERE school_id = $1")
+
+	args := []interface{}{schoolID}
+	argIdx := 2
 
 	if studentID != "" {
-		query += fmt.Sprintf(" AND student_id = $%d", argIdx)
+		fmt.Fprintf(&queryBuilder, " AND student_id = $%d", argIdx)
 		args = append(args, studentID)
 		argIdx++
 	}
 	if class != "" {
-		query += fmt.Sprintf(" AND class = $%d", argIdx)
+		fmt.Fprintf(&queryBuilder, " AND class = $%d", argIdx)
 		args = append(args, class)
 		argIdx++
 	}
 	if date != "" {
 		// Assuming date is in YYYY-MM-DD format
-		query += fmt.Sprintf(" AND date::date = $%d", argIdx)
+		fmt.Fprintf(&queryBuilder, " AND date::date = $%d", argIdx)
 		args = append(args, date)
 		argIdx++
 	}
 	if status != "" {
-		query += fmt.Sprintf(" AND status = $%d", argIdx)
+		fmt.Fprintf(&queryBuilder, " AND status = $%d", argIdx)
 		args = append(args, status)
 		argIdx++
 	}
 
-	query += ` ORDER BY date DESC, created_at DESC`
+	queryBuilder.WriteString(" ORDER BY date DESC, created_at DESC")
+	query := queryBuilder.String()
 
 	rows, err := db.Query(context.Background(), query, args...)
 	if err != nil {
-		log.Printf("Error listing attendance: %v", err)
+		log.Error().Err(err).Str("query", query).Msg("Error listing attendance")
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch attendance records"})
 	}
 	defer rows.Close()
@@ -75,10 +97,10 @@ func (h *Handler) ListAttendance(c *fiber.Ctx) error {
 	records := []database.Attendance{}
 	for rows.Next() {
 		var r database.Attendance
-		var markedBy *int64
+		var markedBy *string
 		err := rows.Scan(&r.ID, &r.SchoolID, &r.StudentID, &r.Class, &r.Date, &r.Status, &r.Remarks, &markedBy, &r.CreatedAt, &r.UpdatedAt)
 		if err != nil {
-			log.Printf("Error scanning attendance row: %v", err)
+			log.Error().Err(err).Msg("Error scanning attendance row")
 			continue
 		}
 		if markedBy != nil {
@@ -87,65 +109,61 @@ func (h *Handler) ListAttendance(c *fiber.Ctx) error {
 		records = append(records, r)
 	}
 
-	return c.JSON(fiber.Map{"records": records})
+	return c.JSON(fiber.Map{"records": records, "count": len(records)})
 }
 
 // MarkAttendance handles POST /api/v1/attendance
-// MarkAttendance handles POST /api/v1/attendance
 func (h *Handler) MarkAttendance(c *fiber.Ctx) error {
+	log := logger.GetLogger()
 	db := middleware.GetTenantDB(c)
 	if db == nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
 	}
 
-	var req struct {
-		StudentID int64  `json:"student_id"`
-		Class     string `json:"class"`
-		Date      string `json:"date"`
-		Status    string `json:"status"`
-		Remarks   string `json:"remarks"`
+	schoolID, err := h.getSchoolID(c)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to get school_id from claims")
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid authentication claims"})
 	}
 
+	userID, _ := c.Locals("user_id").(string)
+
+	var req validation.MarkAttendanceRequest
 	if err := c.BodyParser(&req); err != nil {
-		log.Printf("Error parsing body: %v", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	if req.StudentID == 0 || req.Status == "" || req.Class == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Missing required fields"})
+	if err := validation.Validate(req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	var attendanceDate time.Time
-	var err error
 	if req.Date == "" {
 		attendanceDate = time.Now()
 	} else {
-		// Try parsing YYYY-MM-DD first
 		attendanceDate, err = time.Parse("2006-01-02", req.Date)
 		if err != nil {
-			// Try parsing RFC3339 (should cover ISO strings from JS)
 			attendanceDate, err = time.Parse(time.RFC3339, req.Date)
 			if err != nil {
-				log.Printf("Error parsing date: %v", err)
-				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid date format"})
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid date format, use YYYY-MM-DD or RFC3339"})
 			}
 		}
 	}
 
-	schoolID := int64(0) // Should ideally be context-driven
-
 	query := `
-		INSERT INTO attendance (school_id, student_id, class, date, status, remarks)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO attendance (school_id, student_id, class, date, status, remarks, marked_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, created_at, updated_at`
 
 	var id int64
 	var createdAt, updatedAt time.Time
-	err = db.QueryRow(context.Background(), query, schoolID, req.StudentID, req.Class, attendanceDate, req.Status, req.Remarks).Scan(&id, &createdAt, &updatedAt)
+	err = db.QueryRow(context.Background(), query, schoolID, req.StudentID, req.Class, attendanceDate, req.Status, req.Remarks, userID).Scan(&id, &createdAt, &updatedAt)
 	if err != nil {
-		log.Printf("Error marking attendance: %v", err)
+		log.Error().Err(err).Str("school_id", schoolID).Msg("Error marking attendance")
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to save attendance record"})
 	}
+
+	log.Info().Int64("id", id).Str("school_id", schoolID).Msg("Attendance record marked successfully")
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"id":         id,
@@ -156,26 +174,29 @@ func (h *Handler) MarkAttendance(c *fiber.Ctx) error {
 }
 
 // UpdateAttendance handles PUT /api/v1/attendance/:id
-// UpdateAttendance handles PUT /api/v1/attendance/:id
 func (h *Handler) UpdateAttendance(c *fiber.Ctx) error {
+	log := logger.GetLogger()
 	db := middleware.GetTenantDB(c)
 	if db == nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
 	}
 
-	id := c.Params("id")
-	var req struct {
-		Status  string `json:"status"`
-		Remarks string `json:"remarks"`
-		Date    string `json:"date"`
+	schoolID, err := h.getSchoolID(c)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid authentication claims"})
 	}
 
+	id := c.Params("id")
+	var req validation.UpdateAttendanceRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
+	if err := validation.Validate(req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
 	var attendanceDate time.Time
-	var err error
 	if req.Date != "" {
 		attendanceDate, err = time.Parse("2006-01-02", req.Date)
 		if err != nil {
@@ -186,26 +207,41 @@ func (h *Handler) UpdateAttendance(c *fiber.Ctx) error {
 		}
 	}
 
-	// Build dynamic query
-	query := `UPDATE attendance SET status = $1, remarks = $2, updated_at = CURRENT_TIMESTAMP`
-	args := []interface{}{req.Status, req.Remarks}
-	argIdx := 3
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("UPDATE attendance SET updated_at = CURRENT_TIMESTAMP")
+
+	args := []interface{}{}
+	argIdx := 1
+
+	if req.Status != "" {
+		fmt.Fprintf(&queryBuilder, ", status = $%d", argIdx)
+		args = append(args, req.Status)
+		argIdx++
+	}
+
+	if req.Remarks != "" {
+		fmt.Fprintf(&queryBuilder, ", remarks = $%d", argIdx)
+		args = append(args, req.Remarks)
+		argIdx++
+	}
 
 	if !attendanceDate.IsZero() {
-		query += fmt.Sprintf(", date = $%d", argIdx)
+		fmt.Fprintf(&queryBuilder, ", date = $%d", argIdx)
 		args = append(args, attendanceDate)
 		argIdx++
 	}
 
-	query += fmt.Sprintf(" WHERE id = $%d RETURNING id, updated_at", argIdx)
-	args = append(args, id)
+	fmt.Fprintf(&queryBuilder, " WHERE id = $%d AND school_id = $%d RETURNING id, updated_at", argIdx, argIdx+1)
+	args = append(args, id, schoolID)
+
+	query := queryBuilder.String()
 
 	var updatedID int64
 	var updatedAt time.Time
 	err = db.QueryRow(context.Background(), query, args...).Scan(&updatedID, &updatedAt)
 	if err != nil {
-		log.Printf("Error updating attendance: %v", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update attendance record"})
+		log.Error().Err(err).Str("id", id).Str("school_id", schoolID).Msg("Error updating attendance")
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update attendance record or record not found"})
 	}
 
 	return c.JSON(fiber.Map{
@@ -216,17 +252,27 @@ func (h *Handler) UpdateAttendance(c *fiber.Ctx) error {
 
 // DeleteAttendance handles DELETE /api/v1/attendance/:id
 func (h *Handler) DeleteAttendance(c *fiber.Ctx) error {
+	log := logger.GetLogger()
 	db := middleware.GetTenantDB(c)
 	if db == nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized tenant context"})
 	}
 
-	id := c.Params("id")
-	query := `DELETE FROM attendance WHERE id = $1`
-	_, err := db.Exec(context.Background(), query, id)
+	schoolID, err := h.getSchoolID(c)
 	if err != nil {
-		log.Printf("Error deleting attendance: %v", err)
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid authentication claims"})
+	}
+
+	id := c.Params("id")
+	query := `DELETE FROM attendance WHERE id = $1 AND school_id = $2`
+	res, err := db.Exec(context.Background(), query, id, schoolID)
+	if err != nil {
+		log.Error().Err(err).Str("id", id).Str("school_id", schoolID).Msg("Error deleting attendance")
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete attendance record"})
+	}
+
+	if res.RowsAffected() == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Attendance record not found"})
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)

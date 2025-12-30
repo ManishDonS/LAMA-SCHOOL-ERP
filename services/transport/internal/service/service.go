@@ -6,8 +6,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"net/http/cookiejar"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/school-erp/transport-service/internal/models"
@@ -44,10 +48,21 @@ type TransportService interface {
 	// Traccar Proxy
 	GetTraccarToken(ctx context.Context) (string, error)
 	ProxyTraccarRequest(ctx context.Context, method, path string, body []byte) ([]byte, int, error)
+	ValidateTraccarCredentials(ctx context.Context) error
 
 	// Settings
 	GetSettings(ctx context.Context) (map[string]string, error)
 	UpdateSettings(ctx context.Context, settings map[string]string) error
+
+	// Maintenance
+	CreateMaintenance(ctx context.Context, record *models.MaintenanceRecord) error
+	ListMaintenance(ctx context.Context, busID string) ([]*models.MaintenanceRecord, error)
+	DeleteMaintenance(ctx context.Context, id string) error
+
+	// Fuel Logs
+	CreateFuelLog(ctx context.Context, log *models.FuelLog) error
+	ListFuelLogs(ctx context.Context, busID string) ([]*models.FuelLog, error)
+	DeleteFuelLog(ctx context.Context, id string) error
 }
 
 type TransportServiceImpl struct {
@@ -136,7 +151,12 @@ func (s *TransportServiceImpl) DeleteAssignment(ctx context.Context, id string) 
 
 // Settings Implementation
 func (s *TransportServiceImpl) GetSettings(ctx context.Context) (map[string]string, error) {
-	return s.repo.GetSettings(ctx)
+	settings, err := s.repo.GetSettings(ctx)
+	if err != nil {
+		log.Printf("[TransportService] Error fetching settings: %v", err)
+		return nil, err
+	}
+	return settings, nil
 }
 
 func (s *TransportServiceImpl) UpdateSettings(ctx context.Context, settings map[string]string) error {
@@ -146,6 +166,32 @@ func (s *TransportServiceImpl) UpdateSettings(ctx context.Context, settings map[
 		}
 	}
 	return nil
+}
+
+// Maintenance Implementation
+func (s *TransportServiceImpl) CreateMaintenance(ctx context.Context, record *models.MaintenanceRecord) error {
+	return s.repo.CreateMaintenance(ctx, record)
+}
+
+func (s *TransportServiceImpl) ListMaintenance(ctx context.Context, busID string) ([]*models.MaintenanceRecord, error) {
+	return s.repo.ListMaintenance(ctx, busID)
+}
+
+func (s *TransportServiceImpl) DeleteMaintenance(ctx context.Context, id string) error {
+	return s.repo.DeleteMaintenance(ctx, id)
+}
+
+// Fuel Log Implementation
+func (s *TransportServiceImpl) CreateFuelLog(ctx context.Context, log *models.FuelLog) error {
+	return s.repo.CreateFuelLog(ctx, log)
+}
+
+func (s *TransportServiceImpl) ListFuelLogs(ctx context.Context, busID string) ([]*models.FuelLog, error) {
+	return s.repo.ListFuelLogs(ctx, busID)
+}
+
+func (s *TransportServiceImpl) DeleteFuelLog(ctx context.Context, id string) error {
+	return s.repo.DeleteFuelLog(ctx, id)
 }
 
 // Traccar Proxy Implementation
@@ -180,36 +226,103 @@ func (s *TransportServiceImpl) getTraccarConfig(ctx context.Context) (string, st
 func (s *TransportServiceImpl) GetTraccarToken(ctx context.Context) (string, error) {
 	traccarURL, username, password, err := s.getTraccarConfig(ctx)
 	if err != nil {
+		log.Printf("[TransportService] Error loading Traccar config: %v", err)
 		return "", err
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	data := "expiration=" + time.Now().Add(24*time.Hour).Format(time.RFC3339)
-	req, err := http.NewRequest("POST", traccarURL+"/session/token", bytes.NewBufferString(data))
-	if err != nil {
-		return "", err
+	// Validate credentials
+	if username == "" || password == "" {
+		return "", fmt.Errorf("INVALID_CREDENTIALS: Traccar username or password is empty")
+	}
+	if password == "change-in-production" || password == "admin" {
+		return "", fmt.Errorf("INVALID_CREDENTIALS: Please update Traccar credentials in settings or environment variables")
 	}
 
-	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
-	req.Header.Add("Authorization", "Basic "+auth)
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	// Clean URL
+	traccarURL = strings.TrimRight(traccarURL, "/")
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to get token: %d", resp.StatusCode)
+	// Use a client with a cookie jar to persist session
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+		Jar:     jar,
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
+	// Strategy 1: Standard Traccar - GET /api/session with Basic Auth
+	reqURL := traccarURL + "/session"
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err == nil {
+		auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+		req.Header.Add("Authorization", "Basic "+auth)
+		req.Header.Add("Accept", "application/json")
+
+		log.Printf("[TransportService] Strategy 1: GET %s with Basic Auth (Standard Traccar)", reqURL)
+		resp, err := client.Do(req)
+		if err == nil {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				log.Printf("[TransportService] Strategy 1 Succeeded - Basic Auth works")
+				// Return Basic Auth token that can be used for subsequent requests
+				return fmt.Sprintf(`{"type":"basic","token":"%s"}`, auth), nil
+			}
+			log.Printf("[TransportService] Strategy 1 Failed (Status %d): %s", resp.StatusCode, string(body))
+		} else {
+			log.Printf("[TransportService] Strategy 1 Request Error: %v", err)
+		}
 	}
 
-	return string(body), nil
+	// Strategy 2: POST /api/session with form-encoded (Session-based auth)
+	reqURL = traccarURL + "/session"
+	sessionData := url.Values{}
+	sessionData.Set("email", username)
+	sessionData.Set("password", password)
+	req2, err := http.NewRequest("POST", reqURL, strings.NewReader(sessionData.Encode()))
+	if err == nil {
+		req2.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		req2.Header.Add("Accept", "application/json")
+
+		log.Printf("[TransportService] Strategy 2: POST %s with form data (Session-based)", reqURL)
+		resp, err := client.Do(req2)
+		if err == nil {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent {
+				log.Printf("[TransportService] Strategy 2 Succeeded - Session created")
+				// Session cookie is stored in jar, return user info
+				return string(body), nil
+			}
+			log.Printf("[TransportService] Strategy 2 Failed (Status %d): %s", resp.StatusCode, string(body))
+		} else {
+			log.Printf("[TransportService] Strategy 2 Request Error: %v", err)
+		}
+	}
+
+	// Strategy 3: Try without /api prefix (some Traccar instances use direct /session)
+	baseURL := strings.TrimSuffix(traccarURL, "/api")
+	reqURL = baseURL + "/api/session"
+	req3, err := http.NewRequest("GET", reqURL, nil)
+	if err == nil {
+		auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+		req3.Header.Add("Authorization", "Basic "+auth)
+		req3.Header.Add("Accept", "application/json")
+
+		log.Printf("[TransportService] Strategy 3: GET %s with Basic Auth (Alternative URL)", reqURL)
+		resp, err := client.Do(req3)
+		if err == nil {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				log.Printf("[TransportService] Strategy 3 Succeeded")
+				return fmt.Sprintf(`{"type":"basic","token":"%s"}`, auth), nil
+			}
+			log.Printf("[TransportService] Strategy 3 Failed (Status %d): %s", resp.StatusCode, string(body))
+		} else {
+			log.Printf("[TransportService] Strategy 3 Request Error: %v", err)
+		}
+	}
+
+	return "", fmt.Errorf("INVALID_CREDENTIALS: All authentication strategies failed. Please verify your Traccar credentials")
 }
 
 func (s *TransportServiceImpl) ProxyTraccarRequest(ctx context.Context, method, path string, body []byte) ([]byte, int, error) {
@@ -240,4 +353,52 @@ func (s *TransportServiceImpl) ProxyTraccarRequest(ctx context.Context, method, 
 	}
 
 	return respBody, resp.StatusCode, nil
+}
+
+func (s *TransportServiceImpl) ValidateTraccarCredentials(ctx context.Context) error {
+	traccarURL, username, password, err := s.getTraccarConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("configuration error: %v", err)
+	}
+
+	// Validate credentials format
+	if username == "" || password == "" {
+		return fmt.Errorf("username or password is empty")
+	}
+	if password == "change-in-production" || password == "admin" {
+		return fmt.Errorf("please update default credentials")
+	}
+
+	// Clean URL
+	traccarURL = strings.TrimRight(traccarURL, "/")
+
+	// Test connection with Basic Auth (standard Traccar method)
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("GET", traccarURL+"/session", nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %v", err)
+	}
+
+	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+	req.Header.Add("Authorization", "Basic "+auth)
+	req.Header.Add("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("connection failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode == http.StatusOK {
+		log.Printf("[TransportService] Traccar credentials validated successfully")
+		return nil
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("invalid credentials - authentication failed")
+	}
+
+	return fmt.Errorf("validation failed with status %d: %s", resp.StatusCode, string(body))
 }

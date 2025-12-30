@@ -22,30 +22,39 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool, tenantManager *tenant.TenantM
 	// School management endpoints
 	schools := api.Group("/schools")
 
+	// Public routes
+	schools.Get("/public", schoolHandler.GetPublicSchools)
+
 	// Open routes (Tenant creation is usually protected by SuperAdmin auth, but for now we might leave it open or verify usage)
 	// Actually, CreateSchool should be protected by SuperAdmin.
 	// But let's assume we want to apply JWT middleware generally.
 	// Since we are implementing RBAC for School Admins, we focus on /api/v1/schools/:id/roles
 
-	schools.Post("/", schoolHandler.CreateSchool) // Create school
+	// Group for school management (Super Admin only)
+	schoolMgmt := schools.Group("/", middleware.JWTMiddleware(cfg), middleware.SuperAdminMiddleware())
 
-	// Routes that might need generic auth
-	schools.Get("/", schoolHandler.GetSchools)                 // List schools
-	schools.Get("/:id", schoolHandler.GetSchool)               // Get school by ID
-	schools.Put("/:id", schoolHandler.UpdateSchool)            // Update school
-	schools.Delete("/:id", schoolHandler.DeleteSchool)         // Delete school
-	schools.Get("/:code/stats", schoolHandler.GetSchoolStats)  // Get school DB stats
-	schools.Get("/:id/admin", schoolHandler.GetSchoolAdmin)    // Get school admin details
-	schools.Put("/:id/admin", schoolHandler.UpdateSchoolAdmin) // Update school admin details
+	// Create/List schools
+	schoolMgmt.Post("/", schoolHandler.CreateSchool)
+	schoolMgmt.Get("/", schoolHandler.GetSchools)
+
+	// Specific school operations
+	schoolMgmt.Get("/:id", schoolHandler.GetSchool)
+	schoolMgmt.Put("/:id", schoolHandler.UpdateSchool)
+	schoolMgmt.Delete("/:id", schoolHandler.DeleteSchool)
+	schoolMgmt.Get("/:code/stats", schoolHandler.GetSchoolStats)
+	schoolMgmt.Get("/:id/admin", schoolHandler.GetSchoolAdmin)
+	schoolMgmt.Put("/:id/admin", schoolHandler.UpdateSchoolAdmin)
 
 	// Logo management
-	schools.Post("/:id/logo", logoHandler.UploadLogo)   // Upload/update school logo
-	schools.Delete("/:id/logo", logoHandler.DeleteLogo) // Delete school logo
+	schoolMgmt.Post("/:id/logo", logoHandler.UploadLogo)
+	schoolMgmt.Delete("/:id/logo", logoHandler.DeleteLogo)
 
 	// Module management
 	moduleHandler := handlers.NewModuleHandler(db)
-	api.Get("/modules", moduleHandler.GetAvailableModules)   // Get all available modules
-	schools.Post("/:id/modules", moduleHandler.ToggleModule) // Toggle module for school
+	api.Get("/modules", moduleHandler.GetAvailableModules) // Get all available modules
+
+	// Module toggling is strictly SuperAdmin
+	schoolMgmt.Post("/:id/modules", moduleHandler.ToggleModule)
 
 	// Role & Permission management
 	// Protected by JWT and Permission Middleware

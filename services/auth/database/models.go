@@ -5,16 +5,18 @@ import (
 )
 
 type User struct {
-	ID           string    `db:"id"`
-	SchoolID     string    `db:"school_id"`
-	Email        string    `db:"email"`
-	PasswordHash string    `db:"password_hash"`
-	FirstName    string    `db:"first_name"`
-	LastName     string    `db:"last_name"`
-	Role         string    `db:"role"`   // admin, teacher, student, parent, staff
-	Status       string    `db:"status"` // active, inactive, suspended
-	CreatedAt    time.Time `db:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at"`
+	ID                  string     `db:"id"`
+	SchoolID            string     `db:"school_id"`
+	Email               string     `db:"email"`
+	PasswordHash        string     `db:"password_hash"`
+	FirstName           string     `db:"first_name"`
+	LastName            string     `db:"last_name"`
+	Role                string     `db:"role"`   // admin, teacher, student, parent, staff
+	Status              string     `db:"status"` // active, inactive, suspended
+	FailedLoginAttempts int        `json:"failed_login_attempts"`
+	LockedUntil         *time.Time `json:"locked_until"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 type Role struct {

@@ -51,10 +51,11 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 
 		ctx := context.Background()
 
-		// Fetch school credentials from main database
+		// Fetch school credentials and active modules from main database
 		var dbUser, encryptedPassword string
-		query := `SELECT db_user, db_password FROM schools WHERE code = $1 AND status = 'active'`
-		err := cfg.MainDB.QueryRow(ctx, query, tenantCode).Scan(&dbUser, &encryptedPassword)
+		var activeModulesJSON []byte
+		query := `SELECT db_user, db_password, active_modules FROM schools WHERE code = $1 AND status = 'active'`
+		err := cfg.MainDB.QueryRow(ctx, query, tenantCode).Scan(&dbUser, &encryptedPassword, &activeModulesJSON)
 		if err != nil {
 			log.Printf("School not found or inactive for tenant %s: %v\n", tenantCode, err)
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -62,6 +63,9 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 				"tenant_code": tenantCode,
 			})
 		}
+
+		// Store active modules in locals
+		c.Locals("active_modules_json", activeModulesJSON)
 
 		// Get or create tenant database connection
 		tenantDB, err := cfg.TenantManager.GetConnection(

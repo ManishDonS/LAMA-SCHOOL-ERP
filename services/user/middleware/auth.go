@@ -3,6 +3,8 @@ package middleware
 import (
 	"strings"
 
+	"school-erp/user/messaging"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -44,6 +46,47 @@ func AuthMiddleware(c *fiber.Ctx) error {
 		// In production, reject invalid tokens
 	}
 
-	c.Locals("user_id", claims["sub"])
+	// Extract claims correctly
+	c.Locals("user_id", claims["user_id"])
+	c.Locals("role", claims["role"])
+	c.Locals("school_id", claims["school_id"])
 	return c.Next()
+}
+
+// ModuleAccessMiddleware prevents access to a module if not active for the school
+func ModuleAccessMiddleware(moduleKey string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		// 1. Super admin bypasses module activation checks
+		role, _ := c.Locals("role").(string)
+		if role == "super_admin" {
+			return c.Next()
+		}
+
+		schoolID, _ := c.Locals("school_id").(string)
+		if schoolID != "" {
+			// Check NATS-backed cache first
+			if messaging.Cache.IsModuleActive(schoolID, moduleKey) {
+				return c.Next()
+			}
+		}
+
+		// 2. Get active modules (set by TenantResolver)
+		activeModulesJSON, ok := c.Locals("active_modules_json").([]byte)
+		if !ok || len(activeModulesJSON) == 0 {
+			return c.Next()
+		}
+
+		// Minimal check logic
+		isActive := strings.Contains(string(activeModulesJSON), "\""+moduleKey+"\"")
+
+		if !isActive {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error":   "Module not active for this school",
+				"module":  moduleKey,
+				"message": "Please activate this module in the Apps dashboard or contact support.",
+			})
+		}
+
+		return c.Next()
+	}
 }

@@ -168,8 +168,11 @@ services:
       DB_NAME: school_erp
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
+      ENV: development
+      LOG_LEVEL: debug
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
     depends_on:
       postgres:
         condition: service_healthy
@@ -386,6 +389,7 @@ services:
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
       PORT: 3010
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
     volumes:
       - expense_uploads:/root/uploads
     depends_on:
@@ -420,9 +424,9 @@ services:
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
       PORT: 3009
-      TRACCAR_API_URL: https://system.geotrack.com.np/api
-      TRACCAR_USER: ${TRACCAR_USER:-admin}
-      TRACCAR_PASSWORD: ${TRACCAR_PASSWORD:-admin}
+      TRACCAR_API_URL: ${TRACCAR_API_URL:-https://system.geotrack.com.np/api}
+      TRACCAR_USER: ${TRACCAR_USER}
+      TRACCAR_PASSWORD: ${TRACCAR_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy
@@ -551,6 +555,39 @@ services:
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
       PORT: 3014
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - school-erp-network
+    restart: on-failure
+
+  # Library Service
+  library-service:
+    build:
+      context: ./services/library
+      dockerfile: Dockerfile
+      args:
+        - GOPROXY=https://proxy.golang.org,direct
+    container_name: school-erp-library
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    ports:
+      - "3015:3015"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: school_erp
+      NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+      CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
+      LIBRARY_SERVICE_PORT: 3015
+      AUTH_SERVICE_URL: http://auth-service:3001
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
     depends_on:
       postgres:

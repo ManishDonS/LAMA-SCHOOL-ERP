@@ -3,10 +3,10 @@ package tenant
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -64,20 +64,21 @@ func (tm *TenantManager) GetConnection(ctx context.Context, schoolCode string, h
 		return nil, fmt.Errorf("failed to decrypt password: %w", err)
 	}
 
-	// Create new connection
-	dsn := fmt.Sprintf(
-		"postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		url.QueryEscape(user),
-		url.QueryEscape(password),
-		host,
-		port,
-		url.QueryEscape(dbName),
-	)
-
-	// Create connection pool
-	config, err := pgxpool.ParseConfig(dsn)
+	// Create connection pool config from defaults
+	config, err := pgxpool.ParseConfig("")
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse DSN: %w", err)
+		return nil, fmt.Errorf("failed to parse default config: %w", err)
+	}
+
+	// Set credentials directly to mitigate DSN exposure risks
+	config.ConnConfig.Host = host
+	config.ConnConfig.Port = uint16(port)
+	config.ConnConfig.User = user
+	config.ConnConfig.Password = password
+	config.ConnConfig.Database = dbName
+	config.ConnConfig.ConnectTimeout = tm.connectionTimeout
+	config.ConnConfig.RuntimeParams = map[string]string{
+		"application_name": "LAMA-ERP-Student-Tenant-" + schoolCode,
 	}
 
 	// Configure pool
@@ -126,58 +127,62 @@ func (tm *TenantManager) CreateTenantDatabase(ctx context.Context, mainDB *pgxpo
 	}
 	_ = encryptedPassword // Will be used when saving to main DB
 
-	// Create user if it doesn't exist
-	createUserSQL := fmt.Sprintf(`
+	// Create user if it doesn't exist using safe EXECUTE format() pattern
+	createUserSQL := `
 		DO $$
 		BEGIN
-			IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '%s') THEN
-				CREATE USER "%s" WITH PASSWORD '%s';
+			IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = $1) THEN
+				EXECUTE format('CREATE USER %I WITH PASSWORD %L', $1, $2);
 			END IF;
 		END
 		$$;
-	`, dbUser, dbUser, dbPassword)
+	`
 
-	if _, err := mainDB.Exec(ctx, createUserSQL); err != nil {
+	if _, err := mainDB.Exec(ctx, createUserSQL, dbUser, dbPassword); err != nil {
 		return fmt.Errorf("failed to create user: %w", err)
 	}
 
-	// Create database
-	createDBSQL := fmt.Sprintf(`CREATE DATABASE "%s" ENCODING 'UTF8' TEMPLATE template0;`, dbName)
-
+	// Create database safely with identifier quoting
+	createDBSQL := fmt.Sprintf("CREATE DATABASE %s", pgx.Identifier{dbName}.Sanitize())
 	if _, err := mainDB.Exec(ctx, createDBSQL); err != nil {
 		return fmt.Errorf("failed to create database: %w", err)
 	}
 
-	// Grant privileges to user on database
-	grantSQL := fmt.Sprintf(`GRANT ALL PRIVILEGES ON DATABASE "%s" TO "%s";`, dbName, dbUser)
-
+	// Grant privileges safely
+	grantSQL := fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE %s TO %s",
+		pgx.Identifier{dbName}.Sanitize(),
+		pgx.Identifier{dbUser}.Sanitize())
 	if _, err := mainDB.Exec(ctx, grantSQL); err != nil {
 		return fmt.Errorf("failed to grant database privileges: %w", err)
 	}
 
-	// Connect to the new database to grant schema permissions
-	tenantDSN := fmt.Sprintf(
-		"postgres://postgres:%s@%s:%d/%s?sslmode=disable",
-		url.QueryEscape(tm.postgresPassword), // Use superuser to grant permissions
-		"postgres",
-		5432,
-		url.QueryEscape(dbName),
-	)
+	// Connect to the new database safely using pgxpool.Config
+	config, _ := pgxpool.ParseConfig("")
+	config.ConnConfig.Host = "postgres"
+	config.ConnConfig.Port = 5432
+	config.ConnConfig.User = "postgres"
+	config.ConnConfig.Password = tm.postgresPassword
+	config.ConnConfig.Database = dbName
 
-	tenantConn, err := pgxpool.New(ctx, tenantDSN)
+	tenantConn, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
 		return fmt.Errorf("failed to connect to tenant database: %w", err)
 	}
 	defer tenantConn.Close()
 
-	// Grant schema permissions
+	// Grant schema permissions safely using Identifier quoting
 	schemaSQL := fmt.Sprintf(`
-		GRANT ALL ON SCHEMA public TO "%s";
-		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO "%s";
-		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO "%s";
-		ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "%s";
-		ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO "%s";
-	`, dbUser, dbUser, dbUser, dbUser, dbUser)
+		GRANT ALL ON SCHEMA public TO %s;
+		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO %s;
+		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO %s;
+		ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO %s;
+		ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO %s;
+	`,
+		pgx.Identifier{dbUser}.Sanitize(),
+		pgx.Identifier{dbUser}.Sanitize(),
+		pgx.Identifier{dbUser}.Sanitize(),
+		pgx.Identifier{dbUser}.Sanitize(),
+		pgx.Identifier{dbUser}.Sanitize())
 
 	if _, err := tenantConn.Exec(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("failed to grant schema privileges: %w", err)
@@ -196,8 +201,8 @@ func (tm *TenantManager) DropTenantDatabase(ctx context.Context, mainDB *pgxpool
 	}
 	tm.dbMutex.Unlock()
 
-	// Drop database
-	dropDBSQL := fmt.Sprintf(`DROP DATABASE IF EXISTS "%s" WITH (FORCE);`, dbName)
+	// Drop database safely
+	dropDBSQL := fmt.Sprintf("DROP DATABASE IF EXISTS %s WITH (FORCE);", pgx.Identifier{dbName}.Sanitize())
 
 	if _, err := mainDB.Exec(ctx, dropDBSQL); err != nil {
 		return fmt.Errorf("failed to drop database: %w", err)

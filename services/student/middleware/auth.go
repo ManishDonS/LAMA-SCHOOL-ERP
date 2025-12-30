@@ -59,3 +59,33 @@ func NewAuthMiddleware(secret string) fiber.Handler {
 		return c.Next()
 	}
 }
+
+// ModuleAccessMiddleware prevents access to a module if not active for the school
+func ModuleAccessMiddleware(moduleKey string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		// 1. Super admin bypasses module activation checks
+		role, _ := c.Locals("role").(string)
+		if role == "super_admin" {
+			return c.Next()
+		}
+
+		// 2. Get active modules (set by TenantResolver)
+		activeModulesJSON, ok := c.Locals("active_modules_json").([]byte)
+		if !ok || len(activeModulesJSON) == 0 {
+			return c.Next()
+		}
+
+		// Minimal check logic (can be replaced with NATS cache later)
+		isActive := strings.Contains(string(activeModulesJSON), "\""+moduleKey+"\"")
+
+		if !isActive {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error":   "Module not active for this school",
+				"module":  moduleKey,
+				"message": "Please activate this module in the Apps dashboard or contact support.",
+			})
+		}
+
+		return c.Next()
+	}
+}

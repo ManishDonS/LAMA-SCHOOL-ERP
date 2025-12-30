@@ -13,6 +13,8 @@ import {
     Legend,
 } from 'chart.js'
 import NepaliDatePicker from '@/components/NepaliDatePicker'
+import { expensesAPI } from '@/services/expenseAPI'
+import { toast } from 'react-hot-toast'
 
 ChartJS.register(
     CategoryScale,
@@ -51,14 +53,14 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ schoolId
     const loadAnalytics = async () => {
         try {
             setLoading(true)
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-            const response = await fetch(
-                `${API_URL}/expense-service/api/v1/analytics?schoolId=${schoolId}&startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`
-            )
-            const data = await response.json()
+            const data = await expensesAPI.getAnalytics({
+                startDate: dateRange.startDate,
+                endDate: dateRange.endDate,
+            })
             setAnalytics(data)
         } catch (error) {
             console.error('Error loading analytics:', error)
+            toast.error('Failed to load analytics data')
         } finally {
             setLoading(false)
         }

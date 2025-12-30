@@ -597,6 +597,53 @@ func (h *SchoolHandler) GetSchools(c *fiber.Ctx) error {
 	})
 }
 
+// GetPublicSchools handles GET /api/v1/schools/public
+// This endpoint is public and returns only non-sensitive data needed for login selection
+func (h *SchoolHandler) GetPublicSchools(c *fiber.Ctx) error {
+	ctx := context.Background()
+
+	// Limit public listing to prevent abuse
+	limit := 100
+
+	query := `
+	SELECT id, name, COALESCE(code, ''), COALESCE(logo_url, '')
+	FROM schools
+	WHERE status = 'active'
+	ORDER BY name ASC
+	LIMIT $1
+	`
+
+	rows, err := h.db.Query(ctx, query, limit)
+	if err != nil {
+		log.Printf("Failed to fetch public schools: %v\n", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to fetch schools",
+		})
+	}
+	defer rows.Close()
+
+	type PublicSchool struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Code    string `json:"code"`
+		LogoURL string `json:"logo_url"`
+	}
+
+	var schools []PublicSchool
+	for rows.Next() {
+		var school PublicSchool
+		if err := rows.Scan(&school.ID, &school.Name, &school.Code, &school.LogoURL); err != nil {
+			log.Printf("Failed to scan public school: %v\n", err)
+			continue
+		}
+		schools = append(schools, school)
+	}
+
+	return c.JSON(fiber.Map{
+		"data": schools,
+	})
+}
+
 // GetSchool handles GET /api/v1/schools/:id
 func (h *SchoolHandler) GetSchool(c *fiber.Ctx) error {
 	schoolID := c.Params("id")

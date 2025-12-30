@@ -6,6 +6,7 @@ import (
 
 	"school-erp/attendance/config"
 	"school-erp/attendance/handlers"
+	"school-erp/attendance/middleware"
 	"school-erp/attendance/pkg/tenant"
 )
 
@@ -16,12 +17,17 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config, tm *tenan
 	// Public routes
 	api.Get("/health", h.Health)
 
-	// Protected routes with tenant resolver
+	// Protected routes with tenant resolver and authentication
 	attendance := api.Group("/attendance")
-	attendance.Use(tenantResolver)
 
-	attendance.Get("/", h.ListAttendance)
-	attendance.Post("/", h.MarkAttendance)
-	attendance.Put("/:id", h.UpdateAttendance)
-	attendance.Delete("/:id", h.DeleteAttendance)
+	// Chain middlewares: Tenant Resolver -> Authentication -> Module Access -> Authorization
+	attendance.Use(tenantResolver)
+	attendance.Use(middleware.AuthMiddleware)
+	attendance.Use(middleware.ModuleAccessMiddleware("attendance"))
+
+	// Granular RBAC using Casbin
+	attendance.Get("/", middleware.CasbinMiddleware("attendance", "view"), h.ListAttendance)
+	attendance.Post("/", middleware.CasbinMiddleware("attendance", "create"), h.MarkAttendance)
+	attendance.Put("/:id", middleware.CasbinMiddleware("attendance", "update"), h.UpdateAttendance)
+	attendance.Delete("/:id", middleware.CasbinMiddleware("attendance", "delete"), h.DeleteAttendance)
 }

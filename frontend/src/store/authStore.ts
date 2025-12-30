@@ -131,7 +131,15 @@ export const useAuthStore = create<AuthStore>()(
         logout: async () => {
           set({ isLoading: true })
 
-          // Always clear local state immediately
+          // Attempt to notify backend BEFORE clearing local state
+          // to ensure X-Tenant-Code and Authorization headers are present.
+          try {
+            await authAPI.logout()
+          } catch (error) {
+            console.error('Logout error:', error)
+          }
+
+          // Clear local state
           set({
             user: null,
             token: null,
@@ -143,17 +151,8 @@ export const useAuthStore = create<AuthStore>()(
 
           if (typeof window !== 'undefined') {
             localStorage.removeItem('access_token')
-            // Refresh token cookie is cleared by backend
             localStorage.removeItem('loginUser')
             localStorage.removeItem('selected_school')
-          }
-
-          // Attempt to notify backend but don't block on failure
-          try {
-            await authAPI.logout()
-          } catch (error) {
-            console.error('Logout error:', error)
-            // Continue even if API call fails
           }
         },
 

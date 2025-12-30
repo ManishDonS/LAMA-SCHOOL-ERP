@@ -7,8 +7,10 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"school-erp/auth/config"
 	"school-erp/auth/database"
 	"school-erp/auth/pkg/tenant"
+	"school-erp/auth/utils"
 )
 
 // TenantContext key for storing tenant information in request context
@@ -21,6 +23,7 @@ const (
 type TenantResolverConfig struct {
 	TenantManager *tenant.TenantManager
 	MainDB        *pgxpool.Pool // Main database for school metadata lookup
+	Config        *config.Config
 }
 
 // TenantInfo holds tenant-specific information extracted from request
@@ -40,6 +43,29 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 
 		// Extract tenant code from request
 		tenantCode := extractTenantCode(c)
+		log.Printf("DEBUG: Extracted tenant code: '%s' for path: %s", tenantCode, c.Path())
+
+		// If tenant code is missing, and this is a refresh request, try to get it from the token
+		if tenantCode == "" && c.Path() == "/api/v1/auth/refresh" {
+			refreshToken := c.Cookies("refresh_token")
+			if refreshToken == "" {
+				var req struct {
+					RefreshToken string `json:"refresh_token"`
+				}
+				if err := c.BodyParser(&req); err == nil && req.RefreshToken != "" {
+					refreshToken = req.RefreshToken
+				}
+			}
+
+			if refreshToken != "" {
+				// Verify token to get claims
+				claims, err := utils.VerifyRefreshToken(cfg.Config, refreshToken)
+				if err == nil && claims.SchoolID != "" {
+					tenantCode = claims.SchoolID
+				}
+			}
+		}
+
 		if tenantCode == "" {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"error":   "Tenant code is required",
@@ -95,6 +121,7 @@ func NewTenantResolver(cfg TenantResolverConfig) fiber.Handler {
 		}
 
 		// Store tenant info in context
+		log.Printf("DEBUG: Successfully connected to tenant database for: %s", tenantCode)
 		c.Locals(TenantCodeContextKey, tenantCode)
 		c.Locals(TenantDBContextKey, tenantDB)
 

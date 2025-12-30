@@ -80,28 +80,27 @@ func (tm *TenantManager) GetConnection(ctx context.Context, schoolCode string, h
 		}
 	}
 
-	// Create new connection
-	dsn := fmt.Sprintf(
-		"postgres://%s:%s@%s:%d/%s?sslmode=%s",
-		url.QueryEscape(user),
-		url.QueryEscape(password),
-		host,
-		port,
-		url.QueryEscape(dbName),
-		sslMode,
-	)
-
-	// Create connection pool
-	config, err := pgxpool.ParseConfig(dsn)
+	// Create connection pool config from defaults
+	config, err := pgxpool.ParseConfig("")
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse DSN: %w", err)
+		return nil, fmt.Errorf("failed to parse default config: %w", err)
+	}
+
+	// Set credentials directly to mitigate DSN exposure risks
+	config.ConnConfig.Host = host
+	config.ConnConfig.Port = uint16(port)
+	config.ConnConfig.User = user
+	config.ConnConfig.Password = password
+	config.ConnConfig.Database = dbName
+	config.ConnConfig.ConnectTimeout = tm.connectionTimeout
+	config.ConnConfig.RuntimeParams = map[string]string{
+		"application_name": "LAMA-ERP-Auth-Tenant-" + schoolCode,
 	}
 
 	// Configure pool
 	config.MaxConns = tm.maxOpenConns
 	config.MinConns = 1
 	config.MaxConnLifetime = tm.connMaxLifetime
-	config.ConnConfig.ConnectTimeout = tm.connectionTimeout
 
 	// Connect with timeout
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -115,6 +114,7 @@ func (tm *TenantManager) GetConnection(ctx context.Context, schoolCode string, h
 	// Test connection
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
+		fmt.Printf("Connection failure for tenant %s: user=%s db=%s host=%s error=%v\n", schoolCode, user, dbName, host, err)
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 

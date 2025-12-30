@@ -103,27 +103,6 @@ interface AcademicPerformance {
     remarks: string
 }
 
-interface AttendanceRecord {
-    id: number
-    date: string
-    status: string
-    checkInTime: string
-    checkOutTime: string
-    reason: string
-}
-
-interface AttendanceSummary {
-    id: number
-    academicYear: string
-    month: number
-    totalDays: number
-    presentDays: number
-    absentDays: number
-    lateDays: number
-    excusedDays: number
-    attendancePercentage: number
-}
-
 interface FeePayment {
     id: number
     academicYear: string
@@ -176,7 +155,7 @@ interface AttendanceSummary {
     id: number
     studentId: number
     academicYear: string
-    month: string
+    month: number
     totalDays: number
     presentDays: number
     absentDays: number
@@ -764,7 +743,7 @@ export default function StudentDetailsPage() {
                                                 <label className="text-sm font-semibold text-gray-600">Date of Birth</label>
                                                 {isEditing ? (
                                                     <NepaliDatePicker
-                                                        value={editForm.dateOfBirth}
+                                                        value={editForm.dateOfBirth || ''}
                                                         onChange={(date) => setEditForm({ ...editForm, dateOfBirth: date })}
                                                         className="mt-1"
                                                     />

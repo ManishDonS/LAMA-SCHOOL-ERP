@@ -9,6 +9,7 @@ import { ExpenseFilters } from '@/components/expenses/ExpenseFilters'
 import { CategoryModal } from '@/components/expenses/CategoryModal'
 import { MOCK_EXPENSES, MOCK_CATEGORIES, Expense, ExpenseCategory, ExpenseFilters as Filters, ExpenseStats } from '@/components/expenses/types'
 import { expensesAPI, expenseCategoriesAPI } from '@/services/expenseAPI'
+import { toast } from 'react-hot-toast'
 
 const ExpensesPage = () => {
     const router = useRouter()
@@ -33,16 +34,17 @@ const ExpensesPage = () => {
         try {
             setLoading(true)
             const [expensesData, categoriesData] = await Promise.all([
-                expensesAPI.getAll().catch(() => MOCK_EXPENSES),
-                expenseCategoriesAPI.getAll().catch(() => MOCK_CATEGORIES),
+                expensesAPI.getAll(),
+                expenseCategoriesAPI.getAll(),
             ])
-            setExpenses(expensesData)
-            setCategories(categoriesData)
+            setExpenses(expensesData || [])
+            setCategories(categoriesData || [])
         } catch (error) {
             console.error('Error loading data:', error)
-            // Fallback to mock data
-            setExpenses(MOCK_EXPENSES)
-            setCategories(MOCK_CATEGORIES)
+            toast.error('Failed to load expenses data from server')
+            // Don't fallback to mock data in production-like environment
+            setExpenses([])
+            setCategories([])
         } finally {
             setLoading(false)
         }
@@ -119,7 +121,7 @@ const ExpensesPage = () => {
                 setExpenses(expenses.filter(e => e.id !== expenseId))
             } catch (error) {
                 console.error('Error deleting expense:', error)
-                alert('Failed to delete expense')
+                toast.error('Failed to delete expense')
             }
         }
     }
@@ -138,7 +140,7 @@ const ExpensesPage = () => {
             setIsExpenseModalOpen(false)
         } catch (error) {
             console.error('Error saving expense:', error)
-            alert('Failed to save expense')
+            toast.error('Failed to save expense')
         }
     }
 
@@ -158,7 +160,7 @@ const ExpensesPage = () => {
             setExpenses(updated)
         } catch (error) {
             console.error('Error approving expense:', error)
-            alert('Failed to approve expense')
+            toast.error('Failed to approve expense')
         }
     }
 
@@ -172,7 +174,7 @@ const ExpensesPage = () => {
             ))
         } catch (error) {
             console.error('Error rejecting expense:', error)
-            alert('Failed to reject expense')
+            toast.error('Failed to reject expense')
         }
     }
 
@@ -200,7 +202,7 @@ const ExpensesPage = () => {
             setIsCategoryModalOpen(false)
         } catch (error) {
             console.error('Error saving category:', error)
-            alert('Failed to save category')
+            toast.error('Failed to save category')
         }
     }
 
@@ -211,7 +213,7 @@ const ExpensesPage = () => {
                 setCategories(categories.filter(c => c.id !== categoryId))
             } catch (error) {
                 console.error('Error deleting category:', error)
-                alert('Failed to delete category')
+                toast.error('Failed to delete category')
             }
         }
     }

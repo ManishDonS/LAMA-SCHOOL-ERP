@@ -1,67 +1,31 @@
-// API Service for Expenses Management
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-const EXPENSE_SERVICE_URL = `${API_BASE_URL}/expense-service/api/v1`
-
-// Helper function to get auth token
-const getAuthToken = () => {
-    if (typeof window !== 'undefined') {
-        return localStorage.getItem('token') || ''
-    }
-    return ''
-}
-
-// Helper function for API calls
-async function apiCall(endpoint: string, options: RequestInit = {}) {
-    const token = getAuthToken()
-    const headers = {
-        'Content-Type': 'application/json',
-        ...(token && { Authorization: `Bearer ${token}` }),
-        ...options.headers,
-    }
-
-    const response = await fetch(`${EXPENSE_SERVICE_URL}${endpoint}`, {
-        ...options,
-        headers,
-    })
-
-    if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Request failed' }))
-        throw new Error(error.error || `HTTP ${response.status}`)
-    }
-
-    return response.json()
-}
+// API Service for Expenses Management mapping to centralized api.ts
+import { expenseAPI } from './api'
 
 // ==================== CATEGORIES ====================
 
 export const expenseCategoriesAPI = {
     // Get all categories
-    getAll: async (schoolId: string = '1') => {
-        return apiCall(`/categories?schoolId=${schoolId}`)
+    getAll: async (_schoolId?: string) => {
+        const response = await expenseAPI.listCategories()
+        return response.data
     },
 
     // Create category
-    create: async (data: any, schoolId: string = '1') => {
-        return apiCall(`/categories?schoolId=${schoolId}`, {
-            method: 'POST',
-            body: JSON.stringify(data),
-        })
+    create: async (data: any, _schoolId?: string) => {
+        const response = await expenseAPI.createCategory(data)
+        return response.data
     },
 
     // Update category
     update: async (id: string, data: any) => {
-        return apiCall(`/categories/${id}`, {
-            method: 'PUT',
-            body: JSON.stringify(data),
-        })
+        const response = await expenseAPI.updateCategory(id, data)
+        return response.data
     },
 
     // Delete category
     delete: async (id: string) => {
-        return apiCall(`/categories/${id}`, {
-            method: 'DELETE',
-        })
+        const response = await expenseAPI.deleteCategory(id)
+        return response.data
     },
 }
 
@@ -69,76 +33,77 @@ export const expenseCategoriesAPI = {
 
 export const expensesAPI = {
     // Get all expenses
-    getAll: async (schoolId: string = '1', filters?: any) => {
-        const params = new URLSearchParams({ schoolId, ...filters })
-        return apiCall(`/expenses?${params.toString()}`)
+    getAll: async (_schoolId?: string, filters?: any) => {
+        const response = await expenseAPI.list(filters)
+        return response.data
     },
 
     // Get single expense
     get: async (id: string) => {
-        return apiCall(`/expenses/${id}`)
+        const response = await expenseAPI.get(id)
+        return response.data
     },
 
     // Create expense
-    create: async (data: any, schoolId: string = '1') => {
-        return apiCall(`/expenses?schoolId=${schoolId}`, {
-            method: 'POST',
-            body: JSON.stringify(data),
-        })
+    create: async (data: any, _schoolId?: string) => {
+        const response = await expenseAPI.create(data)
+        return response.data
     },
 
     // Update expense
     update: async (id: string, data: any) => {
-        return apiCall(`/expenses/${id}`, {
-            method: 'PUT',
-            body: JSON.stringify(data),
-        })
+        const response = await expenseAPI.update(id, data)
+        return response.data
     },
 
     // Delete expense
     delete: async (id: string) => {
-        return apiCall(`/expenses/${id}`, {
-            method: 'DELETE',
-        })
+        const response = await expenseAPI.delete(id)
+        return response.data
     },
 
     // Approve expense
     approve: async (id: string) => {
-        return apiCall(`/expenses/${id}/approve`, {
-            method: 'POST',
-        })
+        const response = await expenseAPI.approve(id)
+        return response.data
     },
 
     // Reject expense
     reject: async (id: string) => {
-        return apiCall(`/expenses/${id}/reject`, {
-            method: 'POST',
-        })
+        const response = await expenseAPI.reject(id)
+        return response.data
+    },
+
+    // Analytics & Budget
+    getAnalytics: async (params?: any) => {
+        const response = await expenseAPI.getAnalytics(params)
+        return response.data
+    },
+
+    getBudgetStatus: async (params?: any) => {
+        const response = await expenseAPI.getBudgetStatus(params)
+        return response.data
     },
 }
 
 // ==================== FILE UPLOAD ====================
 
 export const expenseFilesAPI = {
-    // Upload receipt (to be implemented with multipart/form-data)
+    // Upload receipt
     uploadReceipt: async (expenseId: string, file: File) => {
-        const formData = new FormData()
-        formData.append('file', file)
-        formData.append('expenseId', expenseId)
-
-        const token = getAuthToken()
-        const response = await fetch(`${EXPENSE_SERVICE_URL}/expenses/${expenseId}/receipts`, {
-            method: 'POST',
-            headers: {
-                ...(token && { Authorization: `Bearer ${token}` }),
-            },
-            body: formData,
-        })
-
-        if (!response.ok) {
-            throw new Error('File upload failed')
-        }
-
-        return response.json()
+        const response = await expenseAPI.uploadReceipt(expenseId, file)
+        return response.data
     },
+
+    // List receipts
+    listReceipts: async (expenseId: string) => {
+        const response = await expenseAPI.listReceipts(expenseId)
+        return response.data
+    },
+
+    // Delete receipt
+    deleteReceipt: async (expenseId: string, receiptId: string) => {
+        const response = await expenseAPI.deleteReceipt(expenseId, receiptId)
+        return response.data
+    }
 }

@@ -92,10 +92,49 @@ type CreateParentRequest struct {
 }
 
 type CreateStaffRequest struct {
-	UserID     string `json:"user_id" validate:"required"`
-	Department string `json:"department"`
-	Position   string `json:"position"`
-	EmployeeID string `json:"employee_id" validate:"required"`
+	SchoolID      string  `json:"school_id" validate:"required"`
+	Email         string  `json:"email" validate:"required,email"`
+	FirstName     string  `json:"first_name" validate:"required"`
+	LastName      string  `json:"last_name" validate:"required"`
+	Department    string  `json:"department"`
+	Position      string  `json:"position"`
+	EmployeeID    string  `json:"employee_id" validate:"required"`
+	Phone         string  `json:"phone"`
+	Address       string  `json:"address"`
+	City          string  `json:"city"`
+	State         string  `json:"state"`
+	ZipCode       string  `json:"zip_code"`
+	Qualification string  `json:"qualification"`
+	Experience    float64 `json:"experience"`
+	Salary        float64 `json:"salary"`
+	Notes         string  `json:"notes"`
+	JoinDate      string  `json:"join_date"`
+	Status        string  `json:"status"`
+}
+
+type UpdateStaffRequest struct {
+	FirstName     string  `json:"first_name"`
+	LastName      string  `json:"last_name"`
+	Department    string  `json:"department"`
+	Position      string  `json:"position"`
+	Phone         string  `json:"phone"`
+	Address       string  `json:"address"`
+	City          string  `json:"city"`
+	State         string  `json:"state"`
+	ZipCode       string  `json:"zip_code"`
+	Qualification string  `json:"qualification"`
+	Experience    float64 `json:"experience"`
+	Salary        float64 `json:"salary"`
+	Notes         string  `json:"notes"`
+	Status        string  `json:"status"`
+}
+
+type CreateDepartmentRequest struct {
+	SchoolID         string `json:"school_id" validate:"required"`
+	Name             string `json:"name" validate:"required"`
+	Code             string `json:"code"`
+	Description      string `json:"description"`
+	HeadOfDepartment string `json:"head_of_department"`
 }
 
 func NewUserHandler(db *pgxpool.Pool, cfg *config.Config, tm *tenant.TenantManager) *UserHandler {
@@ -424,7 +463,15 @@ func (h *UserHandler) CreateTeacher(c *fiber.Ctx) error {
 		// Continue anyway as teacher record is primary, but joining might fail
 	}
 
-	// 3. Create Teacher in Database
+	// 3. Generate Employee ID
+	employeeID, err := h.GenerateEmployeeID(c.Context(), tenantDB, req.Department, "teacher")
+	if err != nil {
+		fmt.Printf("Error generating employee ID: %v\n", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to generate employee ID"})
+	}
+	fmt.Printf("Generated Employee ID: %s\n", employeeID)
+
+	// 4. Create Teacher in Database
 	// Convert DateOfBirth string to time.Time if provided
 	var dob interface{}
 	if req.DateOfBirth != "" {
@@ -459,7 +506,7 @@ func (h *UserHandler) CreateTeacher(c *fiber.Ctx) error {
 			subject = EXCLUDED.subject,
 			class_assigned = EXCLUDED.class_assigned,
 			updated_at = NOW()`,
-		userID, req.SchoolID, req.Qualification, req.Department, req.EmployeeID,
+		userID, req.SchoolID, req.Qualification, req.Department, employeeID,
 		req.Phone, dob, req.Gender, req.Specialization, req.Experience,
 		req.EmploymentType, req.Salary, req.Address, req.City, req.State,
 		req.Subject, req.ClassAssigned,
@@ -1226,6 +1273,8 @@ func (h *UserHandler) DeleteParent(c *fiber.Ctx) error {
 
 // Staff endpoints
 
+// Staff endpoints
+
 func (h *UserHandler) CreateStaff(c *fiber.Ctx) error {
 	var req CreateStaffRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -1234,53 +1283,364 @@ func (h *UserHandler) CreateStaff(c *fiber.Ctx) error {
 		})
 	}
 
-	_, err := h.db.Exec(
+	// 1. Create User in Auth Service
+	authPayload := map[string]interface{}{
+		"email":      req.Email,
+		"password":   "TempPass123!", // You typically want to generate or send this
+		"first_name": req.FirstName,
+		"last_name":  req.LastName,
+		"role":       "staff",
+		"school_id":  req.SchoolID,
+	}
+
+	authBody, err := json.Marshal(authPayload)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to prepare auth request"})
+	}
+
+	authURL := fmt.Sprintf("%s/api/v1/auth/register", h.cfg.AuthServiceURL)
+	proxyReq, err := http.NewRequest("POST", authURL, bytes.NewBuffer(authBody))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create auth request"})
+	}
+	proxyReq.Header.Set("Content-Type", "application/json")
+
+	tenantCode := middleware.GetTenantCode(c)
+	if tenantCode != "" {
+		proxyReq.Header.Set("X-Tenant-Code", tenantCode)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(proxyReq)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to connect to Auth Service"})
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		var authErr map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&authErr)
+		return c.Status(resp.StatusCode).JSON(authErr)
+	}
+
+	var authResp struct {
+		Data struct {
+			UserID string `json:"user_id"`
+			ID     string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to parse auth response"})
+	}
+
+	userID := authResp.Data.UserID
+	if userID == "" {
+		userID = authResp.Data.ID
+	}
+
+	// 2. Sync to Tenant DB
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		var err error
+		tenantDB, _, err = h.getTenantDBBySchoolID(c.Context(), req.SchoolID)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve school database"})
+		}
+	}
+
+	err = h.SyncUserToTenant(c.Context(), tenantDB, userID, req.Email, req.FirstName, req.LastName, "staff", req.SchoolID)
+	if err != nil {
+		fmt.Printf("Warning: Failed to sync user to tenant DB: %v\n", err)
+	}
+
+	// 3. Generate Employee ID
+	employeeID, err := h.GenerateEmployeeID(c.Context(), tenantDB, req.Department, "staff")
+	if err != nil {
+		fmt.Printf("Error generating employee ID: %v\n", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to generate employee ID"})
+	}
+
+	// 4. Create Staff Record in Tenant DB
+	joinDate := time.Now()
+	if req.JoinDate != "" {
+		if t, err := time.Parse("2006-01-02", req.JoinDate); err == nil {
+			joinDate = t
+		}
+	}
+
+	_, err = tenantDB.Exec(
 		c.Context(),
-		`INSERT INTO staff (user_id, department, position, employee_id, join_date, status)
-		 VALUES ($1, $2, $3, $4, NOW(), 'active')`,
-		req.UserID, req.Department, req.Position, req.EmployeeID,
+		`INSERT INTO staff (
+			school_id, user_id, department, position, employee_id, phone, address, city, state, zip_code, 
+			qualification, experience, salary, notes, join_date, status
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+		req.SchoolID, userID, req.Department, req.Position, employeeID, req.Phone, req.Address, req.City, req.State, req.ZipCode,
+		req.Qualification, req.Experience, req.Salary, req.Notes, joinDate, req.Status,
 	)
 
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to create staff member",
+			"error": fmt.Sprintf("Failed to create staff record: %v", err),
 		})
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"message": "Staff member created successfully",
+		"data": fiber.Map{
+			"user_id": userID,
+		},
+	})
+}
+
+func (h *UserHandler) GetStaff(c *fiber.Ctx) error {
+	schoolID := c.Query("school_id")
+	tenantDB := middleware.GetTenantDB(c)
+
+	if tenantDB == nil {
+		if schoolID == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "School ID is required"})
+		}
+		var err error
+		tenantDB, _, err = h.getTenantDBBySchoolID(c.Context(), schoolID)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve school database"})
+		}
+	}
+
+	query := `
+		SELECT 
+			s.id, s.school_id, s.user_id, s.department, s.position, s.employee_id, s.phone, s.address, 
+			s.city, s.state, s.zip_code, s.qualification, s.experience, s.salary, s.notes, s.join_date, s.status,
+			u.first_name, u.last_name, u.email
+		FROM staff s
+		JOIN users u ON s.user_id = u.id::text
+		ORDER BY s.created_at DESC
+	`
+	rows, err := tenantDB.Query(c.Context(), query)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch staff members"})
+	}
+	defer rows.Close()
+
+	staffMembers := []database.Staff{}
+	for rows.Next() {
+		var s database.Staff
+		err := rows.Scan(
+			&s.ID, &s.SchoolID, &s.UserID, &s.Department, &s.Position, &s.EmployeeID, &s.Phone, &s.Address,
+			&s.City, &s.State, &s.ZipCode, &s.Qualification, &s.Experience, &s.Salary, &s.Notes, &s.JoinDate, &s.Status,
+			&s.FirstName, &s.LastName, &s.Email,
+		)
+		if err != nil {
+			continue
+		}
+		staffMembers = append(staffMembers, s)
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Staff members retrieved successfully",
+		"staff":   staffMembers,
 	})
 }
 
 func (h *UserHandler) GetStaffMember(c *fiber.Ctx) error {
 	id := c.Params("id")
+	tenantDB := middleware.GetTenantDB(c)
+
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve school database"})
+	}
+
+	query := `
+		SELECT 
+			s.id, s.school_id, s.user_id, s.department, s.position, s.employee_id, s.phone, s.address, 
+			s.city, s.state, s.zip_code, s.qualification, s.experience, s.salary, s.notes, s.join_date, s.status,
+			u.first_name, u.last_name, u.email
+		FROM staff s
+		JOIN users u ON s.user_id = u.id::text
+		WHERE s.id = $1
+	`
+	var s database.Staff
+	err := tenantDB.QueryRow(c.Context(), query, id).Scan(
+		&s.ID, &s.SchoolID, &s.UserID, &s.Department, &s.Position, &s.EmployeeID, &s.Phone, &s.Address,
+		&s.City, &s.State, &s.ZipCode, &s.Qualification, &s.Experience, &s.Salary, &s.Notes, &s.JoinDate, &s.Status,
+		&s.FirstName, &s.LastName, &s.Email,
+	)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Staff member not found"})
+	}
 
 	return c.JSON(fiber.Map{
-		"message":  "Staff member retrieved successfully",
-		"staff_id": id,
-	})
-}
-
-func (h *UserHandler) GetStaff(c *fiber.Ctx) error {
-	return c.JSON(fiber.Map{
-		"message": "Staff members retrieved successfully",
-		"staff":   []fiber.Map{},
+		"message": "Staff member retrieved successfully",
+		"staff":   s,
 	})
 }
 
 func (h *UserHandler) UpdateStaff(c *fiber.Ctx) error {
 	id := c.Params("id")
-	var req CreateStaffRequest
+	var req UpdateStaffRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid request body",
-		})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve school database"})
+	}
+
+	// 1. Get UserID
+	var userID string
+	err := tenantDB.QueryRow(c.Context(), "SELECT user_id FROM staff WHERE id = $1", id).Scan(&userID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Staff member not found"})
+	}
+
+	// 2. Update User details if provided
+	if req.FirstName != "" || req.LastName != "" {
+		_, err = tenantDB.Exec(
+			c.Context(),
+			"UPDATE users SET first_name = COALESCE(NULLIF($1, ''), first_name), last_name = COALESCE(NULLIF($2, ''), last_name), updated_at = NOW() WHERE id = $3",
+			req.FirstName, req.LastName, userID,
+		)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update user details"})
+		}
+	}
+
+	// 3. Update Staff details
+	_, err = tenantDB.Exec(
+		c.Context(),
+		`UPDATE staff SET 
+			department = $1, position = $2, phone = $3, address = $4, city = $5, state = $6, zip_code = $7, 
+			qualification = $8, experience = $9, salary = $10, notes = $11, status = $12, updated_at = NOW()
+		WHERE id = $13`,
+		req.Department, req.Position, req.Phone, req.Address, req.City, req.State, req.ZipCode,
+		req.Qualification, req.Experience, req.Salary, req.Notes, req.Status, id,
+	)
+
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update staff details"})
+	}
+
+	return c.JSON(fiber.Map{"message": "Staff member updated successfully"})
+}
+
+func (h *UserHandler) DeleteStaff(c *fiber.Ctx) error {
+	id := c.Params("id")
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve school database"})
+	}
+
+	_, err := tenantDB.Exec(c.Context(), "DELETE FROM staff WHERE id = $1", id)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete staff member"})
+	}
+
+	return c.JSON(fiber.Map{"message": "Staff member deleted successfully"})
+}
+
+// Department Handlers
+
+func (h *UserHandler) GetDepartments(c *fiber.Ctx) error {
+	schoolID := c.Query("school_id")
+	tenantDB := middleware.GetTenantDB(c)
+
+	if tenantDB == nil {
+		if schoolID == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "School ID is required"})
+		}
+		var err error
+		tenantDB, _, err = h.getTenantDBBySchoolID(c.Context(), schoolID)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve school database"})
+		}
+	}
+
+	rows, err := tenantDB.Query(c.Context(), "SELECT id, school_id, name, code, description, head_of_department, created_at, updated_at FROM departments ORDER BY name ASC")
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch departments"})
+	}
+	defer rows.Close()
+
+	departments := []database.Department{}
+	for rows.Next() {
+		var d database.Department
+		if err := rows.Scan(&d.ID, &d.SchoolID, &d.Name, &d.Code, &d.Description, &d.HeadOfDepartment, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			continue
+		}
+		departments = append(departments, d)
 	}
 
 	return c.JSON(fiber.Map{
-		"message":  "Staff member updated successfully",
-		"staff_id": id,
+		"message":     "Departments retrieved successfully",
+		"departments": departments,
 	})
+}
+
+func (h *UserHandler) CreateDepartment(c *fiber.Ctx) error {
+	var req CreateDepartmentRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		var err error
+		tenantDB, _, err = h.getTenantDBBySchoolID(c.Context(), req.SchoolID)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve school database"})
+		}
+	}
+
+	_, err := tenantDB.Exec(
+		c.Context(),
+		"INSERT INTO departments (school_id, name, code, description, head_of_department) VALUES ($1, $2, $3, $4, $5)",
+		req.SchoolID, req.Name, req.Code, req.Description, req.HeadOfDepartment,
+	)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create department"})
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "Department created successfully"})
+}
+
+func (h *UserHandler) UpdateDepartment(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var req CreateDepartmentRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve school database"})
+	}
+
+	_, err := tenantDB.Exec(
+		c.Context(),
+		"UPDATE departments SET name = $1, code = $2, description = $3, head_of_department = $4, updated_at = NOW() WHERE id = $5",
+		req.Name, req.Code, req.Description, req.HeadOfDepartment, id,
+	)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update department"})
+	}
+
+	return c.JSON(fiber.Map{"message": "Department updated successfully"})
+}
+
+func (h *UserHandler) DeleteDepartment(c *fiber.Ctx) error {
+	id := c.Params("id")
+	tenantDB := middleware.GetTenantDB(c)
+	if tenantDB == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve school database"})
+	}
+
+	_, err := tenantDB.Exec(c.Context(), "DELETE FROM departments WHERE id = $1", id)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete department"})
+	}
+
+	return c.JSON(fiber.Map{"message": "Department deleted successfully"})
 }
 func (h *UserHandler) getTenantDBBySchoolID(ctx context.Context, schoolID string) (*pgxpool.Pool, string, error) {
 	var dbUser, encryptedPassword, dbName, code string

@@ -40,6 +40,17 @@ func LoadConfig() *Config {
 		EncryptionKey:  getEnv("ENCRYPTION_KEY", "default-key-change-in-production"),
 	}
 	log.Printf("[Student Service] Environment: %s, Port: %s", cfg.Environment, cfg.Port)
+
+	// Production hardening: refuse to start with default secrets in production
+	if cfg.Environment == "production" {
+		if cfg.JWTSecret == "change-me" {
+			log.Fatal("[FATAL] JWT_SECRET must be set in production environment")
+		}
+		if cfg.EncryptionKey == "default-key-change-in-production" {
+			log.Fatal("[FATAL] ENCRYPTION_KEY must be set in production environment")
+		}
+	}
+
 	return cfg
 }
 

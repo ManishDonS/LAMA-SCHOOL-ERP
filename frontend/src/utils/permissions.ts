@@ -78,7 +78,7 @@ export const MENU_ITEMS: MenuItem[] = [
     roles: ['super_admin', 'admin', 'staff'],
   },
   {
-    href: '/dashboard/expenses',
+    href: '/dashboard/accounting/expenses',
     label: 'Expenses',
     icon: '📉',
     roles: ['super_admin', 'admin', 'staff'],
@@ -147,7 +147,7 @@ export const MENU_ITEMS: MenuItem[] = [
     href: '/dashboard/apps',
     label: 'Apps',
     icon: '🧩',
-    roles: ['super_admin'],
+    roles: ['super_admin', 'admin', 'teacher', 'student', 'parent', 'staff'],
   },
 ]
 
@@ -214,7 +214,7 @@ const MODULE_PERMISSION_MAP: Record<string, string> = {
   '/website-builder': 'website',
   '/dashboard/settings': 'settings',
   '/dashboard/fees': 'fees',
-  '/dashboard/expenses': 'expenses',
+  '/dashboard/accounting/expenses': 'expenses',
   '/dashboard/payroll': 'payroll',
   '/dashboard/communication': 'notifications', // Using notifications permission for communication module
 }
@@ -246,36 +246,40 @@ export const getAccessibleMenuItems = (
 
   let menuItems = getMenuItemsWithPermissions()
 
-  // Filter by active modules if provided (Applies to ALL roles, including Super Admin)
-  if (activeModules) {
+  // 1. License Check (Master Control) - applies to ALL roles
+  // If a module is NOT licensed, it's NOT available in the system
+  if (modulePermissions) {
     menuItems = menuItems.filter((item) => {
-      const module = getModuleForPath(item.href)
-      // If item belongs to a module, check if it's active
-      if (module) {
-        return activeModules.includes(module)
-      }
-      // If not mapped to a module (core feature), always show
-      return true
+      const moduleKey = getModuleForPath(item.href)
+      if (!moduleKey) return true // Core feature
+
+      const perms = modulePermissions[moduleKey]
+      if (!perms) return false
+      return !!(perms.read || perms.create || perms.update || perms.delete)
     })
   }
 
-  // Super admin bypasses module PERMISSION (read/write) checks, but not Active Module checks
-  if (userRole !== 'super_admin') {
-    // Filter by module permissions for school admins and other roles
-    if (modulePermissions) {
-      menuItems = menuItems.filter((item) => {
-        const moduleKey = MODULE_PERMISSION_MAP[item.href]
+  // 2. Activation Check - applies to ALL roles for sidebar visibility
+  // If a module is licensed but NOT activated by the school, hide it from sidebar
+  if (activeModules) {
+    menuItems = menuItems.filter((item) => {
+      const module = getModuleForPath(item.href)
+      if (!module) return true // Core feature
+      return activeModules.includes(module)
+    })
+  }
 
-        // If no module mapping, it's a core feature (Dashboard, Communication, Settings, etc.)
-        if (!moduleKey) return true
+  // 3. Role/CRUD Permission Check - applies to non-Super Admin roles
+  if (userRole !== 'super_admin' && modulePermissions) {
+    menuItems = menuItems.filter((item) => {
+      const moduleKey = MODULE_PERMISSION_MAP[item.href]
+      if (!moduleKey) return true
 
-        // Check if user has at least one permission (read, create, update, or delete) for this module
-        const perms = modulePermissions[moduleKey]
-        if (!perms) return false
-
-        return perms.read || perms.create || perms.update || perms.delete
-      })
-    }
+      const perms = modulePermissions[moduleKey]
+      // We already checked license above, but non-super admin might have specific CRUD restrictions
+      // For now, any permission is enough to see the menu item
+      return !!(perms.read || perms.create || perms.update || perms.delete)
+    })
   }
 
   return menuItems.filter((item) => hasPermission(userRole, item.roles))

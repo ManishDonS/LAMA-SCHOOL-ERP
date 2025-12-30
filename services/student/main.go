@@ -19,7 +19,9 @@ import (
 	"school-erp/student/middleware"
 	"school-erp/student/pkg/tenant"
 	"school-erp/student/routes"
+	"school-erp/student/service"
 
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/swagger"
 )
 
@@ -67,6 +69,20 @@ func main() {
 	app := fiber.New(fiber.Config{AppName: "School ERP Student Service"})
 	setupMiddleware(app)
 
+	// Rate Limiting
+	app.Use(limiter.New(limiter.Config{
+		Max:        60,
+		Expiration: 1 * time.Minute,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return c.IP()
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": "Too many requests, please try again later.",
+			})
+		},
+	}))
+
 	// Swagger Route
 	app.Get("/swagger/*", swagger.HandlerDefault)
 
@@ -105,7 +121,10 @@ func main() {
 		DBPort:        dbPort,
 	}))
 
-	routes.SetupRoutes(app, db, cfg, tenantManager)
+	// Initialize Student Service
+	studentService := service.NewStudentService(cfg.AuthServiceURL)
+
+	routes.SetupRoutes(app, db, cfg, tenantManager, studentService)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "healthy", "service": "student"})

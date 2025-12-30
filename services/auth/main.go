@@ -17,6 +17,7 @@ import (
 	_ "school-erp/auth/docs" // load API Docs files (will be created by swag init)
 	"school-erp/auth/messaging"
 	"school-erp/auth/middleware"
+	"school-erp/auth/pkg/casbin"
 	"school-erp/auth/pkg/logger"
 	"school-erp/auth/pkg/monitoring"
 	"school-erp/auth/pkg/tenant"
@@ -81,6 +82,12 @@ func main() {
 	defer db.Close()
 	log.Info().Msg("Database connection established")
 
+	// Initialize Casbin
+	if err := casbin.InitEnforcer(db); err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize Casbin enforcer")
+	}
+	log.Info().Msg("Casbin enforcer initialized")
+
 	// Run migrations
 	if err := database.RunMigrations(db); err != nil {
 		log.Fatal().Err(err).Msg("Failed to run migrations")
@@ -90,6 +97,11 @@ func main() {
 	// Seed super admin
 	if err := utils.SeedSuperAdmin(db, cfg); err != nil {
 		log.Error().Err(err).Msg("Failed to seed super admin")
+	}
+
+	// Sync permissions to Casbin
+	if err := utils.SyncPermissionsToCasbin(db); err != nil {
+		log.Error().Err(err).Msg("Failed to sync permissions to Casbin")
 	}
 
 	// Connect to NATS
@@ -121,6 +133,7 @@ func main() {
 	app.Use(middleware.NewTenantResolver(middleware.TenantResolverConfig{
 		TenantManager: tenantManager,
 		MainDB:        db,
+		Config:        cfg,
 	}))
 
 	// Swagger Route
