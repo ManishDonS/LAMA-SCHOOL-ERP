@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -82,6 +83,9 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 			"error": "Invalid request body",
 		})
 	}
+
+	// Normalize email
+	req.Email = strings.ToLower(req.Email)
 
 	// Hash password
 	// Hash password
@@ -256,6 +260,9 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 			"error": "Invalid request body",
 		})
 	}
+
+	// Normalize email
+	req.Email = strings.ToLower(req.Email)
 
 	// Find user
 	var user database.User

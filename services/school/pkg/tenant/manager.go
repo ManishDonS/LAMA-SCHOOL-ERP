@@ -2,11 +2,14 @@ package tenant
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -118,18 +121,18 @@ func (tm *TenantManager) CreateTenantDatabase(ctx context.Context, mainDB *pgxpo
 	}
 	_ = encryptedPassword // Will be used when saving to main DB
 
-	// Create user if it doesn't exist using format() to safely handle identifiers and literals
-	createUserSQL := `
-		DO $$
-		BEGIN
-			IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = $1) THEN
-				EXECUTE format('CREATE USER %I WITH PASSWORD %L', $1, $2);
-			END IF;
-		END
-		$$;
-	`
-	if _, err := mainDB.Exec(ctx, createUserSQL, dbUser, dbPassword); err != nil {
-		return fmt.Errorf("failed to create user: %w", err)
+	// Create user if it doesn't exist
+	escapedPassword := strings.ReplaceAll(dbPassword, "'", "''")
+	createUserSQL := fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s'", pgx.Identifier{dbUser}.Sanitize(), escapedPassword)
+
+	if _, err := mainDB.Exec(ctx, createUserSQL); err != nil {
+		// Check for duplicate object error (42710)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "42710" {
+			// User already exists, ignore
+		} else {
+			return fmt.Errorf("failed to create user: %w", err)
+		}
 	}
 
 	// Create database safely using pgx.Identifier and format() pattern

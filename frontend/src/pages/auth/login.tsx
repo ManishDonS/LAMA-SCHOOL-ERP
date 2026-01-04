@@ -121,7 +121,7 @@ export default function LoginPage() {
         }
       }
 
-      await login(formData.email, formData.password, tenantCode) // Pass tenantCode to login
+      await login(formData.email.trim().toLowerCase(), formData.password.trim(), tenantCode) // Pass tenantCode to login
 
       // Store selected school if one was selected
       if (selectedSchoolData) {
