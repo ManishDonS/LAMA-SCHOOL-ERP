@@ -3,11 +3,11 @@ package main
 import (
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/swagger"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -24,29 +24,6 @@ import (
 	"school-erp/auth/routes"
 	"school-erp/auth/utils"
 )
-
-// Helper function to check if an origin is in the allowed list
-func contains(allowedOrigins string, origin string) bool {
-	if origin == "" {
-		return false
-	}
-
-	// Trim and normalize origin (remove trailing slash)
-	origin = strings.TrimSpace(origin)
-	origin = strings.TrimSuffix(origin, "/")
-
-	origins := strings.Split(allowedOrigins, ",")
-	for _, allowed := range origins {
-		allowed = strings.TrimSpace(allowed)
-		allowed = strings.TrimSuffix(allowed, "/")
-
-		// Exact match (case-sensitive for security)
-		if allowed == origin {
-			return true
-		}
-	}
-	return false
-}
 
 // @title School ERP Auth Service
 // @version 1.0
@@ -115,7 +92,7 @@ func main() {
 	})
 
 	// Setup middleware
-	setupMiddleware(app)
+	setupMiddleware(app, cfg)
 
 	// Initialize Tenant Manager
 	tenantManager, err := tenant.NewTenantManager(
@@ -216,7 +193,7 @@ func main() {
 	log.Info().Msg("Server stopped successfully")
 }
 
-func setupMiddleware(app *fiber.App) {
+func setupMiddleware(app *fiber.App, cfg *config.Config) {
 	// Request ID middleware
 	app.Use(func(c *fiber.Ctx) error {
 		requestID := c.Get("X-Request-ID")
@@ -260,39 +237,14 @@ func setupMiddleware(app *fiber.App) {
 		return err
 	})
 
-	// CORS middleware with improved security
-	app.Use(func(c *fiber.Ctx) error {
-		origin := c.Get("Origin")
-		allowedOrigins := os.Getenv("CORS_ALLOW_ORIGINS")
-		if allowedOrigins == "" {
-			// Default to localhost only in development
-			if os.Getenv("ENVIRONMENT") == "production" {
-				// In production, CORS_ALLOW_ORIGINS must be explicitly set
-				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-					"error": "CORS not configured for production",
-				})
-			}
-			allowedOrigins = "http://localhost:3000,http://localhost:3001"
-		}
-
-		// Only set CORS headers if origin is explicitly allowed
-		if origin != "" && contains(allowedOrigins, origin) {
-			c.Set("Access-Control-Allow-Origin", origin) // Never use "*" with credentials
-			c.Set("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS,PATCH")
-			c.Set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With,x-tenant-code")
-			c.Set("Access-Control-Allow-Credentials", "true")
-			c.Set("Access-Control-Max-Age", "7200") // Cache preflight for 2 hours
-		} else if origin != "" {
-			// Origin present but not allowed - reject
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error": "Origin not allowed",
-			})
-		}
-
-		// Handle preflight requests
-		if c.Method() == "OPTIONS" {
-			return c.SendStatus(fiber.StatusNoContent)
-		}
-		return c.Next()
-	})
+	// CORS middleware with toggle
+	if cfg.EnableCORS {
+		app.Use(cors.New(cors.Config{
+			AllowOrigins:     cfg.AllowedOrigins,
+			AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS,PATCH",
+			AllowHeaders:     "Content-Type,Authorization,X-Requested-With,x-tenant-code",
+			AllowCredentials: true,
+			MaxAge:           7200,
+		}))
+	}
 }

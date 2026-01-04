@@ -20,6 +20,8 @@ type Config struct {
 	AuthServiceURL string
 	LogLevel       string
 	EncryptionKey  string
+	EnableCORS     bool
+	AllowedOrigins string
 }
 
 func LoadConfig() *Config {
@@ -38,6 +40,8 @@ func LoadConfig() *Config {
 		LogLevel:       getEnv("LOG_LEVEL", "info"),
 		AuthServiceURL: getEnv("AUTH_SERVICE_URL", "http://localhost:3001"),
 		EncryptionKey:  getEnv("ENCRYPTION_KEY", "default-key-change-in-production"),
+		EnableCORS:     getEnv("ENABLE_CORS", "false") == "true",
+		AllowedOrigins: getEnv("CORS_ALLOW_ORIGINS", "http://localhost:3000"),
 	}
 	log.Printf("[Library Service] Environment: %s, Port: %s", cfg.Environment, cfg.Port)
 	return cfg

@@ -12,7 +12,7 @@ var NatsConnection *nats.Conn
 func ConnectNATS() {
 	natsURL := os.Getenv("NATS_URL")
 	if natsURL == "" {
-		natsURL = "nats://localhost:4222"
+		natsURL = "nats://nats:4222"
 	}
 
 	nc, err := nats.Connect(natsURL)

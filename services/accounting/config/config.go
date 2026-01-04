@@ -12,6 +12,7 @@ type Config struct {
 	NATSUrl     string
 	JWTSecret   string
 	CORSOrigins string
+	EnableCORS  bool
 }
 
 func LoadConfig() *Config {
@@ -25,6 +26,7 @@ func LoadConfig() *Config {
 		NATSUrl:     getEnv("NATS_URL", "nats://localhost:4222"),
 		JWTSecret:   getEnv("JWT_SECRET", "your-secret-key"),
 		CORSOrigins: getEnv("CORS_ALLOW_ORIGINS", "http://localhost:3000"),
+		EnableCORS:  getEnv("ENABLE_CORS", "false") == "true",
 	}
 }
 

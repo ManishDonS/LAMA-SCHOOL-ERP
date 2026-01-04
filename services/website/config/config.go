@@ -30,6 +30,7 @@ type Config struct {
 
 	// CORS
 	CORSAllowOrigins string
+	EnableCORS       bool
 }
 
 // LoadConfig loads configuration from environment variables
@@ -57,6 +58,7 @@ func LoadConfig() *Config {
 
 		// CORS
 		CORSAllowOrigins: getEnv("CORS_ALLOW_ORIGINS", "http://localhost:3000"),
+		EnableCORS:       getEnv("ENABLE_CORS", "false") == "true",
 	}
 }
 

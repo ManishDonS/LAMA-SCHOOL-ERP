@@ -5,26 +5,30 @@ import (
 )
 
 type Config struct {
-	DBHost     string
-	DBPort     string
-	DBUser     string
-	DBPassword string
-	DBName     string
-	NatsURL    string
-	RedisURL   string
-	Port       string
+	DBHost         string
+	DBPort         string
+	DBUser         string
+	DBPassword     string
+	DBName         string
+	NatsURL        string
+	RedisURL       string
+	Port           string
+	EnableCORS     bool
+	AllowedOrigins string
 }
 
 func LoadConfig() *Config {
 	return &Config{
-		DBHost:     getEnv("DB_HOST", "localhost"),
-		DBPort:     getEnv("DB_PORT", "5432"),
-		DBUser:     getEnv("DB_USER", "postgres"),
-		DBPassword: getEnv("DB_PASSWORD", "postgres"),
-		DBName:     getEnv("DB_NAME", "school_erp"),
-		NatsURL:    getEnv("NATS_URL", "nats://localhost:4222"),
-		RedisURL:   getEnv("REDIS_URL", "redis://localhost:6379"),
-		Port:       getEnv("PORT", "3012"),
+		DBHost:         getEnv("DB_HOST", "localhost"),
+		DBPort:         getEnv("DB_PORT", "5432"),
+		DBUser:         getEnv("DB_USER", "postgres"),
+		DBPassword:     getEnv("DB_PASSWORD", "postgres"),
+		DBName:         getEnv("DB_NAME", "school_erp"),
+		NatsURL:        getEnv("NATS_URL", "nats://localhost:4222"),
+		RedisURL:       getEnv("REDIS_URL", "redis://localhost:6379"),
+		Port:           getEnv("PORT", "3012"),
+		EnableCORS:     getEnv("ENABLE_CORS", "false") == "true",
+		AllowedOrigins: getEnv("CORS_ALLOW_ORIGINS", "http://localhost:3000"),
 	}
 }
 

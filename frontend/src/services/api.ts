@@ -1,9 +1,9 @@
 import axios, { AxiosInstance, AxiosError } from 'axios'
 import { AuthResponse, LoginRequest, RegisterRequest } from '../types'
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
-export const SCHOOL_API_URL = process.env.NEXT_PUBLIC_SCHOOL_API_URL || 'http://localhost:3011'
-export const EXPENSE_API_URL = process.env.NEXT_PUBLIC_EXPENSE_API_URL || 'http://localhost:3010'
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081'
+export const SCHOOL_API_URL = process.env.NEXT_PUBLIC_SCHOOL_API_URL || 'http://localhost:8081'
+export const EXPENSE_API_URL = process.env.NEXT_PUBLIC_EXPENSE_API_URL || 'http://localhost:8081'
 
 const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -206,7 +206,7 @@ export const authAPI = {
 }
 
 // Separate API client for student service
-export const STUDENT_API_URL = process.env.NEXT_PUBLIC_STUDENT_API_URL || 'http://localhost:3003'
+export const STUDENT_API_URL = process.env.NEXT_PUBLIC_STUDENT_API_URL || 'http://localhost:8081'
 
 const studentApiClient: AxiosInstance = axios.create({
   baseURL: STUDENT_API_URL,
@@ -250,7 +250,7 @@ export const studentAPI = {
 }
 
 // Separate API client for user service
-export const USER_API_URL = process.env.NEXT_PUBLIC_USER_API_URL || 'http://localhost:3002'
+export const USER_API_URL = process.env.NEXT_PUBLIC_USER_API_URL || 'http://localhost:8081'
 
 const userApiClient: AxiosInstance = axios.create({
   baseURL: USER_API_URL,
@@ -317,7 +317,7 @@ export const departmentAPI = {
 }
 
 // Separate API client for attendance service
-export const ATTENDANCE_API_URL = process.env.NEXT_PUBLIC_ATTENDANCE_API_URL || 'http://localhost:3004'
+export const ATTENDANCE_API_URL = process.env.NEXT_PUBLIC_ATTENDANCE_API_URL || 'http://localhost:8081'
 
 const attendanceApiClient: AxiosInstance = axios.create({
   baseURL: ATTENDANCE_API_URL,
@@ -361,7 +361,7 @@ export const attendanceAPI = {
 }
 
 // Separate API client for class service
-export const CLASS_API_URL = process.env.NEXT_PUBLIC_CLASS_API_URL || 'http://localhost:3014'
+export const CLASS_API_URL = process.env.NEXT_PUBLIC_CLASS_API_URL || 'http://localhost:8081'
 
 const classApiClient: AxiosInstance = axios.create({
   baseURL: CLASS_API_URL,
@@ -456,7 +456,7 @@ export const schoolAPI = {
 
 // Separate API client for transport service
 const transportApiClient: AxiosInstance = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_TRANSPORT_API_URL || 'http://localhost:3009',
+  baseURL: process.env.NEXT_PUBLIC_TRANSPORT_API_URL || 'http://localhost:8081',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -593,7 +593,7 @@ export const expenseAPI = {
 }
 
 // Separate API client for library service
-export const LIBRARY_API_URL = process.env.NEXT_PUBLIC_LIBRARY_API_URL || 'http://localhost:3015'
+export const LIBRARY_API_URL = process.env.NEXT_PUBLIC_LIBRARY_API_URL || 'http://localhost:8081'
 
 const libraryApiClient: AxiosInstance = axios.create({
   baseURL: LIBRARY_API_URL,

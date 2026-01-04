@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/joho/godotenv"
 
 	"school-erp/user/config"
@@ -17,17 +16,6 @@ import (
 	"school-erp/user/pkg/tenant"
 	"school-erp/user/routes"
 )
-
-// Helper function to check if an origin is in the allowed list
-func contains(allowedOrigins string, origin string) bool {
-	origins := strings.Split(allowedOrigins, ",")
-	for _, allowed := range origins {
-		if strings.TrimSpace(allowed) == origin {
-			return true
-		}
-	}
-	return false
-}
 
 func main() {
 	// Load environment variables
@@ -60,6 +48,9 @@ func main() {
 		AppName: "School ERP User Service",
 	})
 
+	// Setup common middleware (Logger, CORS)
+	setupMiddleware(app, cfg)
+
 	// Initialize Tenant Manager
 	tenantEncryptionKey := "default-key-change-in-production"
 	if key := os.Getenv("ENCRYPTION_KEY"); key != "" {
@@ -77,8 +68,13 @@ func main() {
 		log.Fatalf("Failed to initialize tenant manager: %v", err)
 	}
 
-	// Setup middleware
-	setupMiddleware(app, db, tenantManager, cfg)
+	// Tenant Resolver Middleware
+	app.Use(middleware.NewTenantResolver(middleware.TenantResolverConfig{
+		TenantManager: tenantManager,
+		MainDB:        db,
+		DBHost:        cfg.DBHost,
+		DBPort:        5432, // Default port, could be from config
+	}))
 
 	// Welcome route
 	app.Get("/", func(c *fiber.Ctx) error {
@@ -124,41 +120,21 @@ func main() {
 	}
 }
 
-func setupMiddleware(app *fiber.App, db *pgxpool.Pool, tm *tenant.TenantManager, cfg *config.Config) {
+func setupMiddleware(app *fiber.App, cfg *config.Config) {
 	// Logger middleware
 	app.Use(func(c *fiber.Ctx) error {
 		fmt.Printf("[%s] %s %s\n", c.Method(), c.Path(), c.IP())
 		return c.Next()
 	})
 
-	// CORS middleware
-	app.Use(func(c *fiber.Ctx) error {
-		origin := c.Get("Origin")
-		allowedOrigins := os.Getenv("CORS_ALLOW_ORIGINS")
-		if allowedOrigins == "" {
-			allowedOrigins = "http://localhost:3000,http://localhost:3001"
-		}
-
-		// Check if origin is allowed (simple string matching, can be improved)
-		if origin != "" && contains(allowedOrigins, origin) {
-			c.Set("Access-Control-Allow-Origin", origin)
-		}
-
-		c.Set("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS,PATCH")
-		c.Set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With,X-Tenant-Code")
-		c.Set("Access-Control-Allow-Credentials", "true")
-
-		if c.Method() == "OPTIONS" {
-			return c.SendStatus(204)
-		}
-		return c.Next()
-	})
-
-	// Tenant Resolver Middleware
-	app.Use(middleware.NewTenantResolver(middleware.TenantResolverConfig{
-		TenantManager: tm,
-		MainDB:        db,
-		DBHost:        cfg.DBHost,
-		DBPort:        5432, // Default port, could be from config
-	}))
+	// CORS middleware with toggle
+	if cfg.EnableCORS {
+		app.Use(cors.New(cors.Config{
+			AllowOrigins:     cfg.AllowedOrigins,
+			AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS,PATCH",
+			AllowHeaders:     "Content-Type,Authorization,X-Requested-With,x-tenant-code",
+			AllowCredentials: true,
+			MaxAge:           7200,
+		}))
+	}
 }

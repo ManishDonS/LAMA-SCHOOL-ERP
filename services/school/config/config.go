@@ -15,13 +15,13 @@ type Config struct {
 	AppName     string
 
 	// Main Database (Global DB)
-	MainDBHost     string
-	MainDBPort     int
-	MainDBName     string
-	MainDBUser     string
-	MainDBPassword string
-	MaxConnections int
-	MaxIdleConn    int
+	MainDBHost      string
+	MainDBPort      int
+	MainDBName      string
+	MainDBUser      string
+	MainDBPassword  string
+	MaxConnections  int
+	MaxIdleConn     int
 	ConnMaxLifetime time.Duration
 
 	// Cache (Redis)
@@ -35,6 +35,7 @@ type Config struct {
 
 	// CORS
 	CORSAllowOrigins string
+	EnableCORS       bool
 }
 
 // LoadConfig loads configuration from environment variables
@@ -46,13 +47,13 @@ func LoadConfig() *Config {
 		AppName:     "School Management Service",
 
 		// Main Database
-		MainDBHost:     getEnv("DB_HOST", "postgres"),
-		MainDBPort:     getEnvInt("DB_PORT", 5432),
-		MainDBName:     getEnv("DB_NAME", "school_erp"),
-		MainDBUser:     getEnv("DB_USER", "postgres"),
-		MainDBPassword: getEnv("DB_PASSWORD", "postgres"),
-		MaxConnections: getEnvInt("MAX_CONNECTIONS", 25),
-		MaxIdleConn:    getEnvInt("MAX_IDLE_CONN", 5),
+		MainDBHost:      getEnv("DB_HOST", "postgres"),
+		MainDBPort:      getEnvInt("DB_PORT", 5432),
+		MainDBName:      getEnv("DB_NAME", "school_erp"),
+		MainDBUser:      getEnv("DB_USER", "postgres"),
+		MainDBPassword:  getEnv("DB_PASSWORD", "postgres"),
+		MaxConnections:  getEnvInt("MAX_CONNECTIONS", 25),
+		MaxIdleConn:     getEnvInt("MAX_IDLE_CONN", 5),
 		ConnMaxLifetime: time.Duration(getEnvInt("CONN_MAX_LIFETIME", 5)) * time.Minute,
 
 		// Cache
@@ -66,6 +67,7 @@ func LoadConfig() *Config {
 
 		// CORS
 		CORSAllowOrigins: getEnv("CORS_ALLOW_ORIGINS", "http://localhost:3000,http://localhost:3001"),
+		EnableCORS:       getEnv("ENABLE_CORS", "false") == "true",
 	}
 }
 

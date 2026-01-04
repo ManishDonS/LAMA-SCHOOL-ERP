@@ -7,34 +7,38 @@ import (
 )
 
 type Config struct {
-	Port        string
-	Environment string
-	DBHost      string
-	DBPort      string
-	DBUser      string
-	DBPassword  string
-	DBName      string
-	DBSSLMode   string
-	JWTSecret   string
-	NATSUrl     string
-	RedisURL    string
-	LogLevel    string
+	Port           string
+	Environment    string
+	DBHost         string
+	DBPort         string
+	DBUser         string
+	DBPassword     string
+	DBName         string
+	DBSSLMode      string
+	JWTSecret      string
+	NATSUrl        string
+	RedisURL       string
+	LogLevel       string
+	EnableCORS     bool
+	AllowedOrigins string
 }
 
 func LoadConfig() *Config {
 	cfg := &Config{
-		Port:        getEnv("EXAM_SERVICE_PORT", "3006"),
-		Environment: getEnv("ENVIRONMENT", "development"),
-		DBHost:      getEnv("DB_HOST", "postgres"),
-		DBPort:      getEnv("DB_PORT", "5432"),
-		DBUser:      getEnv("DB_USER", "postgres"),
-		DBPassword:  getEnv("DB_PASSWORD", "postgres"),
-		DBName:      getEnv("DB_NAME", "school_erp"),
-		DBSSLMode:   getEnv("DB_SSL_MODE", "disable"),
-		JWTSecret:   getEnv("JWT_SECRET", "change-me"),
-		NATSUrl:     getEnv("NATS_URL", "nats://localhost:4222"),
-		RedisURL:    getEnv("REDIS_URL", "redis://localhost:6379"),
-		LogLevel:    getEnv("LOG_LEVEL", "info"),
+		Port:           getEnv("EXAM_SERVICE_PORT", "3006"),
+		Environment:    getEnv("ENVIRONMENT", "development"),
+		DBHost:         getEnv("DB_HOST", "postgres"),
+		DBPort:         getEnv("DB_PORT", "5432"),
+		DBUser:         getEnv("DB_USER", "postgres"),
+		DBPassword:     getEnv("DB_PASSWORD", "postgres"),
+		DBName:         getEnv("DB_NAME", "school_erp"),
+		DBSSLMode:      getEnv("DB_SSL_MODE", "disable"),
+		JWTSecret:      getEnv("JWT_SECRET", "change-me"),
+		NATSUrl:        getEnv("NATS_URL", "nats://localhost:4222"),
+		RedisURL:       getEnv("REDIS_URL", "redis://localhost:6379"),
+		LogLevel:       getEnv("LOG_LEVEL", "info"),
+		EnableCORS:     getEnv("ENABLE_CORS", "false") == "true",
+		AllowedOrigins: getEnv("CORS_ALLOW_ORIGINS", "http://localhost:3000"),
 	}
 	log.Printf("[Exam Service] Environment: %s, Port: %s", cfg.Environment, cfg.Port)
 	return cfg

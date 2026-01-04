@@ -3,10 +3,9 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
-	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/joho/godotenv"
 
 	"strconv"
@@ -20,16 +19,6 @@ import (
 
 	"github.com/gofiber/swagger"
 )
-
-func contains(allowedOrigins string, origin string) bool {
-	origins := strings.Split(allowedOrigins, ",")
-	for _, allowed := range origins {
-		if strings.TrimSpace(allowed) == origin {
-			return true
-		}
-	}
-	return false
-}
 
 func main() {
 	godotenv.Load()
@@ -46,7 +35,7 @@ func main() {
 	}
 
 	app := fiber.New(fiber.Config{AppName: "School ERP Library Service"})
-	setupMiddleware(app)
+	setupMiddleware(app, cfg)
 
 	// Swagger Route
 	app.Get("/swagger/*", swagger.HandlerDefault)
@@ -93,26 +82,19 @@ func main() {
 	}
 }
 
-func setupMiddleware(app *fiber.App) {
+func setupMiddleware(app *fiber.App, cfg *config.Config) {
 	app.Use(func(c *fiber.Ctx) error {
 		fmt.Printf("[%s] %s %s\n", c.Method(), c.Path(), c.IP())
 		return c.Next()
 	})
-	app.Use(func(c *fiber.Ctx) error {
-		origin := c.Get("Origin")
-		allowedOrigins := os.Getenv("CORS_ALLOW_ORIGINS")
-		if allowedOrigins == "" {
-			allowedOrigins = "http://localhost:3000"
-		}
-		if contains(allowedOrigins, origin) {
-			c.Set("Access-Control-Allow-Origin", origin)
-			c.Set("Access-Control-Allow-Credentials", "true")
-		}
-		c.Set("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
-		c.Set("Access-Control-Allow-Headers", "Content-Type,Authorization,x-tenant-code")
-		if c.Method() == "OPTIONS" {
-			return c.SendStatus(204)
-		}
-		return c.Next()
-	})
+	// CORS middleware with toggle
+	if cfg.EnableCORS {
+		app.Use(cors.New(cors.Config{
+			AllowOrigins:     cfg.AllowedOrigins,
+			AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS,PATCH",
+			AllowHeaders:     "Content-Type,Authorization,X-Requested-With,x-tenant-code",
+			AllowCredentials: true,
+			MaxAge:           7200,
+		}))
+	}
 }

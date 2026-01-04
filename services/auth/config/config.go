@@ -25,6 +25,8 @@ type Config struct {
 	SuperAdminEmail    string
 	SuperAdminPassword string
 	EncryptionKey      string
+	EnableCORS         bool
+	AllowedOrigins     string
 }
 
 func LoadConfig() *Config {
@@ -53,6 +55,8 @@ func LoadConfig() *Config {
 		SuperAdminEmail:    getEnv("SUPER_ADMIN_EMAIL", ""),
 		SuperAdminPassword: getEnv("SUPER_ADMIN_PASSWORD", ""),
 		EncryptionKey:      getRequiredEnv("ENCRYPTION_KEY"),
+		EnableCORS:         getEnv("ENABLE_CORS", "false") == "true",
+		AllowedOrigins:     getEnv("CORS_ALLOW_ORIGINS", "http://localhost:3000"),
 	}
 }
 

@@ -20,6 +20,8 @@ type Config struct {
 	AuthServiceURL string
 	LogLevel       string
 	EncryptionKey  string
+	EnableCORS     bool
+	AllowedOrigins string
 }
 
 func LoadConfig() *Config {
@@ -33,11 +35,13 @@ func LoadConfig() *Config {
 		DBName:         getEnv("DB_NAME", "school_erp"),
 		DBSSLMode:      getEnv("DB_SSL_MODE", "disable"),
 		JWTSecret:      getEnv("JWT_SECRET", "change-me"),
-		NATSUrl:        getEnv("NATS_URL", "nats://localhost:4222"),
-		RedisURL:       getEnv("REDIS_URL", "redis://localhost:6379"),
+		NATSUrl:        getEnv("NATS_URL", "nats://nats:4222"),
+		RedisURL:       getEnv("REDIS_URL", "redis://redis:6379"),
 		LogLevel:       getEnv("LOG_LEVEL", "info"),
-		AuthServiceURL: getEnv("AUTH_SERVICE_URL", "http://localhost:3001"),
+		AuthServiceURL: getEnv("AUTH_SERVICE_URL", "http://auth-service:3001"),
 		EncryptionKey:  getEnv("ENCRYPTION_KEY", "default-key-change-in-production"),
+		EnableCORS:     getEnv("ENABLE_CORS", "false") == "true",
+		AllowedOrigins: getEnv("CORS_ALLOW_ORIGINS", "http://localhost:3000"),
 	}
 	log.Printf("[Student Service] Environment: %s, Port: %s", cfg.Environment, cfg.Port)
 

@@ -3,10 +3,10 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/joho/godotenv"
 
 	"school-erp/accounting/config"
@@ -48,7 +48,7 @@ func main() {
 	app := fiber.New(fiber.Config{
 		AppName: "School ERP Accounting Service",
 	})
-	setupMiddleware(app)
+	setupMiddleware(app, cfg)
 
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
@@ -81,26 +81,19 @@ func main() {
 	}
 }
 
-func setupMiddleware(app *fiber.App) {
+func setupMiddleware(app *fiber.App, cfg *config.Config) {
 	app.Use(func(c *fiber.Ctx) error {
 		fmt.Printf("[%s] %s %s\n", c.Method(), c.Path(), c.IP())
 		return c.Next()
 	})
-	app.Use(func(c *fiber.Ctx) error {
-		origin := c.Get("Origin")
-		allowedOrigins := os.Getenv("CORS_ALLOW_ORIGINS")
-		if allowedOrigins == "" {
-			allowedOrigins = "http://localhost:3000"
-		}
-		if contains(allowedOrigins, origin) {
-			c.Set("Access-Control-Allow-Origin", origin)
-			c.Set("Access-Control-Allow-Credentials", "true")
-		}
-		c.Set("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
-		c.Set("Access-Control-Allow-Headers", "Content-Type,Authorization")
-		if c.Method() == "OPTIONS" {
-			return c.SendStatus(204)
-		}
-		return c.Next()
-	})
+	// CORS middleware with toggle
+	if cfg.EnableCORS {
+		app.Use(cors.New(cors.Config{
+			AllowOrigins:     cfg.CORSOrigins,
+			AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS,PATCH",
+			AllowHeaders:     "Content-Type,Authorization,X-Requested-With,x-tenant-code",
+			AllowCredentials: true,
+			MaxAge:           7200,
+		}))
+	}
 }

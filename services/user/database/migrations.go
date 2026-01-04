@@ -8,6 +8,44 @@ import (
 )
 
 func RunMigrations(pool *pgxpool.Pool) error {
+	ctx := context.Background()
+
+	// Initial check/fix for user-service tables
+	fixSchema := `
+	DO $$ 
+	BEGIN 
+		-- Check and fix teachers table
+		IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='teachers') THEN
+			IF (SELECT data_type FROM information_schema.columns WHERE table_name='teachers' AND column_name='user_id') = 'character varying' THEN
+				IF (SELECT count(*) FROM teachers) = 0 THEN
+					DROP TABLE teachers CASCADE;
+				END IF;
+			END IF;
+		END IF;
+
+		-- Check and fix parents table
+		IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='parents') THEN
+			IF (SELECT data_type FROM information_schema.columns WHERE table_name='parents' AND column_name='user_id') = 'character varying' THEN
+				IF (SELECT count(*) FROM parents) = 0 THEN
+					DROP TABLE parents CASCADE;
+				END IF;
+			END IF;
+		END IF;
+
+		-- Check and fix staff table
+		IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='staff') THEN
+			IF (SELECT data_type FROM information_schema.columns WHERE table_name='staff' AND column_name='user_id') = 'character varying' THEN
+				IF (SELECT count(*) FROM staff) = 0 THEN
+					DROP TABLE staff CASCADE;
+				END IF;
+			END IF;
+		END IF;
+	END $$;
+	`
+	if _, err := pool.Exec(ctx, fixSchema); err != nil {
+		log.Printf("Error fixing user service schema: %v", err)
+	}
+
 	migrations := []string{
 		createTeachersTable,
 		createParentsTable,
@@ -29,8 +67,8 @@ func RunMigrations(pool *pgxpool.Pool) error {
 const createTeachersTable = `
 CREATE TABLE IF NOT EXISTS teachers (
 	id BIGSERIAL PRIMARY KEY,
-	school_id VARCHAR(255) NOT NULL,
-	user_id VARCHAR(255) NOT NULL UNIQUE,
+	school_id UUID NOT NULL,
+	user_id UUID NOT NULL UNIQUE,
 	qualification VARCHAR(255) NOT NULL,
 	department VARCHAR(255),
 	employee_id VARCHAR(50) UNIQUE NOT NULL,
@@ -73,8 +111,8 @@ CREATE INDEX IF NOT EXISTS idx_teachers_user_id ON teachers(user_id);
 const createParentsTable = `
 CREATE TABLE IF NOT EXISTS parents (
 	id BIGSERIAL PRIMARY KEY,
-	school_id VARCHAR(255) NOT NULL,
-	user_id VARCHAR(255) NOT NULL UNIQUE,
+	school_id UUID NOT NULL,
+	user_id UUID NOT NULL UNIQUE,
 	guardian_id VARCHAR(50) UNIQUE,
 	phone_number VARCHAR(20),
 	alternate_phone VARCHAR(20),
@@ -128,8 +166,8 @@ CREATE INDEX IF NOT EXISTS idx_parents_guardian_id ON parents(guardian_id);
 const createStaffTable = `
 CREATE TABLE IF NOT EXISTS staff (
 	id BIGSERIAL PRIMARY KEY,
-	school_id VARCHAR(255) NOT NULL,
-	user_id VARCHAR(255) NOT NULL UNIQUE,
+	school_id UUID NOT NULL,
+	user_id UUID NOT NULL UNIQUE,
 	department VARCHAR(255),
 	position VARCHAR(255),
 	employee_id VARCHAR(50) UNIQUE NOT NULL,
@@ -167,7 +205,7 @@ CREATE INDEX IF NOT EXISTS idx_staff_user_id ON staff(user_id);
 const createDepartmentsTable = `
 CREATE TABLE IF NOT EXISTS departments (
 	id BIGSERIAL PRIMARY KEY,
-	school_id VARCHAR(255) NOT NULL,
+	school_id UUID NOT NULL,
 	name VARCHAR(255) NOT NULL,
 	code VARCHAR(50) NOT NULL,
 	description TEXT,

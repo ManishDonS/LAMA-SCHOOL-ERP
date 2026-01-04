@@ -63,24 +63,23 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-auth
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "3001:3001"
+    expose:
+      - "3001"
     environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/school_erp
-      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
-      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-your-super-secret-refresh-token-key-change-this-in-production}
+      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-school_erp}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:?REFRESH_TOKEN_SECRET is required}
       SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL}
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - school-erp-network
+    mem_limit: 512m
+    cpus: "0.5"
     restart: on-failure
 
   # User Service
@@ -91,28 +90,27 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-user
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "3002:3002"
+    expose:
+      - "3002"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: school_erp
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
       AUTH_SERVICE_URL: http://auth-service:3001
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - school-erp-network
+    mem_limit: 512m
+    cpus: "0.5"
     restart: on-failure
 
   # Student Service
@@ -123,28 +121,27 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-student
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "3003:3003"
+    expose:
+      - "3003"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: school_erp
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
       AUTH_SERVICE_URL: http://auth-service:3001
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - school-erp-network
+    mem_limit: 512m
+    cpus: "0.5"
     restart: on-failure
 
   # Attendance Service
@@ -155,24 +152,21 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-attendance
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "3004:3004"
+    expose:
+      - "3004"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: school_erp
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       ENV: development
       LOG_LEVEL: debug
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
     depends_on:
       postgres:
         condition: service_healthy
@@ -188,17 +182,14 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-fee
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "3005:3005"
+    expose:
+      - "3005"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: school_erp
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
@@ -217,17 +208,14 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-exam
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "3006:3006"
+    expose:
+      - "3006"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: school_erp
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
@@ -246,17 +234,14 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-notification
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "3007:3007"
+    expose:
+      - "3007"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: school_erp
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
@@ -275,22 +260,19 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-website
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "3013:3013"
+    expose:
+      - "3013"
     environment:
       WEBSITE_SERVICE_PORT: 3013
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: school_erp
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
     depends_on:
       postgres:
@@ -307,17 +289,14 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-realtime
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "3008:3008"
+    expose:
+      - "3008"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: school_erp
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
@@ -338,23 +317,20 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-school
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "3011:3011"
+    expose:
+      - "3011"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: school_erp
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
       PORT: 3011
-      JWT_SECRET: ${JWT_SECRET}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
     volumes:
       - school_uploads:/root/uploads
     depends_on:
@@ -374,22 +350,19 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-expense
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "3010:3010"
+    expose:
+      - "3010"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: school_erp
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
       PORT: 3010
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
     volumes:
       - expense_uploads:/root/uploads
     depends_on:
@@ -409,24 +382,21 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-transport
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "3009:3009"
+    expose:
+      - "3009"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: school_erp
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
       PORT: 3009
       TRACCAR_API_URL: ${TRACCAR_API_URL:-https://system.geotrack.com.np/api}
       TRACCAR_USER: ${TRACCAR_USER}
-      TRACCAR_PASSWORD: ${TRACCAR_PASSWORD}
+      TRACCAR_PASSWORD: ${TRACCAR_PASSWORD:?TRACCAR_PASSWORD is required}
     depends_on:
       postgres:
         condition: service_healthy
@@ -444,17 +414,14 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-payroll
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "3012:3012"
+    expose:
+      - "3012"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: school_erp
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
@@ -476,17 +443,14 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-accounting
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "8009:8009"
+    expose:
+      - "8009"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: school_erp
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
@@ -508,17 +472,14 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-communication
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "8005:8005"
+    expose:
+      - "8005"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: school_erp
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
@@ -540,22 +501,19 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-class
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "3014:3014"
+    expose:
+      - "3014"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: school_erp
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
       PORT: 3014
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
     depends_on:
       postgres:
         condition: service_healthy
@@ -571,24 +529,21 @@ services:
       args:
         - GOPROXY=https://proxy.golang.org,direct
     container_name: school-erp-library
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    ports:
-      - "3015:3015"
+    expose:
+      - "3015"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: school_erp
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       NATS_URL: nats://nats:4222
       REDIS_URL: redis://redis:6379
       CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3001
       LIBRARY_SERVICE_PORT: 3015
       AUTH_SERVICE_URL: http://auth-service:3001
-      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
     depends_on:
       postgres:
         condition: service_healthy
@@ -596,20 +551,93 @@ services:
       - school-erp-network
     restart: on-failure
 
-  # API Gateway (Optional - future enhancement)
-  # nginx:
-  #   image: nginx:alpine
-  #   container_name: school-erp-gateway
-  #   ports:
-  #     - "8080:80"
-  #   volumes:
-  #     - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-  #   depends_on:
-  #     - auth-service
-  #     - user-service
-  #     - student-service
-  #   networks:
-  #     - school-erp-network
+  # API Gateway
+  nginx:
+    image: nginx:alpine
+    container_name: school-erp-gateway
+    ports:
+      - "8081:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - auth-service
+      - user-service
+      - student-service
+      - school-service
+    networks:
+      - school-erp-network
+    mem_limit: 512m
+    cpus: "0.5"
+
+  # ---------------------------------------------------------------------------
+  # Observability Stack
+  # ---------------------------------------------------------------------------
+
+  # Loki - Log Aggregation
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/loki-config.yaml
+    volumes:
+      - ./infra/monitoring/loki/loki-config.yaml:/etc/loki/loki-config.yaml
+    networks:
+      - school-erp-network
+
+  # Promtail - Log Shipper
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    volumes:
+      - ./infra/monitoring/promtail/promtail-config.yaml:/etc/promtail/promtail-config.yaml
+      - /var/lib/docker/containers:/var/lib/docker/containers
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    networks:
+      - school-erp-network
+
+  # Prometheus - Metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    networks:
+      - school-erp-network
+
+  # cAdvisor - Container Metrics
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - school-erp-network
+    mem_limit: 256m
+    cpus: "0.25"
+
+  # Grafana - Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3030:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?required}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - school-erp-network
 
 volumes:
   postgres_data:

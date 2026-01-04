@@ -3,10 +3,9 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
-	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/joho/godotenv"
 
 	"school-erp/expense/config"
@@ -16,28 +15,6 @@ import (
 	"school-erp/expense/routes"
 	"time"
 )
-
-// Helper function to check if an origin is in the allowed list
-func contains(allowedOrigins string, origin string) bool {
-	if origin == "" {
-		return false
-	}
-
-	// Trim and normalize origin (remove trailing slash)
-	origin = strings.TrimSpace(origin)
-	origin = strings.TrimSuffix(origin, "/")
-
-	origins := strings.Split(allowedOrigins, ",")
-	for _, allowed := range origins {
-		allowed = strings.TrimSpace(allowed)
-		allowed = strings.TrimSuffix(allowed, "/")
-
-		if allowed == origin {
-			return true
-		}
-	}
-	return false
-}
 
 func main() {
 	godotenv.Load()
@@ -73,7 +50,7 @@ func main() {
 		BodyLimit: 10 * 1024 * 1024, // 10MB for file uploads
 	})
 
-	setupMiddleware(app)
+	setupMiddleware(app, cfg)
 
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
@@ -106,32 +83,21 @@ func main() {
 	}
 }
 
-func setupMiddleware(app *fiber.App) {
+func setupMiddleware(app *fiber.App, cfg *config.Config) {
 	// Logging middleware
 	app.Use(func(c *fiber.Ctx) error {
 		fmt.Printf("[%s] %s %s\n", c.Method(), c.Path(), c.IP())
 		return c.Next()
 	})
 
-	// CORS middleware
-	app.Use(func(c *fiber.Ctx) error {
-		origin := c.Get("Origin")
-		allowedOrigins := os.Getenv("CORS_ALLOW_ORIGINS")
-		if allowedOrigins == "" {
-			allowedOrigins = "http://localhost:3000,http://127.0.0.1:3000"
-		}
-
-		if origin != "" && contains(allowedOrigins, origin) {
-			c.Set("Access-Control-Allow-Origin", origin)
-			c.Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS,PATCH")
-			c.Set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With,X-Tenant-Code,x-tenant-code,X-Tenant-ID")
-			c.Set("Access-Control-Allow-Credentials", "true")
-			c.Set("Access-Control-Max-Age", "7200")
-		}
-
-		if c.Method() == "OPTIONS" {
-			return c.SendStatus(204)
-		}
-		return c.Next()
-	})
+	// CORS middleware with toggle
+	if cfg.EnableCORS {
+		app.Use(cors.New(cors.Config{
+			AllowOrigins:     cfg.AllowedOrigins,
+			AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS,PATCH",
+			AllowHeaders:     "Content-Type,Authorization,X-Requested-With,x-tenant-code",
+			AllowCredentials: true,
+			MaxAge:           7200,
+		}))
+	}
 }

@@ -5,11 +5,11 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/joho/godotenv"
 
 	"school-erp/attendance/config"
@@ -21,20 +21,6 @@ import (
 	"school-erp/attendance/pkg/tenant"
 	"school-erp/attendance/routes"
 )
-
-// Helper function to check if an origin is in the allowed list
-func contains(allowedOrigins string, origin string) bool {
-	if origin == "" {
-		return false
-	}
-	origins := strings.Split(allowedOrigins, ",")
-	for _, allowed := range origins {
-		if strings.TrimSpace(allowed) == strings.TrimSuffix(origin, "/") {
-			return true
-		}
-	}
-	return false
-}
 
 func main() {
 	godotenv.Load()
@@ -94,7 +80,7 @@ func main() {
 		},
 	})
 
-	setupMiddleware(app)
+	setupMiddleware(app, cfg)
 
 	// Setup Tenant Resolver Middleware
 	tenantResolver := middleware.NewTenantResolver(middleware.TenantResolverConfig{
@@ -146,7 +132,7 @@ func main() {
 	log.Info().Msg("Attendance Service gracefully stopped")
 }
 
-func setupMiddleware(app *fiber.App) {
+func setupMiddleware(app *fiber.App, cfg *config.Config) {
 	// Request ID Middleware
 	app.Use(middleware.RequestIDMiddleware())
 
@@ -169,25 +155,14 @@ func setupMiddleware(app *fiber.App) {
 		return err
 	})
 
-	// CORS middleware
-	app.Use(func(c *fiber.Ctx) error {
-		origin := c.Get("Origin")
-		allowedOrigins := os.Getenv("CORS_ALLOW_ORIGINS")
-		if allowedOrigins == "" {
-			allowedOrigins = "http://localhost:3000,http://localhost:3001"
-		}
-
-		if origin != "" && contains(allowedOrigins, origin) {
-			c.Set("Access-Control-Allow-Origin", origin)
-		}
-
-		c.Set("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS,PATCH")
-		c.Set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With,X-Tenant-Code")
-		c.Set("Access-Control-Allow-Credentials", "true")
-
-		if c.Method() == "OPTIONS" {
-			return c.SendStatus(204)
-		}
-		return c.Next()
-	})
+	// CORS middleware with toggle
+	if cfg.EnableCORS {
+		app.Use(cors.New(cors.Config{
+			AllowOrigins:     cfg.AllowedOrigins,
+			AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS,PATCH",
+			AllowHeaders:     "Content-Type,Authorization,X-Requested-With,x-tenant-code",
+			AllowCredentials: true,
+			MaxAge:           7200,
+		}))
+	}
 }

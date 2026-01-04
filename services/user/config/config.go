@@ -36,6 +36,8 @@ type Config struct {
 
 	// Services
 	AuthServiceURL string
+	EnableCORS     bool
+	AllowedOrigins string
 }
 
 func LoadConfig() *Config {
@@ -59,16 +61,18 @@ func LoadConfig() *Config {
 		RefreshTokenExpiry: parseDuration(getEnv("REFRESH_TOKEN_EXPIRY", "7d")),
 
 		// NATS
-		NATSUrl: getEnv("NATS_URL", "nats://localhost:4222"),
+		NATSUrl: getEnv("NATS_URL", "nats://nats:4222"),
 
 		// Redis
-		RedisURL: getEnv("REDIS_URL", "redis://localhost:6379"),
+		RedisURL: getEnv("REDIS_URL", "redis://redis:6379"),
 
 		// Logging
 		LogLevel: getEnv("LOG_LEVEL", "info"),
 
 		// Services
-		AuthServiceURL: getEnv("AUTH_SERVICE_URL", "http://auth-service:3000"),
+		AuthServiceURL: getEnv("AUTH_SERVICE_URL", "http://auth-service:3001"),
+		EnableCORS:     getEnv("ENABLE_CORS", "false") == "true",
+		AllowedOrigins: getEnv("CORS_ALLOW_ORIGINS", "http://localhost:3000"),
 	}
 
 	log.Printf("[User Service Config] Environment: %s, Port: %s", cfg.Environment, cfg.Port)

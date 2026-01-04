@@ -8,6 +8,34 @@ import (
 )
 
 func RunMigrations(pool *pgxpool.Pool) error {
+	ctx := context.Background()
+
+	// Initial check/fix for students table
+	fixStudentsTable := `
+	DO $$ 
+	BEGIN 
+		-- If students table exists but has incorrect ID type (text instead of bigint/serial), 
+		-- AND it is empty, drop it to let it be recreated correctly.
+		IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='students') THEN
+			IF (SELECT data_type FROM information_schema.columns WHERE table_name='students' AND column_name='id') = 'text' THEN
+				IF (SELECT count(*) FROM students) = 0 THEN
+					DROP TABLE students CASCADE;
+				END IF;
+			END IF;
+		END IF;
+
+		-- If students table exists but missing school_id, add it (legacy check)
+		IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='students') THEN
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='school_id') THEN
+				ALTER TABLE students ADD COLUMN school_id VARCHAR(50) NOT NULL DEFAULT 'default';
+			END IF;
+		END IF;
+	END $$;
+	`
+	if _, err := pool.Exec(ctx, fixStudentsTable); err != nil {
+		log.Printf("Error fixing students table: %v", err)
+	}
+
 	migrations := []string{
 		createStudentsTable,
 		createEnrollmentsTable,
@@ -15,7 +43,7 @@ func RunMigrations(pool *pgxpool.Pool) error {
 	}
 
 	for _, migration := range migrations {
-		if _, err := pool.Exec(context.Background(), migration); err != nil {
+		if _, err := pool.Exec(ctx, migration); err != nil {
 			log.Printf("Error running migration: %v", err)
 			return err
 		}

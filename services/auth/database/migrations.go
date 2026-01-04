@@ -47,6 +47,16 @@ func RunMigrations(db *pgxpool.Pool) error {
 			sql: `
 			DO $$ 
 			BEGIN 
+				-- If table exists but ID is not UUID, and it's empty, drop it to recreate correctly.
+				-- This handles cases where older versions of the service might have created the table with incorrect types.
+				IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
+					IF (SELECT data_type FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'id') != 'uuid' THEN
+						IF (SELECT count(*) FROM users) = 0 THEN
+							DROP TABLE users CASCADE;
+						END IF;
+					END IF;
+				END IF;
+
 				CREATE TABLE IF NOT EXISTS users (
 					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 					school_id UUID,
@@ -61,7 +71,7 @@ func RunMigrations(db *pgxpool.Pool) error {
 					UNIQUE(school_id, email)
 				);
 
-				-- Add permissions for existing tables
+				-- Add columns if they were missing (for legacy schemas that weren't dropped)
 				IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND table_schema='public' AND column_name='school_id') THEN
 					ALTER TABLE users ADD COLUMN school_id UUID;
 				END IF;

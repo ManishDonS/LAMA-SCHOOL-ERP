@@ -45,17 +45,8 @@ func main() {
 	_ = db
 
 	// Create Fiber app
-	app := fiber.New(fiber.Config{
-		AppName: cfg.AppName,
-	})
-
-	// Middleware
-	app.Use(logger.New())
-	app.Use(recover.New())
-	app.Use(cors.New(cors.Config{
-		AllowOrigins: cfg.CORSAllowOrigins,
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
-	}))
+	app := fiber.New(fiber.Config{AppName: "School ERP - Website Service"})
+	setupMiddleware(app, cfg)
 
 	// Swagger Route
 	app.Get("/swagger/*", swagger.HandlerDefault)
@@ -88,4 +79,21 @@ func main() {
 	<-c
 	log.Println("Gracefully shutting down...")
 	_ = app.Shutdown()
+}
+
+func setupMiddleware(app *fiber.App, cfg *config.Config) {
+	// Middleware
+	app.Use(logger.New())
+	app.Use(recover.New())
+
+	// CORS middleware with toggle
+	if cfg.EnableCORS {
+		app.Use(cors.New(cors.Config{
+			AllowOrigins:     cfg.CORSAllowOrigins,
+			AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS,PATCH",
+			AllowHeaders:     "Content-Type,Authorization,X-Requested-With,x-tenant-code",
+			AllowCredentials: true,
+			MaxAge:           7200,
+		}))
+	}
 }

@@ -59,7 +59,7 @@ func main() {
 	})
 
 	// Setup middleware
-	setupMiddleware(app)
+	setupMiddleware(app, cfg)
 
 	// Register Tenant Resolver Middleware
 	app.Use(middleware.NewTenantResolver(middleware.TenantResolverConfig{
@@ -137,7 +137,7 @@ func main() {
 }
 
 // setupMiddleware configures all application middleware
-func setupMiddleware(app *fiber.App) {
+func setupMiddleware(app *fiber.App, cfg *config.Config) {
 	// Logger middleware
 	app.Use(logger.New(logger.Config{
 		Format: "${time} - ${method} ${path} - ${status} - ${latency}\n",
@@ -146,34 +146,21 @@ func setupMiddleware(app *fiber.App) {
 	// Recover middleware - catches panics and returns 500
 	app.Use(recover.New())
 
-	// CORS middleware
-	app.Use(cors.New(cors.Config{
-		AllowOrigins:     getAllowedOrigins(),
-		AllowMethods:     "GET,POST,PUT,DELETE,PATCH,OPTIONS",
-		AllowHeaders:     "Content-Type,Authorization,X-Requested-With,X-Tenant-Code",
-		ExposeHeaders:    "Content-Length,X-Total-Count",
-		AllowCredentials: true,
-		MaxAge:           300,
-	}))
+	// CORS middleware with toggle
+	if cfg.EnableCORS {
+		app.Use(cors.New(cors.Config{
+			AllowOrigins:     cfg.CORSAllowOrigins,
+			AllowMethods:     "GET,POST,PUT,DELETE,PATCH,OPTIONS",
+			AllowHeaders:     "Content-Type,Authorization,X-Requested-With,X-Tenant-Code",
+			ExposeHeaders:    "Content-Length,X-Total-Count",
+			AllowCredentials: true,
+			MaxAge:           300,
+		}))
+	}
 
 	// Custom headers middleware
 	app.Use(func(c *fiber.Ctx) error {
 		c.Set("X-Service", "school-service")
 		return c.Next()
 	})
-}
-
-// getAllowedOrigins returns list of allowed CORS origins based on environment
-func getAllowedOrigins() string {
-	// Check environment variable first
-	if origins := os.Getenv("CORS_ALLOW_ORIGINS"); origins != "" {
-		return origins
-	}
-
-	env := os.Getenv("ENVIRONMENT")
-	if env == "production" {
-		return "https://yourdomain.com"
-	}
-	// Development - allow frontend
-	return "http://localhost:3000,http://127.0.0.1:3000"
 }
