@@ -57,8 +57,8 @@ The system is built using a microservices architecture with the following compon
 └──────────────────────────┬──────────────────────────────────────┘
                            │
                 ┌──────────▼──────────┐
-                │  API Gateway :3000   │
-                │    (Node.js)         │
+                │    Nginx Gateway     │
+                │    (Port 8081)       │
                 └──────────┬───────────┘
                            │
         ┏━━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━┓
@@ -125,7 +125,7 @@ Each school has its own isolated PostgreSQL database with encrypted credentials 
 - **Database**: PostgreSQL 16 with pgx driver
 - **Cache**: Redis 7
 - **Message Queue**: NATS 2.10 with JetStream
-- **API Gateway**: Node.js 18+ with Express.js
+- **API Gateway**: Nginx 1.25+ (Reverse Proxy & CORS Authority)
 - **Authentication**: JWT (golang-jwt/jwt v5)
 - **Password Hashing**: bcrypt (cost factor: 12)
 - **Encryption**: AES-256-GCM
@@ -184,9 +184,8 @@ Each school has its own isolated PostgreSQL database with encrypted credentials 
    - Change both `JWT_SECRET` and `REFRESH_TOKEN_SECRET`
 
 5. **Key Derivation**
-   - Current implementation uses zero-padding for encryption keys
-   - Recommended: Implement PBKDF2 or Argon2 for proper key derivation
-   - Location: `services/auth/pkg/tenant/crypto.go:20-28`
+   - ✅ **Implemented**: PBKDF2 with 100,000 iterations is now used for all tenant password encryption.
+   - Location: `services/*/pkg/tenant/crypto.go`
 
 See [SECURITY.md](./SECURITY.md) for complete security guidelines.
 
@@ -773,9 +772,11 @@ See [Issues](https://github.com/your-repo/issues) for full list.
 
 ## Recent Updates
 
+- ✅ **Hardened CORS Implementation**: Centralized CORS authority in Nginx with dynamic origin validation.
+- ✅ **Migration Stability**: Resilient schema migrations for Auth, Student, and User services (UUID/BigInt consistency).
 - ✅ **Comprehensive Testing Infrastructure** (Auth service: 49+ unit tests, 11 benchmarks, ~80% coverage)
 - ✅ **API Documentation Portal with Swagger UI** (interactive documentation for all services)
-- ✅ **Security Hardening** (PBKDF2 key derivation, SSL/TLS support, improved CORS)
+- ✅ **Security Hardening** (PBKDF2 key derivation implemented across services)
 - ✅ Communication service integrated into docker-compose (15 services total)
 - ✅ Multi-tenant architecture with database isolation
 - ✅ JWT-based authentication with refresh tokens
