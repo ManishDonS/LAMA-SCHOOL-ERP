@@ -23,14 +23,9 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool) {
 	loginRateLimiter := middleware.NewRateLimiter(5, 15*time.Minute)
 	loginRateLimiter.KeyFunc = func(c *fiber.Ctx) string {
 		tenantCode := middleware.GetTenantCode(c)
-		var loginReq struct {
-			Email string `json:"email"`
-		}
-		// We use BodyParser here, but since it's a small struct and Fiber/FastHTTP
-		// might have issues with multiple parses if not careful, we should be aware.
-		// However, handlers usually call BodyParser again.
-		if err := c.BodyParser(&loginReq); err == nil && loginReq.Email != "" {
-			return tenantCode + ":" + loginReq.Email
+		loginEmail, _ := c.Locals("login_email").(string)
+		if loginEmail != "" {
+			return tenantCode + ":" + loginEmail
 		}
 		return ""
 	}
@@ -43,7 +38,7 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool) {
 
 	// Apply strict rate limiting to auth endpoints
 	auth.Post("/register", authRateLimiter.Middleware(), authHandler.Register)
-	auth.Post("/login", loginRateLimiter.Middleware(), authHandler.Login)
+	auth.Post("/login", middleware.ExtractLoginEmail, loginRateLimiter.Middleware(), authHandler.Login)
 	auth.Post("/refresh", authRateLimiter.Middleware(), authHandler.RefreshToken)
 
 	// Protected routes

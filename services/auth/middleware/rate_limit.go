@@ -146,3 +146,22 @@ func AuthRateLimiter() *RateLimiter {
 func GeneralRateLimiter() *RateLimiter {
 	return NewRateLimiter(100, 1*time.Minute)
 }
+
+// ExtractLoginEmail is a middleware that extracts the email from the login body
+// and stores it in c.Locals to avoid multiple body parses and consumption issues.
+func ExtractLoginEmail(c *fiber.Ctx) error {
+	if c.Method() != fiber.MethodPost {
+		return c.Next()
+	}
+
+	var req struct {
+		Email string `json:"email"`
+	}
+
+	// BodyParser handles both JSON and Form values
+	if err := c.BodyParser(&req); err == nil && req.Email != "" {
+		c.Locals("login_email", req.Email)
+	}
+
+	return c.Next()
+}
