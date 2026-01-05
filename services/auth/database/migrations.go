@@ -325,6 +325,47 @@ func RunMigrations(db *pgxpool.Pool) error {
 			ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP;
 			`,
 		},
+		{
+			name: "migrate_refresh_tokens_to_hash",
+			sql: `
+			DO $$
+			BEGIN
+				-- Check if the column 'token' exists (old schema)
+				IF EXISTS (
+					SELECT 1
+					FROM information_schema.columns
+					WHERE table_name = 'refresh_tokens'
+					AND column_name = 'token'
+				) THEN
+					-- Step 1: Add new token_hash column
+					ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS token_hash VARCHAR(64);
+
+					-- Step 2: Delete all existing refresh tokens (they will be invalidated)
+					-- Users will need to login again to get new hashed tokens
+					DELETE FROM refresh_tokens;
+
+					-- Step 3: Drop the old token column
+					ALTER TABLE refresh_tokens DROP COLUMN token;
+
+					-- Step 4: Make token_hash NOT NULL and UNIQUE
+					ALTER TABLE refresh_tokens ALTER COLUMN token_hash SET NOT NULL;
+					ALTER TABLE refresh_tokens ADD CONSTRAINT refresh_tokens_token_hash_unique UNIQUE (token_hash);
+
+					-- Step 5: Create index on token_hash for fast lookups
+					CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens(token_hash);
+
+					-- Step 6: Add comment explaining the security improvement
+					COMMENT ON COLUMN refresh_tokens.token_hash IS
+						'SHA-256 hash of the refresh token. Original token is never stored for security. This protects against database breaches, backup theft, and insider threats.';
+
+					RAISE NOTICE 'Migration completed: Refresh tokens now use SHA-256 hashing. All existing sessions invalidated for security.';
+				ELSE
+					-- Column already migrated or doesn't exist, skip
+					RAISE NOTICE 'Refresh tokens already using token_hash column. Skipping migration.';
+				END IF;
+			END $$;
+			`,
+		},
 	}
 
 	for _, migration := range migrations {

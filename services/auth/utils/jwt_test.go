@@ -390,3 +390,114 @@ func BenchmarkVerifyRefreshToken(b *testing.B) {
 		_, _ = VerifyRefreshToken(cfg, response.RefreshToken)
 	}
 }
+
+// TestHashRefreshToken tests the SHA-256 hashing of refresh tokens
+func TestHashRefreshToken(t *testing.T) {
+	tests := []struct {
+		name  string
+		token string
+	}{
+		{
+			name:  "Valid JWT token",
+			token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMTIzIiwic2Nob29sX2lkIjoic2Nob29sLTEiLCJleHAiOjE3MDkxMjM0NTZ9.signature",
+		},
+		{
+			name:  "Different token",
+			token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.differentpayload.differentsignature",
+		},
+		{
+			name:  "Simple string",
+			token: "simple-test-token-123",
+		},
+		{
+			name:  "Empty string",
+			token: "",
+		},
+		{
+			name:  "Unicode characters",
+			token: "token-with-unicode-文字-🔒",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hash := HashRefreshToken(tt.token)
+
+			// Verify hash is 64 characters (SHA-256 hex encoding)
+			if len(hash) != 64 {
+				t.Errorf("HashRefreshToken() hash length = %d, want 64", len(hash))
+			}
+
+			// Verify hash is deterministic (same input = same output)
+			hash2 := HashRefreshToken(tt.token)
+			if hash != hash2 {
+				t.Errorf("HashRefreshToken() not deterministic: first=%s, second=%s", hash, hash2)
+			}
+
+			// Verify hash contains only hex characters
+			for _, char := range hash {
+				if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f')) {
+					t.Errorf("HashRefreshToken() contains non-hex character: %c", char)
+				}
+			}
+		})
+	}
+}
+
+func TestHashRefreshTokenUniqueness(t *testing.T) {
+	// Different inputs should produce different hashes
+	token1 := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload1.sig1"
+	token2 := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload2.sig2"
+
+	hash1 := HashRefreshToken(token1)
+	hash2 := HashRefreshToken(token2)
+
+	if hash1 == hash2 {
+		t.Errorf("HashRefreshToken() collision: different tokens produced same hash")
+	}
+}
+
+func TestHashRefreshTokenWithRealTokens(t *testing.T) {
+	cfg := getTestConfig()
+
+	// Generate real tokens
+	response1, err := GenerateTokens(cfg, "user1", "user1@example.com", "admin", "school-1")
+	if err != nil {
+		t.Fatalf("Failed to generate tokens: %v", err)
+	}
+
+	response2, err := GenerateTokens(cfg, "user2", "user2@example.com", "teacher", "school-2")
+	if err != nil {
+		t.Fatalf("Failed to generate tokens: %v", err)
+	}
+
+	// Hash the refresh tokens
+	hash1 := HashRefreshToken(response1.RefreshToken)
+	hash2 := HashRefreshToken(response2.RefreshToken)
+
+	// Verify hashes are different
+	if hash1 == hash2 {
+		t.Errorf("Real tokens produced same hash (collision)")
+	}
+
+	// Verify hash format
+	if len(hash1) != 64 {
+		t.Errorf("Hash length = %d, want 64", len(hash1))
+	}
+
+	// Verify we cannot reverse-engineer the original token from hash
+	// (This is a conceptual test - we just verify the hash doesn't contain the token)
+	if hash1 == response1.RefreshToken || hash2 == response2.RefreshToken {
+		t.Errorf("Hash should not equal the original token")
+	}
+}
+
+// BenchmarkHashRefreshToken benchmarks the hashing performance
+func BenchmarkHashRefreshToken(b *testing.B) {
+	token := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMTIzIiwic2Nob29sX2lkIjoic2Nob29sLTEiLCJleHAiOjE3MDkxMjM0NTZ9.signature"
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = HashRefreshToken(token)
+	}
+}

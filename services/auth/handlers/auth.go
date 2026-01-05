@@ -457,14 +457,17 @@ func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
 		})
 	}
 
+	// Hash the refresh token to compare with stored hash
+	tokenHash := utils.HashRefreshToken(refreshToken)
+
 	err = tenantDB.QueryRow(
 		c.Context(),
 		`SELECT u.id, COALESCE(u.school_id::text, ''), u.email, u.first_name, u.last_name, u.role, u.status,
 		        rt.revoked_at
 		 FROM users u
-		 LEFT JOIN refresh_tokens rt ON u.id = rt.user_id AND rt.token = $2
+		 LEFT JOIN refresh_tokens rt ON u.id = rt.user_id AND rt.token_hash = $2
 		 WHERE u.id = $1`,
-		claims.Subject, refreshToken,
+		claims.Subject, tokenHash,
 	).Scan(
 		&user.ID, &user.SchoolID, &user.Email, &user.FirstName, &user.LastName, &user.Role, &user.Status,
 		&revokedAt,
@@ -674,11 +677,15 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 }
 
 func (h *AuthHandler) storeRefreshToken(ctx context.Context, userID string, token string, db *pgxpool.Pool) error {
+	// Hash the refresh token before storing for security
+	// This protects against database breaches, backup theft, and insider threats
+	tokenHash := utils.HashRefreshToken(token)
+
 	expiresAt := time.Now().Add(h.cfg.RefreshTokenExpiry)
 	_, err := db.Exec(
 		ctx,
-		`INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)`,
-		userID, token, expiresAt,
+		`INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+		userID, tokenHash, expiresAt,
 	)
 	return err
 }

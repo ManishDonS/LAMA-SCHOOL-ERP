@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"time"
 
@@ -119,4 +120,14 @@ func VerifyRefreshToken(cfg *config.Config, tokenString string) (*JWTClaims, err
 	}
 
 	return claims, nil
+}
+
+// HashRefreshToken creates a SHA-256 hash of the refresh token for secure storage
+// This prevents storing the actual token in the database, protecting against:
+// - Database breaches (stolen backups, SQL injection)
+// - Insider threats (DBAs with read access)
+// - Log exposure (query logs containing token values)
+func HashRefreshToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return fmt.Sprintf("%x", hash)
 }
