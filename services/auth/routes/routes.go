@@ -9,11 +9,12 @@ import (
 	"school-erp/auth/config"
 	"school-erp/auth/handlers"
 	"school-erp/auth/middleware"
+	"school-erp/auth/pkg/cache"
 )
 
-func SetupRoutes(app *fiber.App, db *pgxpool.Pool) {
+func SetupRoutes(app *fiber.App, db *pgxpool.Pool, redisCache *cache.RedisCache) {
 	cfg := config.LoadConfig()
-	authHandler := handlers.NewAuthHandler(db, cfg)
+	authHandler := handlers.NewAuthHandler(db, cfg, redisCache)
 
 	// Create rate limiters
 	// Relaxed IP-based rate limit for general auth endpoints
@@ -43,7 +44,7 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool) {
 
 	// Protected routes
 	protected := auth.Group("")
-	protected.Use(middleware.JWTMiddleware(cfg))
+	protected.Use(middleware.JWTMiddleware(cfg, redisCache))
 	protected.Use(generalRateLimiter.Middleware()) // Less strict for authenticated users
 
 	protected.Get("/me", authHandler.GetMe)
@@ -51,7 +52,7 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool) {
 
 	// Admin routes
 	admin := api.Group("/admin")
-	admin.Use(middleware.JWTMiddleware(cfg))
+	admin.Use(middleware.JWTMiddleware(cfg, redisCache))
 	// Use Casbin to check for system-level access
 	admin.Use(middleware.CasbinMiddleware("system", "access"))
 

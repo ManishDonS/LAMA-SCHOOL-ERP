@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -10,7 +11,11 @@ import (
 	"school-erp/auth/utils"
 )
 
-func JWTMiddleware(cfg *config.Config) fiber.Handler {
+type Blacklist interface {
+	IsJTIBlacklisted(ctx context.Context, jti string) (bool, error)
+}
+
+func JWTMiddleware(cfg *config.Config, blacklist Blacklist) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
@@ -37,11 +42,29 @@ func JWTMiddleware(cfg *config.Config) fiber.Handler {
 			})
 		}
 
+		// Check if token's JTI is blacklisted
+		if blacklist != nil && claims.JTI != "" {
+			isBlacklisted, err := blacklist.IsJTIBlacklisted(c.Context(), claims.JTI)
+			if err != nil {
+				// Log error but proceed? Or fail? Let's fail for safety
+				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+					"error": "Failed to verify token status",
+				})
+			}
+			if isBlacklisted {
+				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+					"error": "Token has been revoked",
+				})
+			}
+		}
+
 		// Store claims in context
 		c.Locals("user_id", claims.UserID)
 		c.Locals("email", claims.Email)
 		c.Locals("role", claims.Role)
 		c.Locals("school_id", claims.SchoolID)
+		c.Locals("jti", claims.JTI)
+		c.Locals("exp", claims.ExpiresAt.Time)
 
 		return c.Next()
 	}

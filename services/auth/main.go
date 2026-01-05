@@ -17,6 +17,7 @@ import (
 	_ "school-erp/auth/docs" // load API Docs files (will be created by swag init)
 	"school-erp/auth/messaging"
 	"school-erp/auth/middleware"
+	"school-erp/auth/pkg/cache"
 	"school-erp/auth/pkg/casbin"
 	"school-erp/auth/pkg/logger"
 	"school-erp/auth/pkg/monitoring"
@@ -106,6 +107,15 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to initialize tenant manager")
 	}
 
+	// Initialize Redis Cache for blacklisting
+	redisCache, err := cache.NewRedisCache(cfg.RedisURL)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to initialize redis cache, token blacklisting will be disabled")
+	} else {
+		defer redisCache.Close()
+		log.Info().Msg("Redis cache initialized")
+	}
+
 	// Register Tenant Resolver Middleware
 	app.Use(middleware.NewTenantResolver(middleware.TenantResolverConfig{
 		TenantManager: tenantManager,
@@ -134,7 +144,7 @@ func main() {
 	})
 
 	// Setup routes
-	routes.SetupRoutes(app, db)
+	routes.SetupRoutes(app, db, redisCache)
 
 	// Health check with monitoring
 	app.Get("/health", func(c *fiber.Ctx) error {

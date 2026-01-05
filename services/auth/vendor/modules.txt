@@ -26,6 +26,9 @@ github.com/casbin/casbin/v2/util
 # github.com/casbin/govaluate v1.3.0
 ## explicit; go 1.13
 github.com/casbin/govaluate
+# github.com/cespare/xxhash/v2 v2.3.0
+## explicit; go 1.11
+github.com/cespare/xxhash/v2
 # github.com/clipperhouse/stringish v0.1.1
 ## explicit; go 1.18
 github.com/clipperhouse/stringish
@@ -33,6 +36,9 @@ github.com/clipperhouse/stringish
 ## explicit; go 1.18
 github.com/clipperhouse/uax29/v2/graphemes
 github.com/clipperhouse/uax29/v2/internal/iterators
+# github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f
+## explicit
+github.com/dgryski/go-rendezvous
 # github.com/go-openapi/jsonpointer v0.22.4
 ## explicit; go 1.24.0
 github.com/go-openapi/jsonpointer
@@ -168,6 +174,22 @@ github.com/nats-io/nuid
 # github.com/pckhoi/casbin-pgx-adapter/v3 v3.2.0
 ## explicit; go 1.18
 github.com/pckhoi/casbin-pgx-adapter/v3
+# github.com/redis/go-redis/v9 v9.17.2
+## explicit; go 1.18
+github.com/redis/go-redis/v9
+github.com/redis/go-redis/v9/auth
+github.com/redis/go-redis/v9/internal
+github.com/redis/go-redis/v9/internal/auth/streaming
+github.com/redis/go-redis/v9/internal/hashtag
+github.com/redis/go-redis/v9/internal/hscan
+github.com/redis/go-redis/v9/internal/interfaces
+github.com/redis/go-redis/v9/internal/maintnotifications/logs
+github.com/redis/go-redis/v9/internal/pool
+github.com/redis/go-redis/v9/internal/proto
+github.com/redis/go-redis/v9/internal/rand
+github.com/redis/go-redis/v9/internal/util
+github.com/redis/go-redis/v9/maintnotifications
+github.com/redis/go-redis/v9/push
 # github.com/rogpeppe/go-internal v1.14.1
 ## explicit; go 1.23
 # github.com/rs/zerolog v1.31.0

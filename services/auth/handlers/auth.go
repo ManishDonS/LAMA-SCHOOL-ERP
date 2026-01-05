@@ -16,6 +16,7 @@ import (
 	"school-erp/auth/database"
 	"school-erp/auth/messaging"
 	"school-erp/auth/middleware"
+	"school-erp/auth/pkg/cache"
 	"school-erp/auth/pkg/casbin"
 	"school-erp/auth/pkg/logger"
 	"school-erp/auth/pkg/monitoring"
@@ -23,8 +24,9 @@ import (
 )
 
 type AuthHandler struct {
-	db  *pgxpool.Pool
-	cfg *config.Config
+	db    *pgxpool.Pool
+	cfg   *config.Config
+	cache *cache.RedisCache
 }
 
 type RegisterRequest struct {
@@ -57,10 +59,11 @@ type UserResponse struct {
 	Permissions []string  `json:"permissions"`
 }
 
-func NewAuthHandler(db *pgxpool.Pool, cfg *config.Config) *AuthHandler {
+func NewAuthHandler(db *pgxpool.Pool, cfg *config.Config, cache *cache.RedisCache) *AuthHandler {
 	return &AuthHandler{
-		db:  db,
-		cfg: cfg,
+		db:    db,
+		cfg:   cfg,
+		cache: cache,
 	}
 }
 
@@ -652,6 +655,18 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 		SameSite: "Strict",
 		Path:     "/api/v1/auth/refresh",
 	})
+
+	// Blacklist the current access token's JTI
+	jti, _ := c.Locals("jti").(string)
+	exp, _ := c.Locals("exp").(time.Time)
+	if h.cache != nil && jti != "" && !exp.IsZero() {
+		remainingTTL := time.Until(exp)
+		if remainingTTL > 0 {
+			if err := h.cache.BlacklistJTI(c.Context(), jti, remainingTTL); err != nil {
+				logger.ErrorLog("handlers", err, "Failed to blacklist token")
+			}
+		}
+	}
 
 	return c.JSON(fiber.Map{
 		"message": "Logged out successfully",

@@ -27,6 +27,7 @@ type Config struct {
 	EncryptionKey      string
 	EnableCORS         bool
 	AllowedOrigins     string
+	RedisURL           string
 }
 
 func LoadConfig() *Config {
@@ -57,6 +58,7 @@ func LoadConfig() *Config {
 		EncryptionKey:      getRequiredEnv("ENCRYPTION_KEY"),
 		EnableCORS:         getEnv("ENABLE_CORS", "false") == "true",
 		AllowedOrigins:     getEnv("CORS_ALLOW_ORIGINS", "http://localhost:3000"),
+		RedisURL:           getEnv("REDIS_URL", "redis://redis:6379"),
 	}
 }
 

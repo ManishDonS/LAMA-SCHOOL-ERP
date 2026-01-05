@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 
 	"school-erp/auth/config"
 )
@@ -14,6 +15,7 @@ type JWTClaims struct {
 	Email    string `json:"email"`
 	Role     string `json:"role"`
 	SchoolID string `json:"school_id"`
+	JTI      string `json:"jti,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -51,6 +53,7 @@ func generateAccessToken(cfg *config.Config, userID string, email, role string, 
 		Email:    email,
 		Role:     role,
 		SchoolID: schoolID,
+		JTI:      uuid.New().String(),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(cfg.AccessTokenExpiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
