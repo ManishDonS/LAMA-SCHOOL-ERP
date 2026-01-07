@@ -246,7 +246,10 @@ export const getAccessibleMenuItems = (
 
   let menuItems = getMenuItemsWithPermissions()
 
-  // 1. License Check (Master Control) - applies to ALL roles
+  // 1. Super Admin Bypass: See everything regardless of license or activation
+  if (userRole === 'super_admin') return menuItems.filter((item) => hasPermission(userRole, item.roles))
+
+  // 2. License Check (Master Control) - applies to non-Super Admin roles
   // If a module is NOT licensed, it's NOT available in the system
   if (modulePermissions) {
     menuItems = menuItems.filter((item) => {
@@ -259,7 +262,7 @@ export const getAccessibleMenuItems = (
     })
   }
 
-  // 2. Activation Check - applies to ALL roles for sidebar visibility
+  // 3. Activation Check - applies to non-Super Admin roles for sidebar visibility
   // If a module is licensed but NOT activated by the school, hide it from sidebar
   if (activeModules) {
     menuItems = menuItems.filter((item) => {
@@ -270,7 +273,7 @@ export const getAccessibleMenuItems = (
   }
 
   // 3. Role/CRUD Permission Check - applies to non-Super Admin roles
-  if (userRole !== 'super_admin' && modulePermissions) {
+  if (modulePermissions) {
     menuItems = menuItems.filter((item) => {
       const moduleKey = MODULE_PERMISSION_MAP[item.href]
       if (!moduleKey) return true

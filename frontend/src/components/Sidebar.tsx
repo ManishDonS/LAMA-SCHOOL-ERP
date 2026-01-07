@@ -15,22 +15,34 @@ export default function Sidebar() {
   useEffect(() => {
     setMounted(true)
 
-    // Load module permissions from selected school
-    if (typeof window !== 'undefined') {
-      const schoolData = localStorage.getItem('selected_school')
-      if (schoolData) {
-        try {
-          const school = JSON.parse(schoolData)
-          if (school.module_permissions) {
-            setModulePermissions(school.module_permissions)
+    // Function to load school data from localStorage
+    const loadSchoolData = () => {
+      if (typeof window !== 'undefined') {
+        const schoolData = localStorage.getItem('selected_school')
+        if (schoolData) {
+          try {
+            const school = JSON.parse(schoolData)
+            if (school.module_permissions) {
+              setModulePermissions(school.module_permissions)
+            }
+            if (school.active_modules) {
+              setLocalActiveModules(school.active_modules)
+            }
+          } catch (error) {
+            console.error('Failed to parse school data:', error)
           }
-          if (school.active_modules) {
-            setLocalActiveModules(school.active_modules)
-          }
-        } catch (error) {
-          console.error('Failed to parse school data:', error)
         }
       }
+    }
+
+    // Initial load
+    loadSchoolData()
+
+    // Listen for updates from other components
+    window.addEventListener('schoolDataUpdated', loadSchoolData)
+
+    return () => {
+      window.removeEventListener('schoolDataUpdated', loadSchoolData)
     }
   }, [])
 
@@ -39,8 +51,9 @@ export default function Sidebar() {
   const { activeModules: storeActiveModules, modulePermissions: storePermissions } = useAuthStore()
 
   // Use permissions from selected school (super admin view) or from logged in user (store)
-  const effectivePermissions = Object.keys(modulePermissions).length > 0 ? modulePermissions : storePermissions
-  const effectiveActiveModules = localActiveModules !== undefined ? localActiveModules : storeActiveModules
+  // Ensure we use empty defaults during SSR/hydration to match server
+  const effectivePermissions = mounted ? (Object.keys(modulePermissions).length > 0 ? modulePermissions : storePermissions) : {}
+  const effectiveActiveModules = mounted ? (localActiveModules !== undefined ? localActiveModules : storeActiveModules) : []
 
   // Get menu items that the user has permission to access
   const menuItems = getAccessibleMenuItems(userRole, effectiveActiveModules, effectivePermissions)
@@ -52,7 +65,7 @@ export default function Sidebar() {
   // Get enabled premium apps based on license AND activation
   const enabledApps = ALL_MODULES
     .filter(app => app.category === 'Apps & Integrations')
-    .filter(app => isModuleActive(effectivePermissions, effectiveActiveModules, app.key))
+    .filter(app => isModuleActive(effectivePermissions, effectiveActiveModules, app.key, user?.role))
     .filter(app => !!app.href) as (typeof ALL_MODULES[number] & { href: string })[]
 
   return (

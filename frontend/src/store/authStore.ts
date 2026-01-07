@@ -75,8 +75,10 @@ export const useAuthStore = create<AuthStore>()(
             const response = await authAPI.login({ email, password }, tenantCode)
             const { data, tokens } = response.data
 
+            const transformedUser = transformUserData(data)
+
             set({
-              user: transformUserData(data),
+              user: transformedUser,
               token: tokens.accessToken,
               refreshToken: tokens.refreshToken,
               isLoading: false,
@@ -88,10 +90,12 @@ export const useAuthStore = create<AuthStore>()(
               // Refresh token is stored in HttpOnly cookie
             }
 
-            // Fetch modules immediately after login
-            const { user } = get()
-            if (user?.schoolId) {
+            // Fetch modules immediately after login using the transformed user data
+            if (transformedUser?.schoolId) {
+              console.log('[login] Calling fetchActiveModules for schoolId:', transformedUser.schoolId)
               get().fetchActiveModules()
+            } else {
+              console.warn('[login] No schoolId found in user data:', transformedUser)
             }
           } catch (error: any) {
             const message = error.response?.data?.error || 'Login failed'
@@ -187,16 +191,31 @@ export const useAuthStore = create<AuthStore>()(
 
         fetchActiveModules: async () => {
           const { user } = get()
-          if (!user?.schoolId) return
+          if (!user?.schoolId) {
+            console.log('[fetchActiveModules] No schoolId found for user:', user)
+            return
+          }
 
           try {
+            console.log('[fetchActiveModules] Fetching for schoolId:', user.schoolId)
             const response = await schoolAPI.get(user.schoolId.toString())
+            console.log('[fetchActiveModules] Raw response:', response)
+            console.log('[fetchActiveModules] response.data:', response.data)
+
+            // Handle both { data: { ... } } and { ... } formats just in case
+            const schoolData = response.data.data || response.data
+            console.log('[fetchActiveModules] Parsed schoolData:', schoolData)
+            console.log('[fetchActiveModules] active_modules:', schoolData.active_modules)
+            console.log('[fetchActiveModules] module_permissions:', schoolData.module_permissions)
+
             set({
-              activeModules: response.data.active_modules || [],
-              modulePermissions: response.data.module_permissions || {}
+              activeModules: schoolData.active_modules || [],
+              modulePermissions: schoolData.module_permissions || {}
             })
+
+            console.log('[fetchActiveModules] Store updated successfully')
           } catch (error) {
-            console.error("Failed to fetch active modules", error)
+            console.error("[fetchActiveModules] Failed to fetch active modules", error)
           }
         }
       }),

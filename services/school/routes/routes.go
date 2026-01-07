@@ -25,43 +25,26 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool, tenantManager *tenant.TenantM
 	// Public routes
 	schools.Get("/public", schoolHandler.GetPublicSchools)
 
-	// Open routes (Tenant creation is usually protected by SuperAdmin auth, but for now we might leave it open or verify usage)
-	// Actually, CreateSchool should be protected by SuperAdmin.
-	// But let's assume we want to apply JWT middleware generally.
-	// Since we are implementing RBAC for School Admins, we focus on /api/v1/schools/:id/roles
+	// SuperAdmin-only routes - Register individually to avoid group middleware conflicts
+	schools.Post("/", middleware.JWTMiddleware(cfg), middleware.SuperAdminMiddleware(), schoolHandler.CreateSchool)
+	schools.Get("/", middleware.JWTMiddleware(cfg), middleware.SuperAdminMiddleware(), schoolHandler.GetSchools)
+	schools.Put("/:id", middleware.JWTMiddleware(cfg), middleware.SuperAdminMiddleware(), schoolHandler.UpdateSchool)
+	schools.Delete("/:id", middleware.JWTMiddleware(cfg), middleware.SuperAdminMiddleware(), schoolHandler.DeleteSchool)
+	schools.Get("/:code/stats", middleware.JWTMiddleware(cfg), middleware.SuperAdminMiddleware(), schoolHandler.GetSchoolStats)
+	schools.Get("/:id/admin", middleware.JWTMiddleware(cfg), middleware.SuperAdminMiddleware(), schoolHandler.GetSchoolAdmin)
+	schools.Put("/:id/admin", middleware.JWTMiddleware(cfg), middleware.SuperAdminMiddleware(), schoolHandler.UpdateSchoolAdmin)
 
-	// Group for school management (Super Admin only)
-	schoolMgmt := schools.Group("/", middleware.JWTMiddleware(cfg), middleware.SuperAdminMiddleware())
-
-	// Create/List schools
-	schoolMgmt.Post("/", schoolHandler.CreateSchool)
-	schoolMgmt.Get("/", schoolHandler.GetSchools)
-
-	// Specific school operations
-	schoolMgmt.Get("/:id", schoolHandler.GetSchool)
-	schoolMgmt.Put("/:id", schoolHandler.UpdateSchool)
-	schoolMgmt.Delete("/:id", schoolHandler.DeleteSchool)
-	schoolMgmt.Get("/:code/stats", schoolHandler.GetSchoolStats)
-	schoolMgmt.Get("/:id/admin", schoolHandler.GetSchoolAdmin)
-	schoolMgmt.Put("/:id/admin", schoolHandler.UpdateSchoolAdmin)
-
-	// Logo management
-	schoolMgmt.Post("/:id/logo", logoHandler.UploadLogo)
-	schoolMgmt.Delete("/:id/logo", logoHandler.DeleteLogo)
+	// Logo management (SuperAdmin only)
+	schools.Post("/:id/logo", middleware.JWTMiddleware(cfg), middleware.SuperAdminMiddleware(), logoHandler.UploadLogo)
+	schools.Delete("/:id/logo", middleware.JWTMiddleware(cfg), middleware.SuperAdminMiddleware(), logoHandler.DeleteLogo)
 
 	// Module management
 	moduleHandler := handlers.NewModuleHandler(db)
-	api.Get("/modules", moduleHandler.GetAvailableModules) // Get all available modules
+	api.Get("/modules", moduleHandler.GetAvailableModules)
+	schools.Post("/:id/modules", middleware.JWTMiddleware(cfg), moduleHandler.ToggleModule)
 
-	// Module toggling is strictly SuperAdmin
-	schoolMgmt.Post("/:id/modules", moduleHandler.ToggleModule)
-
-	// Role & Permission management
-	// Protected by JWT and Permission Middleware
+	// Role & Permission management - Protected by JWT and Permission Middleware
 	roleHandler := handlers.NewRoleHandler(db, tenantManager)
-
-	// Group for roles, protected by JWT
-	// Note: We need to import middleware package
 	schoolsWithAuth := schools.Group("/:id", middleware.JWTMiddleware(cfg))
 
 	roles := schoolsWithAuth.Group("/roles")
@@ -72,4 +55,8 @@ func SetupRoutes(app *fiber.App, db *pgxpool.Pool, tenantManager *tenant.TenantM
 	roles.Delete("/:roleId", middleware.PermissionMiddleware("roles.delete"), roleHandler.DeleteRole)
 
 	schoolsWithAuth.Get("/permissions", middleware.PermissionMiddleware("permissions.view"), roleHandler.ListPermissions)
+
+	// Single school lookup for authenticated users - Registered LAST to test precedence
+	// Ownership is checked in the handler
+	schools.Get("/:id", middleware.JWTMiddleware(cfg), schoolHandler.GetSchool)
 }

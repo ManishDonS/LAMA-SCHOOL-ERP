@@ -30,7 +30,7 @@ type ToggleModuleRequest struct {
 	Active   bool   `json:"active"`
 }
 
-// ToggleModule allows Super Admin to enable/disable a module for a school
+// ToggleModule allows Super Admin OR School Admin to enable/disable a module for a school
 func (h *ModuleHandler) ToggleModule(c *fiber.Ctx) error {
 	schoolID := c.Params("id")
 	var req ToggleModuleRequest
@@ -38,21 +38,56 @@ func (h *ModuleHandler) ToggleModule(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
+	// 1. Authorization Check
+	authRole, _ := c.Locals("role").(string)
+	authSchoolID, _ := c.Locals("school_id").(string)
+
+	log.Printf("[ToggleModule] Auth Check - Role: %s, SchoolID: %s, TargetSchool: %s, Module: %s, Active: %v", authRole, authSchoolID, schoolID, req.ModuleID, req.Active)
+
+	if authRole != "super_admin" {
+		// If not super admin, must be admin of THIS school
+		if authSchoolID != schoolID {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "You can only manage modules for your own school",
+			})
+		}
+	}
+
 	// Validate Module ID
 	if !domain.IsModuleValid(req.ModuleID) {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid module ID"})
 	}
 
-	// Atomic update with license check
-	// 1. If active=true, append module_id if not exists AND module is licensed
-	// 2. If active=false, remove module_id
+	// 2. License Verification (Required only when enabling)
+	if req.Active {
+		var permissionsJSON []byte
+		err := h.db.QueryRow(c.Context(), "SELECT module_permissions FROM schools WHERE id = $1", schoolID).Scan(&permissionsJSON)
+		if err != nil {
+			log.Printf("[ToggleModule] Failed to fetch permissions: %v", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to verify module license"})
+		}
 
+		var modulePermissions map[string]map[string]bool
+		if err := json.Unmarshal(permissionsJSON, &modulePermissions); err != nil {
+			log.Printf("[ToggleModule] Failed to parse permissions: %v", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to verify module license"})
+		}
+
+		// Check if module exists in permissions map (implies a license exists)
+		if _, licensed := modulePermissions[req.ModuleID]; !licensed {
+			log.Printf("[ToggleModule] License denied for module %s", req.ModuleID)
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "You do not have a Master License for this module. Please contact Super Admin.",
+			})
+		}
+	}
+
+	// 3. Atomic update
 	var updateQuery string
 	var args []interface{}
 
 	if req.Active {
 		// Append to array using jsonb_set or || operator, ensuring uniqueness with DISTINCT
-		// and verifying license in the WHERE clause
 		updateQuery = `
 			UPDATE schools 
 			SET active_modules = (
@@ -60,11 +95,6 @@ func (h *ModuleHandler) ToggleModule(c *fiber.Ctx) error {
 				FROM jsonb_array_elements(active_modules || jsonb_build_array($1::text)) elem
 			), updated_at = NOW() 
 			WHERE id = $2 
-			AND (
-				EXISTS (
-					SELECT 1 FROM jsonb_each_text(module_permissions->$1) WHERE value = 'true'
-				)
-			)
 			RETURNING active_modules`
 		args = []interface{}{req.ModuleID, schoolID}
 	} else {
@@ -82,20 +112,19 @@ func (h *ModuleHandler) ToggleModule(c *fiber.Ctx) error {
 
 	if err != nil {
 		if err.Error() == "no rows in result set" {
-			log.Printf("Authorization failure for school %s, module %s: Module cannot be activated due to missing license or school not found.", schoolID, req.ModuleID)
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error":  "Module cannot be activated. Either school doesn't exist or it lacks a Master License for this module.",
-				"module": req.ModuleID,
+			log.Printf("[ToggleModule] School %s not found", schoolID)
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "School not found",
 			})
 		}
-		log.Printf("Failed to update school modules: %v", err)
+		log.Printf("[ToggleModule] Database update failed: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update school modules"})
 	}
 
 	var updatedActiveModules []string
 	json.Unmarshal(updatedActiveModulesJSON, &updatedActiveModules)
 
-	// 3. Broadcast update via NATS
+	// 4. Broadcast update via NATS
 	if messaging.NatsConn != nil {
 		event := map[string]interface{}{
 			"school_id":      schoolID,

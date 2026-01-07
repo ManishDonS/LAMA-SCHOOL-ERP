@@ -1,10 +1,10 @@
 export interface User {
-  id: number
+  id: string | number
   email: string
   firstName: string
   lastName: string
   role: 'super_admin' | 'admin' | 'teacher' | 'student' | 'parent' | 'staff'
-  schoolId: number
+  schoolId: string
   status: 'active' | 'inactive'
   createdAt: string
 }
@@ -98,6 +98,7 @@ export interface School {
   timezone: string
   status: string
   active_modules: string[]
+  module_permissions: Record<string, Record<string, boolean>>
   created_at: string
   updated_at: string
 }

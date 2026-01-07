@@ -649,6 +649,21 @@ func (h *SchoolHandler) GetSchool(c *fiber.Ctx) error {
 	schoolID := c.Params("id")
 	ctx := context.Background()
 
+	// 1. Authorization check: SuperAdmin can see all, tenant users only their own school
+	authRole, _ := c.Locals("role").(string)
+	authSchoolID, _ := c.Locals("school_id").(string)
+
+	log.Printf("[GetSchool] Authorization check - Role: %s, AuthSchoolID: %s, RequestedSchoolID: %s\n", authRole, authSchoolID, schoolID)
+
+	if authRole != "super_admin" && schoolID != authSchoolID {
+		log.Printf("[GetSchool] FORBIDDEN - Unauthorized access attempt to school %s by user with school_id %s\n", schoolID, authSchoolID)
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "You can only access details for your own school",
+		})
+	}
+
+	log.Printf("[GetSchool] Authorization passed for school %s\n", schoolID)
+
 	query := `
 	SELECT id, name, COALESCE(code, ''), COALESCE(domain, ''), COALESCE(logo_url, ''), COALESCE(timezone, ''), COALESCE(db_name, ''), COALESCE(db_user, ''), 
 	       COALESCE(email, ''), COALESCE(phone, ''), COALESCE(address, ''), 

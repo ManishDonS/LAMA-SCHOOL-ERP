@@ -9,7 +9,7 @@ import { schoolAPI } from '@/services/api'
 
 export default function AppsDashboard() {
     const router = useRouter()
-    const { user, modulePermissions: storePermissions } = useAuthStore()
+    const { user, modulePermissions: storePermissions, activeModules: storeActiveModules } = useAuthStore()
     const [modulePermissions, setModulePermissions] = useState<Record<string, any>>({})
     const [activeModules, setActiveModules] = useState<string[]>([])
     const [loading, setLoading] = useState(true)
@@ -18,34 +18,52 @@ export default function AppsDashboard() {
     const [selectedCategory, setSelectedCategory] = useState<string>('All')
 
     useEffect(() => {
-        // Load module permissions and active modules from selected school
+        console.log('[Apps] useEffect triggered')
+        console.log('[Apps] storePermissions:', storePermissions)
+        console.log('[Apps] storeActiveModules:', storeActiveModules)
+        console.log('[Apps] user:', user)
+
+        // Load module permissions and active modules from selected school (Super Admin view)
+        // or from the auth store (Regular tenant view)
         if (typeof window !== 'undefined') {
             const schoolData = localStorage.getItem('selected_school')
+            console.log('[Apps] selected_school from localStorage:', schoolData)
+
             if (schoolData) {
                 try {
                     const school = JSON.parse(schoolData)
+                    console.log('[Apps] Parsed school data:', school)
                     if (school.id) {
                         setCurrentSchoolId(school.id)
                     }
+                    // Prioritize school-specific data when "logged into" a school as Super Admin
                     if (school.module_permissions) {
+                        console.log('[Apps] Setting permissions from selected_school')
                         setModulePermissions(school.module_permissions)
                     }
                     if (school.active_modules) {
+                        console.log('[Apps] Setting active modules from selected_school')
                         setActiveModules(school.active_modules)
                     }
                 } catch (error) {
-                    console.error('Failed to parse school data:', error)
+                    console.error('[Apps] Failed to parse school data:', error)
                     setModulePermissions(storePermissions)
+                    setActiveModules(storeActiveModules)
                 }
             } else {
+                // For regular tenant users, use permissions and active modules from auth store
+                console.log('[Apps] No selected_school, using store data')
+                console.log('[Apps] Setting permissions from store:', storePermissions)
+                console.log('[Apps] Setting active modules from store:', storeActiveModules)
                 setModulePermissions(storePermissions)
+                setActiveModules(storeActiveModules)
                 if (user?.schoolId) {
                     setCurrentSchoolId(String(user.schoolId))
                 }
             }
             setLoading(false)
         }
-    }, [storePermissions, user])
+    }, [storePermissions, storeActiveModules, user])
 
     // Use permissions from selected school (super admin view) or from logged in user (store)
     const effectivePermissions = Object.keys(modulePermissions).length > 0 ? modulePermissions : storePermissions
@@ -70,7 +88,7 @@ export default function AppsDashboard() {
         if (!currentSchoolId || toggling) return
 
         // Check if licensed before allowing toggle
-        if (!isModuleLicensed(effectivePermissions, moduleKey)) {
+        if (!isModuleLicensed(effectivePermissions, moduleKey, user?.role)) {
             alert('This module is not licensed for your school. Please contact support.')
             return
         }
@@ -96,6 +114,9 @@ export default function AppsDashboard() {
                     const school = JSON.parse(schoolData)
                     school.active_modules = newActiveModules
                     localStorage.setItem('selected_school', JSON.stringify(school))
+
+                    // Notify other components (Sidebar) about the change
+                    window.dispatchEvent(new Event('schoolDataUpdated'))
                 }
             }
         } catch (error) {
@@ -185,8 +206,8 @@ export default function AppsDashboard() {
                                         </h2>
                                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                                             {modules.map((module) => {
-                                                const licensed = isModuleLicensed(effectivePermissions, module.key)
-                                                const active = isModuleActive(effectivePermissions, activeModules, module.key)
+                                                const licensed = isModuleLicensed(effectivePermissions, module.key, user?.role)
+                                                const active = isModuleActive(effectivePermissions, activeModules, module.key, user?.role)
                                                 const isToggling = toggling === module.key
 
                                                 return (

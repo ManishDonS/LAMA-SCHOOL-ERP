@@ -89,7 +89,14 @@ export const ALL_MODULES: ModuleInfo[] = Object.entries(MODULE_CATEGORIES).flatM
 )
 
 // Helper to check if a module is licensed for the school (Master control by Super Admin)
-export const isModuleLicensed = (permissions: Record<string, any> | undefined, moduleKey: string): boolean => {
+export const isModuleLicensed = (
+    permissions: Record<string, any> | undefined,
+    moduleKey: string,
+    role?: string
+): boolean => {
+    // Super Admin bypass: Always show as licensed so they can toggle it
+    if (role === 'super_admin') return true
+
     if (!permissions || !permissions[moduleKey]) return false
     const p = permissions[moduleKey]
     // A module is licensed if it has any CRUD permission set to true
@@ -100,10 +107,11 @@ export const isModuleLicensed = (permissions: Record<string, any> | undefined, m
 export const isModuleActive = (
     permissions: Record<string, any> | undefined,
     activeModules: string[] | undefined,
-    moduleKey: string
+    moduleKey: string,
+    role?: string
 ): boolean => {
-    // 1. Must be licensed by Super Admin
-    if (!isModuleLicensed(permissions, moduleKey)) return false
+    // 1. Must be licensed by Super Admin (with bypass)
+    if (!isModuleLicensed(permissions, moduleKey, role)) return false
 
     // 2. Must be in the active_modules list (Enabled by Tenant)
     // Note: If activeModules is undefined (old data), we fall back to license status 

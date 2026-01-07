@@ -244,7 +244,7 @@ func RunMigrations(db *pgxpool.Pool) error {
 			`,
 		},
 		{
-			name: "create_refresh_tokens_table",
+			name: "create_refresh_tokens_table_v3",
 			sql: `
 			CREATE TABLE IF NOT EXISTS refresh_tokens (
 				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -255,7 +255,12 @@ func RunMigrations(db *pgxpool.Pool) error {
 				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 			);
 			CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
-			CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token);
+			DO $$ 
+			BEGIN 
+				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='refresh_tokens' AND column_name='token') THEN
+					CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token);
+				END IF;
+			END $$;
 			`,
 		},
 		{
