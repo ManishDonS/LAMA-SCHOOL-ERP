@@ -13,6 +13,15 @@ const api: AxiosInstance = axios.create({
   },
 })
 
+// Helper to get cookie value
+const getCookie = (name: string): string | null => {
+  if (typeof document === 'undefined') return null
+  const value = `; ${document.cookie}`
+  const parts = value.split(`; ${name}=`)
+  if (parts.length === 2) return parts.pop()?.split(';').shift() || null
+  return null
+}
+
 // Separate API client for school service
 const schoolApiClient: AxiosInstance = axios.create({
   baseURL: SCHOOL_API_URL,
@@ -45,6 +54,12 @@ api.interceptors.request.use(
       }
     }
 
+    // Add CSRF Token for state-changing requests
+    const csrfToken = getCookie('XSRF-TOKEN')
+    if (csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(config.method?.toUpperCase() || '')) {
+      config.headers['X-CSRF-Token'] = csrfToken
+    }
+
     return config
   },
   (error) => Promise.reject(error)
@@ -72,6 +87,12 @@ schoolApiClient.interceptors.request.use(
           console.error('Failed to parse selected_school from localStorage', e)
         }
       }
+    }
+
+    // Add CSRF Token for state-changing requests
+    const csrfToken = getCookie('XSRF-TOKEN')
+    if (csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(config.method?.toUpperCase() || '')) {
+      config.headers['X-CSRF-Token'] = csrfToken
     }
 
     return config
@@ -119,8 +140,13 @@ const createResponseInterceptor = (client: AxiosInstance) => {
 
       const originalRequest = error.config as any
 
+      // Don't refresh for login, refresh or if skipAuthRefresh is set
+      const isAuthRequest = originalRequest.url?.includes('/api/v1/auth/login') ||
+        originalRequest.url?.includes('/api/v1/auth/register') ||
+        originalRequest.url?.includes('/api/v1/auth/refresh')
+
       // Handle 401 Unauthorized
-      if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !originalRequest.skipAuthRefresh) {
+      if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !originalRequest.skipAuthRefresh && !isAuthRequest) {
         originalRequest._retry = true
 
         if (!isRefreshing) {
@@ -130,9 +156,8 @@ const createResponseInterceptor = (client: AxiosInstance) => {
           refreshPromise = new Promise(async (resolve) => {
             try {
               // Refresh token is in HttpOnly cookie, sent automatically by browser
-              // Use 'api' client to refresh, or fetch directly to avoid circular dependency loop if 'api' is the one failing?
-              // 'api' instance is safe to use here as long as /refresh endpoint doesn't return 401 loop.
-              const response = await api.post('/api/v1/auth/refresh', {})
+              // Use 'api' client to refresh, with skipAuthRefresh to prevent deadlock
+              const response = await api.post('/api/v1/auth/refresh', {}, { skipAuthRefresh: true } as any)
 
               if (response.data.tokens) {
                 const newAccessToken = response.data.tokens.accessToken
@@ -149,6 +174,7 @@ const createResponseInterceptor = (client: AxiosInstance) => {
               // Refresh failed, logout user
               if (typeof window !== 'undefined') {
                 localStorage.removeItem('access_token')
+                localStorage.removeItem('selected_school')
                 // No need to remove refresh_token as it's in HttpOnly cookie
                 window.location.href = '/auth/login'
               }
@@ -171,7 +197,9 @@ const createResponseInterceptor = (client: AxiosInstance) => {
           return new Promise((resolve, reject) => {
             addRefreshSubscriber((token: string | null) => {
               if (token) {
-                originalRequest.headers.Authorization = `Bearer ${token}`
+                if (originalRequest.headers) {
+                  originalRequest.headers.Authorization = `Bearer ${token}`
+                }
                 resolve(client(originalRequest))
               } else {
                 reject(new Error('Token refresh failed'))
@@ -197,9 +225,9 @@ export const authAPI = {
     }),
   register: (data: RegisterRequest) => api.post<AuthResponse>('/api/v1/auth/register', data),
   me: () => api.get('/api/v1/auth/me'),
-  logout: () => api.post('/api/v1/auth/logout'),
+  logout: () => api.post('/api/v1/auth/logout', {}, { skipAuthRefresh: true } as any),
   refreshToken: () =>
-    api.post('/api/v1/auth/refresh', {}),
+    api.post('/api/v1/auth/refresh', {}, { skipAuthRefresh: true } as any),
   forgotPassword: (email: string) => api.post('/api/v1/auth/forgot-password', { email }),
   resetPassword: (token: string, newPassword: string) =>
     api.post('/api/v1/auth/reset-password', { token, new_password: newPassword }),
@@ -235,6 +263,12 @@ studentApiClient.interceptors.request.use(
           console.error('Failed to parse selected_school from localStorage', e)
         }
       }
+    }
+
+    // Add CSRF Token for state-changing requests
+    const csrfToken = getCookie('XSRF-TOKEN')
+    if (csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(config.method?.toUpperCase() || '')) {
+      config.headers['X-CSRF-Token'] = csrfToken
     }
     return config
   },
@@ -279,6 +313,12 @@ userApiClient.interceptors.request.use(
           console.error('Failed to parse selected_school from localStorage', e)
         }
       }
+    }
+
+    // Add CSRF Token for state-changing requests
+    const csrfToken = getCookie('XSRF-TOKEN')
+    if (csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(config.method?.toUpperCase() || '')) {
+      config.headers['X-CSRF-Token'] = csrfToken
     }
     return config
   },
@@ -347,6 +387,11 @@ attendanceApiClient.interceptors.request.use(
         }
       }
     }
+    // Add CSRF Token for state-changing requests
+    const csrfToken = getCookie('XSRF-TOKEN')
+    if (csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(config.method?.toUpperCase() || '')) {
+      config.headers['X-CSRF-Token'] = csrfToken
+    }
     return config
   },
   (error) => Promise.reject(error)
@@ -390,6 +435,11 @@ classApiClient.interceptors.request.use(
           console.error('Failed to parse selected_school from localStorage', e)
         }
       }
+    }
+    // Add CSRF Token for state-changing requests
+    const csrfToken = getCookie('XSRF-TOKEN')
+    if (csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(config.method?.toUpperCase() || '')) {
+      config.headers['X-CSRF-Token'] = csrfToken
     }
     return config
   },
@@ -468,6 +518,12 @@ transportApiClient.interceptors.request.use(
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
+    }
+
+    // Add CSRF Token for state-changing requests
+    const csrfToken = getCookie('XSRF-TOKEN')
+    if (csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(config.method?.toUpperCase() || '')) {
+      config.headers['X-CSRF-Token'] = csrfToken
     }
     return config
   },
@@ -554,6 +610,12 @@ expenseApiClient.interceptors.request.use(
         }
       }
     }
+
+    // Add CSRF Token for state-changing requests
+    const csrfToken = getCookie('XSRF-TOKEN')
+    if (csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(config.method?.toUpperCase() || '')) {
+      config.headers['X-CSRF-Token'] = csrfToken
+    }
     return config
   },
   (error) => Promise.reject(error)
@@ -621,6 +683,12 @@ libraryApiClient.interceptors.request.use(
           console.error('Failed to parse selected_school from localStorage', e)
         }
       }
+    }
+
+    // Add CSRF Token for state-changing requests
+    const csrfToken = getCookie('XSRF-TOKEN')
+    if (csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(config.method?.toUpperCase() || '')) {
+      config.headers['X-CSRF-Token'] = csrfToken
     }
     return config
   },

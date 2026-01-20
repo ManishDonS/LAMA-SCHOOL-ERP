@@ -67,6 +67,11 @@ services:
       - "3001"
     environment:
       DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-school_erp}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-school_erp}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:?REFRESH_TOKEN_SECRET is required}
       SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL}
@@ -372,6 +377,8 @@ services:
         condition: service_healthy
     networks:
       - school-erp-network
+    mem_limit: 512m
+    cpus: "0.5"
     restart: on-failure
 
   # Transport Service
@@ -550,6 +557,32 @@ services:
     networks:
       - school-erp-network
     restart: on-failure
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8081}
+    container_name: school-erp-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8081}
+      - HOSTNAME=0.0.0.0
+    depends_on:
+      - nginx
+    networks:
+      - school-erp-network
+    mem_limit: 512m
+    cpus: "0.5"
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # API Gateway
   nginx:
